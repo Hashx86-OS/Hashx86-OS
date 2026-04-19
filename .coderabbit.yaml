@@ -1,0 +1,5 @@
+reviews:
+  path_filters:
+    - "!include/**"
+    - "!user_prog/libhx86/include/**"
+    - "!bin/**"
