@@ -59,8 +59,12 @@ Bitmap::Bitmap(int width, int height, uint32_t color) {
     this->height = height;
     this->buffer = 0;
 
-    if (width == 0 || height == 0) {
-        KDBG1("Error: width or height is 0.");
+    if (width <= 0 || height <= 0) {
+        KDBG1("Error: width or height is <= 0.");
+        return;
+    }
+    if ((uint64_t)width * (uint64_t)height > (uint64_t)(0xFFFFFFFFu / sizeof(uint32_t))) {
+        KDBG1("Error: Bitmap dimensions overflow: %dx%d", width, height);
         return;
     }
 

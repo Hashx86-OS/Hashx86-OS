@@ -191,7 +191,7 @@ void AdvancedTechnologyAttachment::Write28(uint32_t sectorNum, uint8_t* data, ui
     uint32_t bsyWait = 0;
     while ((status & 0x80) == 0x80) {
         if (bsyWait++ > 1000000) {
-            KDBG1("READ ERROR: BSY timeout");
+            KDBG1("WRITE ERROR: BSY timeout");
             return;
         }
         status = commandPort.Read();

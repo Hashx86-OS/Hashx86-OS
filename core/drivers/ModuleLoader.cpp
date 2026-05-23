@@ -104,8 +104,18 @@ void* ModuleLoader::LoadDriver(File* file) {
     // Read Section String Table (to find section names if needed)
     struct elf_section_header* strtab_hdr = &sections[header.sh_str_index];
     char* strtab = (char*)kmalloc(strtab_hdr->size);
+    if (!strtab) {
+        KDBG1("Module Error: Failed to allocate section string table");
+        kfree(sections);
+        return 0;
+    }
     file->Seek(strtab_hdr->offset);
-    file->Read((uint8_t*)strtab, strtab_hdr->size);
+    if (file->Read((uint8_t*)strtab, strtab_hdr->size) != (int)strtab_hdr->size) {
+        KDBG1("Module Error: Failed to read section string table");
+        kfree(strtab);
+        kfree(sections);
+        return 0;
+    }
 
     // Allocate Memory for Sections
     // Iterate all sections. If flags has SHF_ALLOC (0x2).
@@ -138,15 +148,43 @@ void* ModuleLoader::LoadDriver(File* file) {
     for (int i = 0; i < header.sh_entry_count; i++) {
         if (sections[i].type == 2) {  // SHT_SYMTAB
             symtab = (struct elf32_symbol*)kmalloc(sections[i].size);
+            if (!symtab) {
+                KDBG1("Module Error: Failed to allocate symbol table");
+                break;
+            }
             file->Seek(sections[i].offset);
-            file->Read((uint8_t*)symtab, sections[i].size);
+            if (file->Read((uint8_t*)symtab, sections[i].size) != (int)sections[i].size) {
+                KDBG1("Module Error: Failed to read symbol table");
+                kfree(symtab);
+                symtab = nullptr;
+                break;
+            }
             symtab_count = sections[i].size / sizeof(elf32_symbol);
 
             // Load associated string table
             int link = sections[i].link;
+            if (link < 0 || (uint32_t)link >= header.sh_entry_count) {
+                KDBG1("Module Error: Symbol string table link out of range (%d)", link);
+                kfree(symtab);
+                symtab = nullptr;
+                break;
+            }
             strtab_sym = (char*)kmalloc(sections[link].size);
+            if (!strtab_sym) {
+                KDBG1("Module Error: Failed to allocate symbol string table");
+                kfree(symtab);
+                symtab = nullptr;
+                break;
+            }
             file->Seek(sections[link].offset);
-            file->Read((uint8_t*)strtab_sym, sections[link].size);
+            if (file->Read((uint8_t*)strtab_sym, sections[link].size) != (int)sections[link].size) {
+                KDBG1("Module Error: Failed to read symbol string table");
+                kfree(strtab_sym);
+                strtab_sym = nullptr;
+                kfree(symtab);
+                symtab = nullptr;
+                break;
+            }
             break;
         }
     }

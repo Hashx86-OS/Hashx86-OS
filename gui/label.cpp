@@ -22,6 +22,7 @@ Label::Label(Widget* parent, int32_t x, int32_t y, int32_t w, int32_t h, const c
 
 Label::~Label() {
     delete[] text;
+    if (font) delete font;
     // cache deleted by ~Widget
 }
 

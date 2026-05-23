@@ -19,17 +19,13 @@ Button::Button(Widget* parent, int32_t x, int32_t y, uint32_t w, uint32_t h, con
     }
     strcpy(this->label, label);
 
-    if (this->cache) delete[] this->cache;
-    if (w > 0 && h > 0) {
-        this->cache = new uint32_t[this->w * this->h]();
-        if (!this->cache) {
-            HALT("CRITICAL: Failed to allocate button cache!\n");
-        }
-    }
+    // cache is allocated by Widget constructor; do not reallocate here
 }
 
 Button::~Button() {
     if (label) delete[] label;
+    if (font) delete font;
+    if (cache) delete[] cache;
 }
 
 void Button::update() {

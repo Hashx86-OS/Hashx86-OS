@@ -10,16 +10,24 @@
 #include <stdlib.h>
 
 char* itoa(int32_t num, char* str, uint32_t base) {
-    if (!str || base < 2 || base > 36) {
-        if (str) str[0] = '\0';
+    return itoa_safe(num, str, 32, base);
+}
+
+char* itoa_safe(int32_t num, char* str, size_t capacity, uint32_t base) {
+    if (!str || capacity == 0 || base < 2 || base > 36) {
+        if (str && capacity > 0) str[0] = '\0';
         return str;
     }
-    uint32_t i = 0;
+    size_t i = 0;
     bool isNegative = false;
 
     if (num == 0) {
-        str[i++] = '0';
-        str[i] = '\0';
+        if (i + 1 < capacity) {
+            str[i++] = '0';
+            str[i] = '\0';
+        } else {
+            str[capacity - 1] = '\0';
+        }
         return str;
     }
 
@@ -33,19 +41,21 @@ char* itoa(int32_t num, char* str, uint32_t base) {
     }
 
     while (unum != 0) {
+        if (i + 1 >= capacity) break;  // No room for more digits + null
         uint32_t rem = unum % base;
         str[i++] = (rem > 9) ? (rem - 10) + 'A' : rem + '0';
         unum = unum / base;
     }
 
     if (isNegative) {
+        if (i + 1 >= capacity) i--;  // No room for minus, reuse last digit slot
         str[i++] = '-';
     }
 
     str[i] = '\0';
 
     // Reverse the string
-    uint32_t start = 0, end = i - 1;
+    size_t start = 0, end = (i > 0) ? i - 1 : 0;
     while (start < end) {
         char temp = str[start];
         str[start] = str[end];

@@ -83,6 +83,9 @@ public:
     virtual bool IsMouseCaptured() const;
     virtual bool IsPressed() const;
     virtual bool IsWindow() const { return false; }
+    virtual bool IsLabel() const { return false; }
+    virtual bool IsListView() const { return false; }
+    virtual bool IsTerminalView() const { return false; }
 };
 
 /**

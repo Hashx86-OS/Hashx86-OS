@@ -51,6 +51,18 @@ bool CopyFromUser(ProcessControlBlock* proc, void* dst, const void* src_user, si
     return true;
 }
 
+// Validate a userspace pointer range before kernel dereference.
+// Returns true if ptr is non-null, within user bounds, and the full range
+// [ptr, ptr+len-1] is mapped in the process's page tables.
+bool ValidateUserPointer(ProcessControlBlock* proc, const void* ptr, size_t len) {
+    if (!ptr || !proc || len == 0) return false;
+    uint32_t addr = (uint32_t)ptr;
+    if (addr < USER_LOWER_BOUND) return false;
+    uint32_t end = addr + (uint32_t)len - 1;
+    if (end < addr) return false;  // wraparound
+    return IsUserRange(proc, addr, len);
+}
+
 bool CopyUserString(ProcessControlBlock* proc, const char* src_user, char* dst, size_t dst_size) {
     if (!dst || dst_size == 0) return false;
     if (!src_user) {
@@ -213,8 +225,9 @@ int32_t HguiHandler::HandleWindow(CPUState* cpu, const WidgetData* _data) {
         return (uint32_t)_newID;
     } else if ((uint32_t)cpu->ebx == SET_TEXT) {
         Widget* w = this->FindWidgetByID(_data->param0);
-        if (!w || !w->IsComposite()) return -1;
+        if (!w || !w->IsWindow()) return -1;
         Window* widget = static_cast<Window*>(w);
+        if (!ValidateUserPointer(proc, _data->param5, MAX_USER_TEXT)) return -1;
         if (!CopyUserString(proc, _data->param5, titleBuf, sizeof(titleBuf))) {
             return -1;
         }
@@ -238,6 +251,7 @@ int32_t HguiHandler::HandleButton(CPUState* cpu, const WidgetData* _data) {
         CompositeWidget* parentWidget = static_cast<CompositeWidget*>(parentBase);
         if (parentWidget->ID == 0) return -1;
 
+        if (!ValidateUserPointer(proc, _data->param5, MAX_USER_TEXT)) return -1;
         if (!CopyUserString(proc, _data->param5, labelBuf, sizeof(labelBuf))) {
             return -1;
         }
@@ -268,6 +282,7 @@ int32_t HguiHandler::HandleLabel(CPUState* cpu, const WidgetData* _data) {
         CompositeWidget* parentWidget = static_cast<CompositeWidget*>(parentBase);
         if (parentWidget->ID == 0) return -1;
 
+        if (!ValidateUserPointer(proc, _data->param5, MAX_USER_TEXT)) return -1;
         if (!CopyUserString(proc, _data->param5, textBuf, sizeof(textBuf))) {
             return -1;
         }
@@ -284,8 +299,9 @@ int32_t HguiHandler::HandleLabel(CPUState* cpu, const WidgetData* _data) {
         return (int32_t)_newID;
     } else if ((uint32_t)cpu->ebx == SET_TEXT) {
         Widget* w = this->FindWidgetByID(_data->param0);
-        if (!w || w->IsComposite()) return -1;
+        if (!w || !w->IsLabel()) return -1;
         Label* widget = static_cast<Label*>(w);
+        if (!ValidateUserPointer(proc, _data->param5, MAX_USER_TEXT)) return -1;
         if (!CopyUserString(proc, _data->param5, textBuf, sizeof(textBuf))) {
             return -1;
         }
@@ -294,7 +310,7 @@ int32_t HguiHandler::HandleLabel(CPUState* cpu, const WidgetData* _data) {
         return 1;
     } else if ((uint32_t)cpu->ebx == SET_FONT_SIZE) {
         Widget* w = this->FindWidgetByID(_data->param0);
-        if (!w || w->IsComposite()) return -1;
+        if (!w || !w->IsLabel()) return -1;
         Label* widget = static_cast<Label*>(w);
 
         widget->setSize((FontSize)_data->param1);
@@ -330,7 +346,7 @@ int32_t HguiHandler::HandleListView(CPUState* cpu, const WidgetData* _data) {
     } else if ((uint32_t)cpu->ebx == SET_ITEMS) {
         // param0 = widgetID, param5 = pointer to ListViewItemData array, param1 = count
         Widget* w = this->FindWidgetByID(_data->param0);
-        if (!w || w->IsComposite()) return -1;
+        if (!w || !w->IsListView()) return -1;
         ListView* widget = static_cast<ListView*>(w);
 
         struct ListViewItemData {
@@ -346,7 +362,8 @@ int32_t HguiHandler::HandleListView(CPUState* cpu, const WidgetData* _data) {
 
         ListViewItemData items[LISTVIEW_MAX_ITEMS];
         size_t bytes = (size_t)count * sizeof(ListViewItemData);
-        if (bytes > 0 && !CopyFromUser(proc, items, _data->param5, bytes)) {
+        if (bytes > 0 && (!ValidateUserPointer(proc, _data->param5, bytes) ||
+                          !CopyFromUser(proc, items, _data->param5, bytes))) {
             return -1;
         }
 
@@ -357,19 +374,20 @@ int32_t HguiHandler::HandleListView(CPUState* cpu, const WidgetData* _data) {
         return count;
     } else if ((uint32_t)cpu->ebx == CLEAR_ITEMS) {
         Widget* w = this->FindWidgetByID(_data->param0);
-        if (!w || w->IsComposite()) return -1;
+        if (!w || !w->IsListView()) return -1;
         ListView* widget = static_cast<ListView*>(w);
         widget->Clear();
         return 1;
     } else if ((uint32_t)cpu->ebx == GET_SELECTED) {
         Widget* w = this->FindWidgetByID(_data->param0);
-        if (!w || w->IsComposite()) return -1;
+        if (!w || !w->IsListView()) return -1;
         ListView* widget = static_cast<ListView*>(w);
         return widget->GetSelectedIndex();
     } else if ((uint32_t)cpu->ebx == SET_TEXT) {
         Widget* w = this->FindWidgetByID(_data->param0);
-        if (!w || w->IsComposite()) return -1;
+        if (!w || !w->IsListView()) return -1;
         ListView* widget = static_cast<ListView*>(w);
+        if (!ValidateUserPointer(proc, _data->param5, MAX_USER_TEXT)) return -1;
         if (!CopyUserString(proc, _data->param5, headerBuf, sizeof(headerBuf))) {
             return -1;
         }
@@ -391,6 +409,7 @@ int32_t HguiHandler::HandleTerminalView(CPUState* cpu, const WidgetData* _data) 
         CompositeWidget* parentWidget = static_cast<CompositeWidget*>(parentBase);
         if (parentWidget->ID == 0) return -1;
 
+        if (!ValidateUserPointer(proc, _data->param5, MAX_USER_TEXT)) return -1;
         if (!CopyUserString(proc, _data->param5, textBuf, sizeof(textBuf))) {
             return -1;
         }
@@ -408,8 +427,9 @@ int32_t HguiHandler::HandleTerminalView(CPUState* cpu, const WidgetData* _data) 
         return (int32_t)_newID;
     } else if ((uint32_t)cpu->ebx == SET_TEXT) {
         Widget* w = this->FindWidgetByID(_data->param0);
-        if (!w || w->IsComposite()) return -1;
+        if (!w || !w->IsTerminalView()) return -1;
         TerminalView* widget = static_cast<TerminalView*>(w);
+        if (!ValidateUserPointer(proc, _data->param5, MAX_USER_TEXT)) return -1;
         if (!CopyUserString(proc, _data->param5, textBuf, sizeof(textBuf))) {
             return -1;
         }
@@ -417,19 +437,19 @@ int32_t HguiHandler::HandleTerminalView(CPUState* cpu, const WidgetData* _data) 
         return 1;
     } else if ((uint32_t)cpu->ebx == SET_FONT_SIZE) {
         Widget* w = this->FindWidgetByID(_data->param0);
-        if (!w || w->IsComposite()) return -1;
+        if (!w || !w->IsTerminalView()) return -1;
         TerminalView* widget = static_cast<TerminalView*>(w);
         widget->setSize((FontSize)_data->param1);
         return 1;
     } else if ((uint32_t)cpu->ebx == SET_SCROLL_META) {
         Widget* w = this->FindWidgetByID(_data->param0);
-        if (!w || w->IsComposite()) return -1;
+        if (!w || !w->IsTerminalView()) return -1;
         TerminalView* widget = static_cast<TerminalView*>(w);
         widget->setScrollMeta((int)_data->param1, (int)_data->param2, (int)_data->param3);
         return 1;
     } else if ((uint32_t)cpu->ebx == GET_SCROLL_ACTION) {
         Widget* w = this->FindWidgetByID(_data->param0);
-        if (!w || w->IsComposite()) return -1;
+        if (!w || !w->IsTerminalView()) return -1;
         TerminalView* widget = static_cast<TerminalView*>(w);
         return widget->consumeScrollAction();
     }

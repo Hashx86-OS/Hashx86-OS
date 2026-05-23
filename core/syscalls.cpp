@@ -258,7 +258,17 @@ int32_t SyscallHandlers::Handle_sys_read(uint32_t fd, char* buf, uint32_t count)
         return -1;
     }
 
-    int bytesRead = file->Read((uint8_t*)buf, count);
+    // Read into a kernel buffer, then copy to user space
+    uint8_t* kernelBuf = (uint8_t*)kmalloc(count);
+    if (!kernelBuf) return -1;
+    int bytesRead = file->Read(kernelBuf, count);
+    if (bytesRead > 0) {
+        if (!CopyToUser(process, buf, kernelBuf, (size_t)bytesRead)) {
+            kfree(kernelBuf);
+            return -1;
+        }
+    }
+    kfree(kernelBuf);
     return bytesRead;
 }
 
@@ -622,12 +632,18 @@ int32_t SyscallHandlers::Handle_sys_peek_memory(uint32_t address, uint32_t size,
 #if !KDBG_ENABLE
     (void)address;
     (void)size;
-    if (return_data) *return_data = 0;
+    if (return_data) {
+        int32_t zero = 0;
+        ProcessControlBlock* p = Scheduler::activeInstance ? Scheduler::activeInstance->GetCurrentProcess() : nullptr;
+        if (p && IsUserRange(p, (uint32_t)return_data, sizeof(int32_t)))
+            CopyToUser(p, return_data, &zero, sizeof(int32_t));
+    }
     return -1;
 #endif
     ProcessControlBlock* process = Scheduler::activeInstance->GetCurrentProcess();
     if (!process) {
-        if (return_data) *return_data = 0;
+        if (return_data)
+            *return_data = 0;
         return -1;
     }
     // [DEV-ONLY] Peek memory allows reading the identity-mapped kernel range (0-256MB).
@@ -636,7 +652,11 @@ int32_t SyscallHandlers::Handle_sys_peek_memory(uint32_t address, uint32_t size,
     // Only allow reading from identity-mapped kernel range (0 - 256MB)
     uint32_t limit = 256 * 1024 * 1024;
     if (address + size > limit || size == 0 || size > 4) {
-        if (return_data) *return_data = 0;
+        if (return_data) {
+            int32_t zero = 0;
+            if (IsUserRange(process, (uint32_t)return_data, sizeof(int32_t)))
+                CopyToUser(process, return_data, &zero, sizeof(int32_t));
+        }
         return -1;
     }
 
@@ -652,7 +672,11 @@ int32_t SyscallHandlers::Handle_sys_peek_memory(uint32_t address, uint32_t size,
             value = *(uint32_t*)address;
             break;
     }
-    if (return_data) *return_data = (int32_t)value;
+    if (return_data) {
+        if (!IsUserRange(process, (uint32_t)return_data, sizeof(int32_t)) ||
+            !CopyToUser(process, return_data, &value, sizeof(int32_t)))
+            return -1;
+    }
     return 0;
 }
 

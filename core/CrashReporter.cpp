@@ -38,6 +38,7 @@ const char* GetExceptionName(uint8_t exceptionNumber) {
 void CrashReporter::ShowUserCrashDialog(uint32_t pid, uint32_t tid, uint8_t exceptionNumber,
                                         uint32_t errorCode, uint32_t eip, uint32_t cr2,
                                         uint32_t tickSnapshot) {
+    (void)tickSnapshot;  // Reserved for future use / kept for ABI compatibility
     Desktop* desktop = Desktop::activeInstance;
     if (!desktop) return;
 

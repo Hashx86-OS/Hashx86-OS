@@ -58,6 +58,7 @@ public:
     void setSize(FontSize size);
     void setScrollMeta(int totalLines, int visibleLines, int offset);
     int consumeScrollAction();
+    bool IsTerminalView() const override { return true; }
 
     void RedrawToCache() override;
     void OnMouseDown(int32_t x, int32_t y, uint8_t button) override;

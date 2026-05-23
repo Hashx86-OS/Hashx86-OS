@@ -620,17 +620,21 @@ void FAT32::Format() {
 
     uint8_t zeros[512];
     memset(zeros, 0, 512);
+    uint8_t fatHeader[512];  // Preserved template with FAT markers
 
     uint32_t* fatStartArr = (uint32_t*)zeros;
     fatStartArr[0] = 0x0FFFFFF8;
     fatStartArr[1] = 0x0FFFFFFF;
     fatStartArr[2] = 0x0FFFFFFF;
 
+    // Preserve the first-sector template before zeroing
+    memcpy(fatHeader, zeros, 512);
+
     // Write full FAT for all copies
     for (uint32_t copy = 0; copy < bpb.fatCopies; copy++) {
         uint32_t fatBase = this->fatStart + (copy * bpb.tableSize);
-        // First sector has the special markers
-        hd->Write28(fatBase, zeros, 512);
+        // First sector has the special markers — use the preserved template
+        hd->Write28(fatBase, fatHeader, 512);
         // Remaining sectors are zeroed
         memset(zeros, 0, 512);
         for (uint32_t i = 1; i < bpb.tableSize; i++) {
@@ -850,11 +854,15 @@ void FAT32::FormatRaw(AdvancedTechnologyAttachment* hd, uint32_t startSector,
     fatEntries[1] = 0x0FFFFFFF;  // EOC
     fatEntries[2] = 0x0FFFFFFF;  // EOC (End of Root Dir Chain)
 
+    // Preserve the first-sector template
+    uint8_t markerBuffer[512];
+    memcpy(markerBuffer, buffer, 512);
+
     // Write all FAT sectors for each FAT copy
     for (uint32_t copy = 0; copy < fats; copy++) {
         uint32_t fatBaseSector = startSector + reserved + (copy * sectorsPerFat);
-        // First sector has the special markers
-        hd->Write28(fatBaseSector, buffer, 512);
+        // First sector has the special markers — use preserved template
+        hd->Write28(fatBaseSector, markerBuffer, 512);
         // Remaining sectors are zeroed
         memset(buffer, 0, 512);
         for (uint32_t i = 1; i < sectorsPerFat; i++) {

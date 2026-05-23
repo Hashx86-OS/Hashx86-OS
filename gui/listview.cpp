@@ -21,16 +21,12 @@ ListView::ListView(Widget* parent, int32_t x, int32_t y, int32_t w, int32_t h)
     this->font->setSize(TINY);
     strcpy(headerText, "Name");
 
-    if (this->cache) delete[] this->cache;
-    if (w > 0 && h > 0) {
-        this->cache = new uint32_t[this->w * this->h]();
-        if (!this->cache) {
-            HALT("CRITICAL: Failed to allocate ListView cache!\n");
-        }
-    }
+    // cache is allocated by Widget constructor; do not reallocate here
 }
 
-ListView::~ListView() {}
+ListView::~ListView() {
+    if (font) delete font;
+}
 
 void ListView::Clear() {
     itemCount = 0;
@@ -79,6 +75,10 @@ void ListView::update() {
 }
 
 void ListView::RedrawToCache() {
+    if (!cache) {
+        isDirty = false;
+        return;
+    }
     memset(cache, 0, sizeof(uint32_t) * w * h);
 
     // Background

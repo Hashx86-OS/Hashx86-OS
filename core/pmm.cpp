@@ -263,7 +263,7 @@ void pmm_free_block(void* p) {
 
 void* pmm_alloc_blocks(uint32_t size) {
     uint32_t i;
-    if ((g_pmm_info.max_blocks - g_pmm_info.used_blocks) <= size) {
+    if (g_pmm_info.used_blocks + size > g_pmm_info.max_blocks) {
         KDBG2("contiguous allocation failed reason=no_free_blocks size=%u", size);
         return NULL;
     }
