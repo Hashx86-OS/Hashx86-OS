@@ -11,6 +11,10 @@
 AudioMixer::AudioMixer(AudioDriver* drv) : driver(drv), mixBuffer(nullptr), bufferSize(0) {
     memset(streams, 0, sizeof(streams));
 
+    // Ensure ownsData is cleared for safety on older binaries
+    for (int i = 0; i < 8; i++) streams[i].ownsData = false;
+
+    if (!driver) return;
     bufferSize = driver->GetBufferSize();
     mixBuffer = (uint8_t*)kmalloc(bufferSize);
 
@@ -24,11 +28,16 @@ void AudioMixer::SetOutputSampleRate(uint32_t rate) {
 }
 
 void AudioMixer::PlayBuffer(uint8_t* data, uint32_t length, bool loop) {
-    if (!data || length == 0) return;
+    if (!data || length == 0 || !driver) return;
 
     for (int i = 0; i < 8; i++) {
         if (!streams[i].active) {
-            streams[i].data = data;
+            // Make an owned copy of the data to avoid lifetime issues
+            uint8_t* copy = (uint8_t*)kmalloc(length);
+            if (!copy) return;  // Out of memory; fail gracefully
+            memcpy(copy, data, length);
+            streams[i].data = copy;
+            streams[i].ownsData = true;
             streams[i].length = length;
             streams[i].position = 0;
             streams[i].looping = loop;
@@ -56,6 +65,7 @@ void AudioMixer::Update() {
 }
 
 void AudioMixer::ProcessAudio() {
+    if (!driver || !mixBuffer) return;
     memset(mixBuffer, 0, bufferSize);
 
     int16_t* out = (int16_t*)mixBuffer;
@@ -87,6 +97,15 @@ void AudioMixer::ProcessAudio() {
 
             out[i] = (int16_t)mixed;
             st.position += sizeof(int16_t);
+        }
+
+        // If the stream was deactivated and we own the buffer, free it
+        if (!st.active && st.ownsData && st.data) {
+            kfree(st.data);
+            st.data = nullptr;
+            st.length = 0;
+            st.position = 0;
+            st.ownsData = false;
         }
     }
 

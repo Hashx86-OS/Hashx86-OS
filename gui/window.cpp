@@ -65,6 +65,7 @@ void Window::OnClose() {
 }
 
 void Window::setWindowTitle(const char* title) {
+    if (!title) title = "";
     if (windowTitle) delete[] windowTitle;
     windowTitle = new char[strlen(title) + 1];
     if (!windowTitle) {
@@ -129,7 +130,11 @@ void Window::OnMouseDown(int32_t x, int32_t y, uint8_t button) {
     if (localX >= 0 && localX <= w - 26 && localY >= 0 && localY <= 25) {
         isDragging = (button == 1);
         if (isDragging && parent) {
-            ((Desktop*)parent)->Focus(this);
+            Desktop* desktop =
+                (parent == Desktop::activeInstance) ? static_cast<Desktop*>(parent) : nullptr;
+            if (desktop) {
+                desktop->Focus(this);
+            }
         }
     }
 

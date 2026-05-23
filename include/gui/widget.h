@@ -80,6 +80,8 @@ public:
     virtual void OnSpecialKeyUp(uint8_t key);
 
     virtual bool IsComposite() const;
+    virtual bool IsMouseCaptured() const;
+    virtual bool IsPressed() const;
 };
 
 /**

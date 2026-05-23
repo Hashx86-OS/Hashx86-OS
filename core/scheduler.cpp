@@ -155,9 +155,11 @@ ThreadControlBlock* Scheduler::CreateThread(ProcessControlBlock* parent, void (*
         tcb->context->fs = 0x10;
         tcb->context->gs = 0x10;
 
-        // The fake stack frame inside the struct
-        tcb->context->esp = (uint32_t)ThreadExit;  // [ESP]   = Return Address
-        tcb->context->ss = (uint32_t)arg;          // [ESP+4] = Argument
+        // Kernel thread ABI shim:
+        // After interrupt restore + iret (same CPL), ESP points to CPUState::esp field,
+        // so CPUState::esp behaves as return address and CPUState::ss as first argument.
+        tcb->context->esp = (uint32_t)ThreadExit;  // fake return address
+        tcb->context->ss = (uint32_t)arg;          // first function argument
     } else {
         // USER THREAD (Ring 3)
         tcb->context->cs = 0x1B;  // User Code (0x18 | 3)

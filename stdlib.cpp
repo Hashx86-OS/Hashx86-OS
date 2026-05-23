@@ -6,10 +6,14 @@
  * @version     1.0.0
  */
 
-#include <stdlib.h>
 #include <stdint.h>
+#include <stdlib.h>
 
 char* itoa(int32_t num, char* str, uint32_t base) {
+    if (!str || base < 2 || base > 36) {
+        if (str) str[0] = '\0';
+        return str;
+    }
     uint32_t i = 0;
     bool isNegative = false;
 

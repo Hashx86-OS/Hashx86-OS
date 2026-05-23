@@ -268,13 +268,21 @@ void* kmalloc(int size) {
 
 void* aligned_kmalloc(size_t size, size_t alignment) {
     InterruptGuard guard;
-    uintptr_t raw_addr = (uintptr_t)kmalloc(size + alignment);
+    if (alignment == 0) return nullptr;
+    uintptr_t raw_addr = (uintptr_t)kmalloc(size + alignment + sizeof(void*));
     if (!raw_addr) return nullptr;
 
-    uintptr_t aligned_addr = (raw_addr + alignment - 1) & ~(alignment - 1);
+    uintptr_t aligned_addr = (raw_addr + sizeof(void*) + alignment - 1) & ~(alignment - 1);
+    ((void**)aligned_addr)[-1] = (void*)raw_addr;
     KDBG3("AlignedAlloc size=%d align=%d raw=0x%x addr=0x%x", size, alignment, raw_addr,
           aligned_addr);
     return (void*)aligned_addr;
+}
+
+void aligned_kfree(void* ptr) {
+    if (!ptr) return;
+    void* raw = ((void**)ptr)[-1];
+    kfree(raw);
 }
 
 /**
@@ -375,9 +383,9 @@ void operator delete[](void* ptr, size_t size) noexcept {
 }
 
 void operator delete(void* ptr, std::align_val_t) noexcept {
-    kfree(ptr);
+    aligned_kfree(ptr);
 }
 
 void operator delete[](void* ptr, std::align_val_t) noexcept {
-    kfree(ptr);
+    aligned_kfree(ptr);
 }

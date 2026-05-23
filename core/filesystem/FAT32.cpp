@@ -111,10 +111,13 @@ uint32_t FAT32::ParsePath(char* path, char* filenameOut) {
         return bpb.rootCluster;
     }
 
-    // Split string temporarily
-    path[lastSlash] = 0;
-    uint32_t dirCluster = ResolvePath(path);
-    path[lastSlash] = '/';
+    // Copy directory portion to avoid mutating input
+    char dirPath[256];
+    int dirLen = lastSlash;
+    if (dirLen > 255) dirLen = 255;
+    for (int i = 0; i < dirLen; i++) dirPath[i] = path[i];
+    dirPath[dirLen] = 0;
+    uint32_t dirCluster = ResolvePath(dirPath);
 
     // Copy filename
     int fIdx = 0;
@@ -137,7 +140,8 @@ uint32_t FAT32::GetFATEntry(uint32_t cluster) {
     uint32_t entOffset = fatOffset % 512;
     uint8_t buffer[512];
     hd->Read28(fatSector, buffer, 512);
-    uint32_t tableValue = *(uint32_t*)&buffer[entOffset];
+    uint32_t tableValue = 0;
+    memcpy(&tableValue, &buffer[entOffset], sizeof(uint32_t));
     return tableValue & 0x0FFFFFFF;
 }
 
@@ -147,7 +151,7 @@ void FAT32::SetFATEntry(uint32_t cluster, uint32_t value) {
     uint32_t entOffset = fatOffset % 512;
     uint8_t buffer[512];
     hd->Read28(fatSector, buffer, 512);
-    *(uint32_t*)&buffer[entOffset] = value;
+    memcpy(&buffer[entOffset], &value, sizeof(uint32_t));
     hd->Write28(fatSector, buffer, 512);
 }
 
@@ -346,7 +350,7 @@ uint32_t FAT32::ReadStream(File* file, uint8_t* buffer, uint32_t length) {
     uint32_t clustersToSkip = offset / clusterSize;
     uint32_t clusterOffset = offset % clusterSize;
 
-    for (int i = 0; i < clustersToSkip; i++) {
+    for (uint32_t i = 0; i < clustersToSkip; i++) {
         if (currentCluster >= 0x0FFFFFF8) return 0;  // End reached before offset
         currentCluster = GetFATEntry(currentCluster);
     }

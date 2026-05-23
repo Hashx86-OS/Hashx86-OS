@@ -22,13 +22,12 @@ Font::Font(FontFile* file, FontSize fontSize, FontType fontType) {
     this->fontSize = fontSize;
     this->fontType = fontType;
 
-    this->atlas_width = this->sourceFile->font_data_list[this->fontSize][fontType]->atlas_width;
-    this->atlas_height = this->sourceFile->font_data_list[this->fontSize][fontType]->atlas_height;
-    this->font_atlas = this->sourceFile->font_data_list[this->fontSize][fontType]->atlas;
-    this->font_glyphs = this->sourceFile->font_data_list[this->fontSize][fontType]->glyphs;
-    this->font_kernings = this->sourceFile->font_data_list[this->fontSize][fontType]->kernings;
-    this->font_kerning_count =
-        this->sourceFile->font_data_list[this->fontSize][fontType]->kerning_count;
+    this->atlas_width = 0;
+    this->atlas_height = 0;
+    this->font_atlas = nullptr;
+    this->font_glyphs = nullptr;
+    this->font_kernings = nullptr;
+    this->font_kerning_count = 0;
 
     this->update();
 }
@@ -36,6 +35,7 @@ Font::Font(FontFile* file, FontSize fontSize, FontType fontType) {
 Font::~Font() {}
 
 uint32_t Font::getStringLength(const char* str) {
+    if (!str || !font_glyphs) return 0;
     uint32_t length = 0;
     uint32_t prevChar = 0;
 
@@ -53,7 +53,7 @@ uint32_t Font::getStringLength(const char* str) {
         length += xadvance;
 
         // Apply kerning (if previous char exists)
-        if (prevChar) {
+        if (prevChar && font_kernings && font_kerning_count > 0) {
             for (int k = 0; k < this->font_kerning_count; k++) {
                 int16_t first = this->font_kernings[k * 3 + 0];
                 int16_t second = this->font_kernings[k * 3 + 1];
@@ -83,22 +83,31 @@ void Font::setType(FontType type) {
 }
 
 void Font::update() {
-    this->atlas_width =
-        this->sourceFile->font_data_list[this->fontSize][this->fontType]->atlas_width;
-    this->atlas_height =
-        this->sourceFile->font_data_list[this->fontSize][this->fontType]->atlas_height;
-    this->font_atlas = this->sourceFile->font_data_list[this->fontSize][this->fontType]->atlas;
-    this->font_glyphs = this->sourceFile->font_data_list[this->fontSize][this->fontType]->glyphs;
-    this->font_kernings =
-        this->sourceFile->font_data_list[this->fontSize][this->fontType]->kernings;
-    this->font_kerning_count =
-        this->sourceFile->font_data_list[this->fontSize][this->fontType]->kerning_count;
+    if (!this->sourceFile || !this->sourceFile->font_data_list[this->fontSize][this->fontType]) {
+        this->atlas_width = 0;
+        this->atlas_height = 0;
+        this->font_atlas = nullptr;
+        this->font_glyphs = nullptr;
+        this->font_kernings = nullptr;
+        this->font_kerning_count = 0;
+        return;
+    }
+
+    FontData* data = this->sourceFile->font_data_list[this->fontSize][this->fontType];
+    this->atlas_width = data->atlas_width;
+    this->atlas_height = data->atlas_height;
+    this->font_atlas = data->atlas;
+    this->font_glyphs = data->glyphs;
+    this->font_kernings = data->kernings;
+    this->font_kerning_count = data->kerning_count;
 }
 
 uint16_t Font::getLineHeight() {
+    if (!this->sourceFile || !this->font_glyphs) return 0;
+    FontData* data = this->sourceFile->font_data_list[this->fontSize][this->fontType];
+    if (!data) return 0;
     int maxH = 0;
-    for (int i = 0;
-         i < this->sourceFile->font_data_list[this->fontSize][this->fontType]->glyph_count; i++) {
+    for (int i = 0; i < data->glyph_count; i++) {
         int16_t* g = &this->font_glyphs[i * 8];
         int h = g[4] + g[6];  // height + yoffset
         if (h > maxH) maxH = h;
@@ -128,9 +137,7 @@ void FontManager::LoadFile(uint32_t mod_start, uint32_t mod_end) {
         return;
     }
 
-    auto has_bytes = [&](size_t n) -> bool {
-        return (size_t)(end - ptr) >= n;
-    };
+    auto has_bytes = [&](size_t n) -> bool { return (size_t)(end - ptr) >= n; };
 
     // ---- Main header ----
     if (!has_bytes(8)) {
@@ -219,8 +226,8 @@ void FontManager::LoadFile(uint32_t mod_start, uint32_t mod_end) {
 
         // Validate index bounds — skip entry if it won't fit in font_data_list[10][4]
         if (size >= 10 || style >= 4) {
-            KDBG1("Warning: Skipping font entry %d (size=%d style=%d) — out of array bounds",
-                  i, size, style);
+            KDBG1("Warning: Skipping font entry %d (size=%d style=%d) — out of array bounds", i,
+                  size, style);
             // Advance ptr past this entry's data so we can parse the next one
             if (has_bytes(entry_total)) {
                 ptr += entry_total;
@@ -229,10 +236,10 @@ void FontManager::LoadFile(uint32_t mod_start, uint32_t mod_end) {
         }
 
         // Validate dimensions
-        if (atlas_width == 0 || atlas_height == 0 ||
-            atlas_width > max_atlas_dim || atlas_height > max_atlas_dim) {
-            KDBG1("Warning: Skipping font entry %d — invalid atlas size %dx%d",
-                  i, atlas_width, atlas_height);
+        if (atlas_width == 0 || atlas_height == 0 || atlas_width > max_atlas_dim ||
+            atlas_height > max_atlas_dim) {
+            KDBG1("Warning: Skipping font entry %d — invalid atlas size %dx%d", i, atlas_width,
+                  atlas_height);
             if (has_bytes(entry_total)) {
                 ptr += entry_total;
             }
@@ -319,8 +326,9 @@ void FontManager::LoadFile(uint32_t mod_start, uint32_t mod_end) {
 }
 
 void FontManager::LoadFile(File* file) {
-    if (file->size == 0) {
+    if (!file || file->size == 0) {
         KDBG1("Font error, file not found or empty: %s", file);
+        return;
     }
 
     uint8_t* buffer = new uint8_t[file->size + 1];
@@ -331,6 +339,7 @@ void FontManager::LoadFile(File* file) {
     buffer[file->size] = 0;
     file->Close();
     LoadFile((uint32_t)buffer, (uint32_t)(buffer + file->size));
+    delete[] buffer;
 }
 
 Font* FontManager::getNewFont(FontSize size, FontType type) {
@@ -339,6 +348,7 @@ Font* FontManager::getNewFont(FontSize size, FontType type) {
     if (font_list->IsEmpty()) return nullptr;
 
     FontFile* ff = font_list->GetFront();
+    if (!ff || !ff->font_data_list[size][type]) return nullptr;
     Font* sysFont = new Font(ff, size, type);
     if (!sysFont) {
         HALT("CRITICAL: Failed to allocate Font object!\n");

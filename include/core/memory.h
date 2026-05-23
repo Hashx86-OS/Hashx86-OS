@@ -55,6 +55,7 @@ void kheap_print_blocks();
 void* kmalloc(int size);
 
 void* aligned_kmalloc(size_t size, size_t alignment);
+void aligned_kfree(void* ptr);
 
 /**
  * allocate memory n * size & zeroing out

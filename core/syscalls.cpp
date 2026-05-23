@@ -16,6 +16,69 @@
 #include <core/pmm.h>
 #include <core/syscalls.h>
 
+namespace {
+constexpr uint32_t USER_LOWER_BOUND = 0x10000000;
+constexpr uint32_t USER_UPPER_BOUND = 0xC0000000;
+
+bool IsUserRange(ProcessControlBlock* proc, uint32_t addr, size_t size) {
+    if (!proc || !g_paging || size == 0) return false;
+    if (addr < USER_LOWER_BOUND) return false;
+    uint32_t end = addr + (uint32_t)size - 1;
+    if (end < addr || end >= USER_UPPER_BOUND) return false;
+
+    uint32_t start_page = addr & ~(PAGE_SIZE - 1);
+    uint32_t end_page = end & ~(PAGE_SIZE - 1);
+    for (uint32_t page = start_page; page <= end_page; page += PAGE_SIZE) {
+        if (g_paging->GetPhysicalAddress(proc->page_directory, page) == 0) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool CopyToUser(ProcessControlBlock* proc, void* dst_user, const void* src, size_t size) {
+    if (!dst_user || !src || size == 0) return false;
+    uint32_t user_addr = (uint32_t)dst_user;
+    if (!IsUserRange(proc, user_addr, size)) return false;
+
+    const uint8_t* in = (const uint8_t*)src;
+    size_t remaining = size;
+    while (remaining > 0) {
+        uint32_t phys = g_paging->GetPhysicalAddress(proc->page_directory, user_addr);
+        if (!phys) return false;
+        uint32_t offset = user_addr & (PAGE_SIZE - 1);
+        uint32_t chunk = PAGE_SIZE - offset;
+        if (chunk > remaining) chunk = (uint32_t)remaining;
+        memcpy((void*)phys, in, chunk);
+        in += chunk;
+        user_addr += chunk;
+        remaining -= chunk;
+    }
+    return true;
+}
+
+bool CopyFromUser(ProcessControlBlock* proc, void* dst, const void* src_user, size_t size) {
+    if (!dst || !src_user || size == 0) return false;
+    uint32_t user_addr = (uint32_t)src_user;
+    if (!IsUserRange(proc, user_addr, size)) return false;
+
+    uint8_t* out = (uint8_t*)dst;
+    size_t remaining = size;
+    while (remaining > 0) {
+        uint32_t phys = g_paging->GetPhysicalAddress(proc->page_directory, user_addr);
+        if (!phys) return false;
+        uint32_t offset = user_addr & (PAGE_SIZE - 1);
+        uint32_t chunk = PAGE_SIZE - offset;
+        if (chunk > remaining) chunk = (uint32_t)remaining;
+        memcpy(out, (void*)phys, chunk);
+        out += chunk;
+        user_addr += chunk;
+        remaining -= chunk;
+    }
+    return true;
+}
+}  // namespace
+
 SyscallHandler::SyscallHandler(uint8_t InterruptNumber, InterruptManager* interruptManager)
     : InterruptHandler(InterruptNumber + 0x20, interruptManager) {}
 
@@ -155,8 +218,14 @@ int32_t SyscallHandlers::Handle_sys_read(uint32_t fd, char* buf, uint32_t count)
     if (!file) return -1;
 
     // Validate Buffer is User Space
-    if ((uint32_t)buf < 0x10000000) {
-        KDBG1("sys_read: SECURITY VIOLATION: Buffer in Kernel Space! 0x%x", buf);
+    uint32_t start = (uint32_t)buf;
+    if (start < USER_LOWER_BOUND || count == 0 || start > 0xFFFFFFFFu - count + 1) {
+        KDBG1("sys_read: SECURITY VIOLATION: Buffer invalid buf=0x%x count=%u", buf, count);
+        return -1;
+    }
+    uint32_t end = start + count - 1;
+    if (end >= USER_UPPER_BOUND || !IsUserRange(process, start, count)) {
+        KDBG1("sys_read: SECURITY VIOLATION: Buffer crosses kernel buf=0x%x count=%u", buf, count);
         return -1;
     }
 
@@ -209,11 +278,57 @@ int32_t SyscallHandlers::Handle_sys_execve(const char* path, char* const argv[],
         FAT32* fs = MSDOSPartitionTable::activeInstance->partitions[0];
         File* f = fs->Open((char*)path);
         if (f && f->size > 0) {
-            // Hashx86 native loading actually spins up a new process completely instead of
-            // replacing context To achieve typical execve we could terminate the current process
-            // after loading, but to preserve system stability for now we will just load the elf
-            // program identically to the GUI Taskbar behavior.
-            ProgramArguments* args = new ProgramArguments{"ARG1", "ARG2", "ARG3", "ARG4", "ARG5"};
+            // Hashx86 native loading spins up a new process rather than replacing context.
+            // Copy up to 5 argv strings from user space into kernel-owned memory for now.
+            ProgramArguments* args =
+                new ProgramArguments{nullptr, nullptr, nullptr, nullptr, nullptr};
+            ProcessControlBlock* proc = Scheduler::activeInstance->GetCurrentProcess();
+            if (argv && proc) {
+                const int MAX_ARGS = 5;
+                const int MAX_ARG_LEN = 512;
+                for (int i = 0; i < MAX_ARGS; i++) {
+                    // Read pointer from user argv array
+                    char* userPtr = nullptr;
+                    if (!CopyFromUser(proc, &userPtr, &argv[i], sizeof(void*))) break;
+                    if (!userPtr) break;  // NULL terminator
+
+                    // Measure and copy string safely (cap length)
+                    char* buf = (char*)kmalloc(MAX_ARG_LEN);
+                    if (!buf) break;
+                    // Read at most MAX_ARG_LEN-1 bytes
+                    size_t read = 0;
+                    while (read + 1 < (size_t)MAX_ARG_LEN) {
+                        char c = 0;
+                        if (!CopyFromUser(proc, &c, (const void*)((uint32_t)userPtr + read), 1)) {
+                            kfree(buf);
+                            buf = nullptr;
+                            break;
+                        }
+                        buf[read++] = c;
+                        if (c == '\0') break;
+                    }
+                    if (!buf) break;
+                    buf[MAX_ARG_LEN - 1] = '\0';
+                    switch (i) {
+                        case 0:
+                            args->str1 = buf;
+                            break;
+                        case 1:
+                            args->str2 = buf;
+                            break;
+                        case 2:
+                            args->str3 = buf;
+                            break;
+                        case 3:
+                            args->str4 = buf;
+                            break;
+                        case 4:
+                            args->str5 = buf;
+                            break;
+                    }
+                }
+            }
+
             ProcessControlBlock* child = g_elfLoader->loadELF(f, args);
             f->Close();
             delete f;
@@ -437,6 +552,17 @@ int32_t SyscallHandlers::Handle_sys_debug(char* str) {
 
 int32_t SyscallHandlers::Handle_sys_peek_memory(uint32_t address, uint32_t size,
                                                 int32_t* return_data) {
+#if !KDBG_ENABLE
+    (void)address;
+    (void)size;
+    if (return_data) *return_data = 0;
+    return -1;
+#endif
+    ProcessControlBlock* process = Scheduler::activeInstance->GetCurrentProcess();
+    if (!process || !process->isKernelProcess) {
+        if (return_data) *return_data = 0;
+        return -1;
+    }
     // Only allow reading from identity-mapped kernel range (0 - 256MB)
     uint32_t limit = 256 * 1024 * 1024;
     if (address + size > limit || size == 0 || size > 4) {
@@ -489,10 +615,16 @@ int32_t SyscallHandlers::Handle_sys_Hcall(uint32_t hcall_id, uint32_t arg1, uint
             uint32_t bufferAddr = (uint32_t)g_GraphicsDriver->GetBackBuffer();
             uint32_t width = g_GraphicsDriver->GetWidth();
             uint32_t height = g_GraphicsDriver->GetHeight();
-
-            if (pBuffer) *pBuffer = bufferAddr;
-            if (pWidth) *pWidth = width;
-            if (pHeight) *pHeight = height;
+            if ((pBuffer && !IsUserRange(current_process, (uint32_t)pBuffer, sizeof(uint32_t))) ||
+                (pWidth && !IsUserRange(current_process, (uint32_t)pWidth, sizeof(uint32_t))) ||
+                (pHeight && !IsUserRange(current_process, (uint32_t)pHeight, sizeof(uint32_t)))) {
+                return -1;
+            }
+            if ((pBuffer && !CopyToUser(current_process, pBuffer, &bufferAddr, sizeof(uint32_t))) ||
+                (pWidth && !CopyToUser(current_process, pWidth, &width, sizeof(uint32_t))) ||
+                (pHeight && !CopyToUser(current_process, pHeight, &height, sizeof(uint32_t)))) {
+                return -1;
+            }
 
             // GRANT ACCESS: Map the kernel backbuffer as USER accessible
             uint32_t size = width * height * 4;
@@ -541,21 +673,26 @@ int32_t SyscallHandlers::Handle_sys_Hcall(uint32_t hcall_id, uint32_t arg1, uint
         } __attribute__((packed));
 
         InputState* userState = (InputState*)arg1;
-        if (userState) {
+        if (userState && IsUserRange(current_process, (uint32_t)userState, sizeof(InputState))) {
+            InputState tmp;
+            memset(&tmp, 0, sizeof(InputState));
             // Copy keyboard state
             if (KeyboardDriver::activeInstance) {
                 uint8_t* keys = KeyboardDriver::activeInstance->GetKeyStates();
                 for (int i = 0; i < 128; i++) {
-                    userState->keyStates[i] = keys[i];
+                    tmp.keyStates[i] = keys[i];
                 }
             }
             // Copy and reset mouse state
             if (MouseDriver::activeInstance) {
                 int32_t dx, dy;
                 MouseDriver::activeInstance->GetMouseDelta(dx, dy);
-                userState->mouseDX = dx;
-                userState->mouseDY = dy;
-                userState->mouseButtons = MouseDriver::activeInstance->GetButtons();
+                tmp.mouseDX = dx;
+                tmp.mouseDY = dy;
+                tmp.mouseButtons = MouseDriver::activeInstance->GetButtons();
+            }
+            if (!CopyToUser(current_process, userState, &tmp, sizeof(InputState))) {
+                return -1;
             }
             return 1;
         } else {

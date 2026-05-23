@@ -10,9 +10,7 @@ fi
 
 ERROR=0
 
-files=$(find . -type f \( -name "*.cpp" -o -name "*.c" -o -name "*.h" -o -name "*.asm" \))
-
-for f in $files; do
+while IFS= read -r -d '' f; do
     # Skip build/tool directories
     if [[ $f == *"./build"* ]]; then continue; fi
     if [[ $f == *"./tools"* ]]; then continue; fi
@@ -26,7 +24,7 @@ for f in $files; do
             ERROR=1
         fi
     fi
-done
+done < <(find . -type f \( -name "*.cpp" -o -name "*.c" -o -name "*.h" -o -name "*.asm" \) -print0)
 
 if [ $FIX_MODE -eq 0 ]; then
     if [ $ERROR -eq 1 ]; then

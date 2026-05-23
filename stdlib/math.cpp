@@ -39,6 +39,20 @@ double abs(double x) {
 }
 
 double pow(double base, int exp) {
+    if (exp == 0) return 1.0;
+    if (exp < 0) {
+        if (base == 0.0) return 0.0;
+        base = 1.0 / base;
+
+        // Avoid overflow when negating INT_MIN in freestanding builds.
+        if (exp == (-2147483647 - 1)) {
+            // -(INT_MIN + 1) is representable.
+            exp = 2147483647;
+            base *= (1.0 / base);  // Compensate for the extra +1 in exponent magnitude.
+        } else {
+            exp = -exp;
+        }
+    }
     double res = 1.0;
     for (int i = 0; i < exp; i++) res *= base;
     return res;

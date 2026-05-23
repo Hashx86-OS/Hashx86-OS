@@ -275,6 +275,10 @@ void init_memory(MultibootInfo* mbinfo) {
     pmm_init(heap_start_addr, g_kmap.available.end_addr);
     // Calculate how big the bitmap
     uint32_t bitmap_size = (g_kmap.available.end_addr / PMM_BLOCK_SIZE) / 8;
+    // Align bitmap size to page boundary so the free region starts on a clean page
+    if (bitmap_size & 0xFFF) {
+        bitmap_size = (bitmap_size & 0xFFFFF000) + 0x1000;
+    }
     // Mark FREE Region, but SKIP the bitmap!
     pmm_init_region(heap_start_addr + bitmap_size, g_kmap.available.end_addr);
 

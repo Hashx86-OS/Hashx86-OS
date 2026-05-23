@@ -61,35 +61,49 @@ void CrashReporter::ShowUserCrashDialog(uint32_t pid, uint32_t tid, uint8_t exce
     char details[384];
     char num[16];
 
-    strcpy(line1, "PID: ");
+    auto append_safe = [](char* dest, size_t destSize, const char* src) {
+        if (!dest || !src || destSize == 0) return;
+        size_t cur = strlen(dest);
+        size_t i = 0;
+        while (cur + i + 1 < destSize && src[i]) {
+            dest[cur + i] = src[i];
+            i++;
+        }
+        dest[cur + i] = '\0';
+    };
+
+    line1[0] = '\0';
+    append_safe(line1, sizeof(line1), "PID: ");
     itoa(num, 10, (int)pid);
-    strcat(line1, num);
-    strcat(line1, "  TID: ");
+    append_safe(line1, sizeof(line1), num);
+    append_safe(line1, sizeof(line1), "  TID: ");
     itoa(num, 10, (int)tid);
-    strcat(line1, num);
+    append_safe(line1, sizeof(line1), num);
 
-    strcpy(line2, "Exception: 0x");
+    line2[0] = '\0';
+    append_safe(line2, sizeof(line2), "Exception: 0x");
     itoa(num, 16, (int)exceptionNumber);
-    strcat(line2, num);
-    strcat(line2, " (");
-    strcat(line2, GetExceptionName(exceptionNumber));
-    strcat(line2, ")  ERR: 0x");
+    append_safe(line2, sizeof(line2), num);
+    append_safe(line2, sizeof(line2), " (");
+    append_safe(line2, sizeof(line2), GetExceptionName(exceptionNumber));
+    append_safe(line2, sizeof(line2), ")  ERR: 0x");
     itoa(num, 16, (int)errorCode);
-    strcat(line2, num);
+    append_safe(line2, sizeof(line2), num);
 
-    strcpy(line3, "EIP: 0x");
+    line3[0] = '\0';
+    append_safe(line3, sizeof(line3), "EIP: 0x");
     itoa(num, 16, (int)eip);
-    strcat(line3, num);
-    strcat(line3, "  CR2: 0x");
+    append_safe(line3, sizeof(line3), num);
+    append_safe(line3, sizeof(line3), "  CR2: 0x");
     itoa(num, 16, (int)cr2);
-    strcat(line3, num);
+    append_safe(line3, sizeof(line3), num);
 
     details[0] = '\0';
-    strcat(details, line1);
-    strcat(details, "\n");
-    strcat(details, line2);
-    strcat(details, "\n");
-    strcat(details, line3);
+    append_safe(details, sizeof(details), line1);
+    append_safe(details, sizeof(details), "\n");
+    append_safe(details, sizeof(details), line2);
+    append_safe(details, sizeof(details), "\n");
+    append_safe(details, sizeof(details), line3);
 
     g_crashDialog->SetContent("The application crashed and was closed.",
                               "Review the details below for debugging.", details);

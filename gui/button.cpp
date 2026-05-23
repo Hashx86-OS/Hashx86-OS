@@ -145,3 +145,7 @@ void Button::OnMouseMove(int32_t x, int32_t y, int32_t newx, int32_t newy) {
         MarkDirty();
     }
 }
+
+bool Button::IsPressed() const {
+    return isPressed;
+}

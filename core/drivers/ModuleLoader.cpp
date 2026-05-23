@@ -224,10 +224,17 @@ void* ModuleLoader::LoadDriver(File* file) {
 
                     if (sym_val == 0) {
                         KDBG1("Module Link Error: Undefined symbol '%s'", name);
+                        relocation_failed = true;
+                        break;
                     }
                 } else {
                     // Internal Symbol (defined in another section of this module)
                     uint32_t sec_idx = symtab[sym_idx].shndx;
+                    if (sec_idx >= header.sh_entry_count) {
+                        KDBG1("Module Link Error: Symbol section index out of range");
+                        relocation_failed = true;
+                        break;
+                    }
                     // Address = Base of Section + Offset inside section
                     sym_val = sections[sec_idx].addr + symtab[sym_idx].value;
                 }

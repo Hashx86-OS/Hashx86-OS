@@ -163,6 +163,14 @@ bool Widget::IsComposite() const {
     return false;
 }
 
+bool Widget::IsMouseCaptured() const {
+    return false;
+}
+
+bool Widget::IsPressed() const {
+    return false;
+}
+
 // Composite Widget
 
 CompositeWidget::CompositeWidget(CompositeWidget* parent, int32_t x, int32_t y, int32_t w,
@@ -208,7 +216,9 @@ void CompositeWidget::GetFocus(Widget* widget) {
 }
 
 bool CompositeWidget::RemoveChild(Widget* child) {
-    if (focusedChild == child) {
+    if (!child) return false;
+
+    if (focusedChild && focusedChild == child) {
         focusedChild->SetFocus(false);
         focusedChild = nullptr;
     }
@@ -252,9 +262,17 @@ void CompositeWidget::OnMouseUp(int32_t x, int32_t y, uint8_t button) {
     int32_t localX = x - this->x;
     int32_t localY = y - this->y;
 
+    Widget* hit = nullptr;
+    childrenList.ReverseForEach([&](Widget* child) {
+        if (!hit && child->ContainsCoordinate(localX, localY)) {
+            child->OnMouseUp(localX, localY, button);
+            hit = child;
+        }
+    });
+
     childrenList.ForEach([&](Widget* child) {
-        // Pass event even if mouse moved out
-        if (child->ContainsCoordinate(localX, localY)) {
+        if (child == hit) return;
+        if (child->IsMouseCaptured() || child->IsPressed()) {
             child->OnMouseUp(localX, localY, button);
         }
     });

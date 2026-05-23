@@ -86,7 +86,7 @@ DriverManager::DriverManager() {
 
     // Export Paging
     EXPORT_SYMBOL_ASM("g_paging");
-    EXPORT_SYMBOL_ASM("_ZN6Paging7MapPageEPjjjj");           // Paging::MapPage
+    EXPORT_SYMBOL_ASM("_ZN6Paging7MapPageEPjjjj");            // Paging::MapPage
     EXPORT_SYMBOL_ASM("_ZN6Paging18GetPhysicalAddressEPjj");  // Paging::GetPhysicalAddress
 
     // Export GraphicsDriver Methods
@@ -105,6 +105,10 @@ DriverManager::DriverManager() {
  * @param drv Pointer to the driver to be added.
  */
 void DriverManager::AddDriver(Driver* drv) {
+    if (numDrivers >= 255) {
+        KDBG1("AddDriver failed: driver table full");
+        return;
+    }
     drivers[numDrivers] = drv;  // Add the driver to the array.
     numDrivers++;               // Increment the driver count.
 }

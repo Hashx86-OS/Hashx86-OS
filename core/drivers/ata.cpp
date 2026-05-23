@@ -196,5 +196,16 @@ void AdvancedTechnologyAttachment::Flush() {
     commandPort.Write(0xE7);
     uint8_t status = commandPort.Read();
     if (status == 0x00) return;
-    while (((status & 0x80) == 0x80) && ((status & 0x01) != 0x01)) status = commandPort.Read();
+    uint32_t flushWait = 0;
+    while ((status & 0x80) == 0x80) {
+        if ((status & 0x01) == 0x01) {
+            KDBG1("FLUSH ERROR: ERR set while waiting for BSY");
+            return;
+        }
+        if (flushWait++ > 1000000) {
+            KDBG1("FLUSH ERROR: BSY timeout");
+            return;
+        }
+        status = commandPort.Read();
+    }
 }

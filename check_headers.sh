@@ -7,9 +7,7 @@ echo "--- Checking File Headers ---"
 ERROR=0
 
 # Find all .cpp and .c
-files=$(find . -name "*.cpp" -o -name "*.c")
-
-for f in $files; do
+while IFS= read -r -d '' f; do
     # Skip "build" or "tools" folders
     if [[ $f == *"./build"* ]]; then continue; fi
     if [[ $f == *"./tools"* ]]; then continue; fi
@@ -24,7 +22,7 @@ for f in $files; do
             ERROR=1
         fi
     done
-done
+done < <(find . -type f \( -name "*.cpp" -o -name "*.c" \) -print0)
 
 if [ $ERROR -eq 1 ]; then
     echo "FAILED: Some files are missing header information."

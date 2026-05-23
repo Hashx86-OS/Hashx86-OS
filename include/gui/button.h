@@ -21,6 +21,7 @@ public:
     void OnMouseDown(int32_t x, int32_t y, uint8_t button) override;
     void OnMouseUp(int32_t x, int32_t y, uint8_t button) override;
     void OnMouseMove(int32_t oldx, int32_t oldy, int32_t newx, int32_t newy) override;
+    bool IsPressed() const override;
 
 protected:
     char* label;

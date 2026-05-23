@@ -129,7 +129,12 @@ bool TerminalApp::Init() {
 }
 
 void TerminalApp::Run() {
-    return;
+    timespec ts;
+    ts.tv_sec = 0;
+    ts.tv_nsec = 50 * 1000 * 1000;
+    while (true) {
+        syscall_nanosleep(&ts, nullptr);
+    }
 }
 
 int TerminalApp::VisibleCols() const {

@@ -27,7 +27,10 @@ ACRButton::ACRButton(Widget* parent, int32_t x, int32_t y, const char* label)
     this->h = diameter;
 
     // Allocate proper cache immediately
-    if (cache) delete[] cache;
+    if (cache) {
+        delete[] cache;
+        cache = nullptr;
+    }
     if (w > 0 && h > 0) {
         cache = new uint32_t[w * h]();
         if (!cache) {
@@ -39,6 +42,7 @@ ACRButton::ACRButton(Widget* parent, int32_t x, int32_t y, const char* label)
 ACRButton::~ACRButton() {}
 
 void ACRButton::RedrawToCache() {
+    if (!cache) return;
     // Clear Background (Transparent)
     memset(cache, 0, sizeof(uint32_t) * w * h);
 

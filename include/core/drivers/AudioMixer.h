@@ -15,6 +15,7 @@ struct AudioStream {
     uint32_t position;
     bool active;
     bool looping;
+    bool ownsData;
 };
 
 class AudioMixer {

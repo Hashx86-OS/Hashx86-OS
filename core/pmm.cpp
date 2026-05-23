@@ -104,7 +104,7 @@ int pmm_mmap_first_free_by_size(uint32_t size) {
             for (uint32_t j = 0; j < 32; j++) {
                 int bit = i * 32 + j;
 
-                if (bit >= g_pmm_info.max_blocks * 32) {
+                if (bit >= (int)g_pmm_info.max_blocks) {
                     KDBG2("contiguous search aborted reason=out_of_range size=%u", size);
                     return -1;
                 }
@@ -200,7 +200,7 @@ void pmm_deinit_region(PMM_PHYSICAL_ADDRESS base, uint32_t region_size) {
 }
 
 void* pmm_alloc_block() {
-    if ((g_pmm_info.max_blocks - g_pmm_info.used_blocks) <= 0) {
+    if (g_pmm_info.used_blocks >= g_pmm_info.max_blocks) {
         KDBG2("single-frame allocation failed reason=no_free_blocks");
         return NULL;
     }

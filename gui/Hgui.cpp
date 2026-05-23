@@ -7,8 +7,8 @@
  */
 
 #define KDBG_COMPONENT "GUI"
-#include <gui/Hgui.h>
 #include <core/globals.h>
+#include <gui/Hgui.h>
 
 namespace {
 constexpr uint32_t USER_LOWER_BOUND = 0x10000000;
@@ -97,8 +97,8 @@ HguiHandler::~HguiHandler() {}
 uint32_t HguiHandler::HandleInterrupt(uint32_t esp) {
     CPUState* cpu = (CPUState*)esp;
     int32_t ret = -1;
-    ProcessControlBlock* proc = Scheduler::activeInstance ?
-        Scheduler::activeInstance->GetCurrentProcess() : nullptr;
+    ProcessControlBlock* proc =
+        Scheduler::activeInstance ? Scheduler::activeInstance->GetCurrentProcess() : nullptr;
     WidgetData data;
     const WidgetData* data_ptr = nullptr;
 

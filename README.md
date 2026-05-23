@@ -99,9 +99,13 @@ Hashx86 is currently under active development. Upcoming improvements include:
 
 ### 1. Clone the Repository
 ```bash
-git clone https://github.com/sdmdg/Hashx86.git
-cd hashx86
+git clone https://github.com/Hashx86-OS/Hashx86-OS
+cd Hashx86-OS
 ```
+
+> Legacy repository (discontinued):
+> The original Hashx86 repository is archived and no longer maintained.
+> https://github.com/sdmdg/Hashx86
 
 ### 2. Setup the Hard Disk
 You need a `HDD.vdi` file to store drivers and files. Choose one of the methods below:

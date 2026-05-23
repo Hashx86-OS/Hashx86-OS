@@ -57,9 +57,15 @@ private:
         PeripheralComponentInterconnectDeviceDescriptor* dev;
 
         dev = pci.FindHardwareDevice(0x1234, 0x1111);
-        if (dev->vendor_id == 0) dev = pci.FindHardwareDevice(0x80EE, 0xBEEF);
-        if (dev->vendor_id == 0) dev = pci.FindHardwareDevice(0x15AD, 0x0405);
-        if (dev->vendor_id == 0) return 0;
+        if (!dev || dev->vendor_id == 0) {
+            dev = pci.FindHardwareDevice(0x80EE, 0xBEEF);
+        }
+        if (!dev || dev->vendor_id == 0) {
+            dev = pci.FindHardwareDevice(0x15AD, 0x0405);
+        }
+        if (!dev || dev->vendor_id == 0) {
+            return 0;
+        }
 
         // Enable Bus Master
         uint32_t pci_cmd = pci.Read(dev->bus, dev->device, dev->function, 0x04);
@@ -72,11 +78,11 @@ private:
 
             if (bar.type == MemoryMapping && bar.address != 0) {
                 // PCI Spec: Lower 4 bits are flags (prefetchable, type, etc.)
-                return (uint32_t)((uint32_t)bar.address & (uint32_t)0xFFFFFFF0);
+                uint32_t addr = (uint32_t)((uint32_t)bar.address & (uint32_t)0xFFFFFFF0);
+                return addr;
             }
         }
-
-        return 0xE0000000;  // Fallback
+        return 0;
     }
 
 public:
@@ -122,8 +128,8 @@ public:
         }
 
         uint32_t start = this->physFramebufferAddr & ~(PAGE_SIZE - 1);
-        uint32_t end = (this->physFramebufferAddr + (uint32_t)fb_size + PAGE_SIZE - 1) &
-                       ~(PAGE_SIZE - 1);
+        uint32_t end =
+            (this->physFramebufferAddr + (uint32_t)fb_size + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
 
         for (uint32_t addr = start; addr < end; addr += PAGE_SIZE) {
             if (g_paging->GetPhysicalAddress(g_paging->KernelPageDirectory, addr) == 0) {

@@ -37,6 +37,13 @@ ProcessControlBlock* ELFLoader::loadELF(File* elf, void* args) {
     ProcessControlBlock* pELF =
         scheduler->CreateProcess(false, (void (*)(void*))header.entry, args);
 
+    auto cleanup_process = [&]() {
+        if (pELF) {
+            scheduler->KillProcess(pELF->pid);
+            pELF = nullptr;
+        }
+    };
+
     // Read ELF Headers
     uint32_t ph_size = sizeof(elf_program_header) * header.ph_entry_count;
     elf_program_header* ph_table = new elf_program_header[header.ph_entry_count];
@@ -49,6 +56,7 @@ ProcessControlBlock* ELFLoader::loadELF(File* elf, void* args) {
         KDBG1("Error: Could not read Program Headers");
         delete[] ph_table;
         // Ideally kill the process here too
+        cleanup_process();
         return nullptr;
     }
 
@@ -65,12 +73,14 @@ ProcessControlBlock* ELFLoader::loadELF(File* elf, void* args) {
         if (ph->file_size > ph->mem_size) {
             KDBG1("ELF Load Error: file_size > mem_size");
             delete[] ph_table;
+            cleanup_process();
             return nullptr;
         }
         uint64_t file_end = (uint64_t)ph->offset + (uint64_t)ph->file_size;
         if (file_end > (uint64_t)elf->size) {
             KDBG1("ELF Load Error: Segment exceeds file size");
             delete[] ph_table;
+            cleanup_process();
             return nullptr;
         }
 
@@ -88,12 +98,14 @@ ProcessControlBlock* ELFLoader::loadELF(File* elf, void* args) {
             if (!phys_frame) {
                 KDBG1("ELF Load: Out of low memory for segment pages!");
                 delete[] ph_table;
+                cleanup_process();
                 return nullptr;
             }
             if (!this->pager->MapPage(pELF->page_directory, addr, phys_frame,
                                       PAGE_PRESENT | PAGE_RW | PAGE_USER)) {
                 KDBG1("ELF Load: Failed to map segment page");
                 delete[] ph_table;
+                cleanup_process();
                 return nullptr;
             }
             KDBG3("Mapped Page: Virt=0x%x Phys=0x%x", addr, phys_frame);
@@ -111,6 +123,7 @@ ProcessControlBlock* ELFLoader::loadELF(File* elf, void* args) {
             if (!phys_ptr) {
                 KDBG1("ELF Load Error: Failed to resolve physical address");
                 delete[] ph_table;
+                cleanup_process();
                 return nullptr;
             }
 
@@ -121,6 +134,7 @@ ProcessControlBlock* ELFLoader::loadELF(File* elf, void* args) {
             if (elf->Read((uint8_t*)phys_ptr, chunk) != (int)chunk) {
                 KDBG1("ELF Load Error: Failed to read segment data");
                 delete[] ph_table;
+                cleanup_process();
                 return nullptr;
             }
 
@@ -135,6 +149,7 @@ ProcessControlBlock* ELFLoader::loadELF(File* elf, void* args) {
             if (!phys_ptr) {
                 KDBG1("ELF Load Error: Failed to resolve physical address for BSS");
                 delete[] ph_table;
+                cleanup_process();
                 return nullptr;
             }
 

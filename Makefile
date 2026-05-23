@@ -69,7 +69,7 @@ RUNQ_DELAY ?= 1
 core/%.o: core/%.cpp
 	g++ $(GPP_PARAMS) -o $@ -c $<
 
-core/%.o: %.c
+core/%.o: core/%.c
 	g++ $(GPP_PARAMS) -o $@ -c $<
 
 # Compiling C++ files inside the gui directory
@@ -181,10 +181,8 @@ runvb: kernel.iso
 	VirtualBox --startvm 'My Operating System' &
 
 iso: kernel.bin
-	mkdir iso
-	mkdir iso/boot
-	mkdir iso/boot/grub
-	mkdir iso/boot/fonts
+	mkdir -p iso/boot/grub
+	mkdir -p iso/boot/fonts
 	cp kernel.bin iso/boot/kernel.bin
 #	cp bin/fonts/segoeui.bin iso/boot/fonts/segoeui.bin
 	echo 'set timeout=0'                      				>> iso/boot/grub/grub.cfg

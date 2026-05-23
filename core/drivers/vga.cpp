@@ -158,8 +158,9 @@ uint8_t* VideoGraphicsArray::GetFrameBufferSegment() {
 }
 
 void VideoGraphicsArray::Flush() {
-    // Wait for the start of vertical retrace
-    while (!(attributeControllerResetPort.Read() & 0x08)) {
+    // Wait for the start of vertical retrace (with timeout)
+    int timeout = 1000000;
+    while (!(attributeControllerResetPort.Read() & 0x08) && --timeout > 0) {
         // Wait until bit 3 is set (start of VSync)
     }
 
@@ -169,8 +170,9 @@ void VideoGraphicsArray::Flush() {
             *(frameBuffer + VGA_SCREEN_WIDTH * y + x) = *(backBuffer + VGA_SCREEN_WIDTH * y + x);
         }
     }
-    // Wait for the end of vertical retrace
-    while (attributeControllerResetPort.Read() & 0x08) {
+    // Wait for the end of vertical retrace (with timeout)
+    timeout = 1000000;
+    while ((attributeControllerResetPort.Read() & 0x08) && --timeout > 0) {
         // Wait until bit 3 is cleared (end of VSync)
     }
 }

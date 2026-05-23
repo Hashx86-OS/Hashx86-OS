@@ -220,7 +220,11 @@ public:
 
     uint32_t WriteData(uint8_t* buffer, uint32_t size) override {
         if (size > AC97_HALF_SIZE) size = AC97_HALF_SIZE;
-        if (buffersOccupied >= 2) return 0;
+        asm volatile("cli");
+        if (buffersOccupied >= 2) {
+            asm volatile("sti");
+            return 0;
+        }
 
         // 1. Determine which Physical RAM chunk to use (Ping-Pong)
         // If sw_lvi is Even (0, 2, 4...) -> use Buffer 0
@@ -249,6 +253,7 @@ public:
         }
 
         buffersOccupied++;
+        asm volatile("sti");
         return size;
     }
 

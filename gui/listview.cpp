@@ -271,10 +271,17 @@ void ListView::OnMouseUp(int32_t, int32_t, uint8_t) {}
 void ListView::OnMouseMove(int32_t, int32_t oldy, int32_t mx, int32_t my) {
     if (!isFocused) return;
     int localY = my - this->y;
+    int localX = mx - this->x;
     if (localY > LISTVIEW_HEADER_HEIGHT) {
-        int hovered = scrollOffset + (localY - LISTVIEW_HEADER_HEIGHT - 1) / LISTVIEW_ITEM_HEIGHT;
-        if (hovered >= 0 && hovered < itemCount && hovered != hoveredIndex) {
-            hoveredIndex = hovered;
+        if (localX >= 0 && localX < w - LISTVIEW_SCROLLBAR_WIDTH) {
+            int hovered =
+                scrollOffset + (localY - LISTVIEW_HEADER_HEIGHT - 1) / LISTVIEW_ITEM_HEIGHT;
+            if (hovered >= 0 && hovered < itemCount && hovered != hoveredIndex) {
+                hoveredIndex = hovered;
+                MarkDirty();
+            }
+        } else if (hoveredIndex >= 0) {
+            hoveredIndex = -1;
             MarkDirty();
         }
     } else if (hoveredIndex >= 0) {

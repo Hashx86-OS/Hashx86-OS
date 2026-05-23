@@ -108,9 +108,10 @@ const char* KernelSymbolTable::Lookup(uint32_t eip, uint32_t* offset) {
     }
 
     if (bestName) {
-        *offset = eip - bestAddr;
+        uint32_t localOffset = eip - bestAddr;
         // Sanity check: if offset is huge (>100KB), likely a mismatch
-        if (*offset > 0x100000) return nullptr;
+        if (localOffset > 0x100000) return nullptr;
+        if (offset) *offset = localOffset;
         return bestName;
     }
     return nullptr;

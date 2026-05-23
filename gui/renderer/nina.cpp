@@ -361,6 +361,7 @@ void NINA::DrawVerticalLine(uint32_t* buffer, int32_t bufferWidth, int32_t buffe
 
 void NINA::DrawCharacter(uint32_t* buffer, int32_t bufferWidth, int32_t bufferHeight, int32_t x,
                          int32_t y, char c, Font* font, uint32_t colorIndex) {
+    if (!buffer || !font || !font->font_glyphs || !font->font_atlas) return;
     int idx = (uint8_t)c - 32;
     int16_t* g = &font->font_glyphs[idx * 8];  // each glyph = 8 values
 
@@ -373,8 +374,15 @@ void NINA::DrawCharacter(uint32_t* buffer, int32_t bufferWidth, int32_t bufferHe
     int yoffset = g[6];
     int xadvance = g[7];
 
+    if (charWidth <= 0 || charHeight <= 0) return;
+    if (charWidth > font->atlas_width || charHeight > font->atlas_height) return;
+    const uint32_t maxGlyphPixels = 262144;  // 1024x256
+    uint32_t glyphPixels = (uint32_t)(charWidth * charHeight);
+    if (glyphPixels == 0 || glyphPixels > maxGlyphPixels) return;
+
     // Allocate cropped bitmap
-    uint32_t croppedBitmap[charWidth * charHeight];
+    uint32_t* croppedBitmap = new uint32_t[glyphPixels];
+    if (!croppedBitmap) return;
 
     for (int row = 0; row < charHeight; ++row) {
         for (int col = 0; col < charWidth; ++col) {
@@ -398,6 +406,7 @@ void NINA::DrawCharacter(uint32_t* buffer, int32_t bufferWidth, int32_t bufferHe
     // Apply offsets from glyph table
     DrawBitmap(buffer, bufferWidth, bufferHeight, x + xoffset, y + yoffset, croppedBitmap,
                charWidth, charHeight);
+    delete[] croppedBitmap;
 }
 
 void NINA::DrawString(uint32_t* buffer, int32_t bufferWidth, int32_t bufferHeight, int32_t x,

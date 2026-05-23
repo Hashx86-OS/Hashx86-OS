@@ -88,13 +88,14 @@ void InfoDialog::ShowDialog() {
 
 void InfoDialog::HideDialog() {
     setVisible(false);
-    this->parent->RemoveChild(this);
+    if (this->parent) this->parent->RemoveChild(this);
     MarkDirty();
 }
 
 void InfoDialog::Draw(GraphicsDriver* gc) {
-    Window::Draw(gc);
     if (!isVisible) return;
+
+    Window::Draw(gc);
 
     int X = 0;
     int Y = 0;

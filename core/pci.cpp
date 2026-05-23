@@ -141,22 +141,25 @@ extern "C" {
 uint32_t pci_find_bar0(uint16_t vendor, uint16_t device) {
     PeripheralComponentInterconnectController pci;
     PeripheralComponentInterconnectDeviceDescriptor* dev = pci.FindHardwareDevice(vendor, device);
-    if (dev->vendor_id == 0) {
+    if (!dev || dev->vendor_id == 0) {
         KDBG1("Failed to find device Vendor=0x%x Device=0x%x for BAR0", vendor, device);
+        if (dev) delete dev;
         return 0;
     }
 
     // Return BAR0 Address directly
     BaseAddressRegister bar = pci.GetBaseAddressRegister(dev->bus, dev->device, dev->function, 0);
     KDBG2("Found BAR0 for Vendor=0x%x Device=0x%x at 0x%x", vendor, device, (uint32_t)bar.address);
-    return (uint32_t)bar.address;
+    uint32_t addr = (uint32_t)bar.address;
+    delete dev;
+    return addr;
 }
 
 // C type Function to enable Bus Master
 void pci_enable_bus_master(uint16_t vendor, uint16_t device) {
     PeripheralComponentInterconnectController pci;
     PeripheralComponentInterconnectDeviceDescriptor* dev = pci.FindHardwareDevice(vendor, device);
-    if (dev->vendor_id != 0) {
+    if (dev && dev->vendor_id != 0) {
         uint32_t cmd = pci.Read(dev->bus, dev->device, dev->function, 0x04);
         if ((cmd & 0x07) != 0x07) {
             uint32_t new_command = (cmd & 0xFFFF) | 0x0007;
@@ -167,5 +170,6 @@ void pci_enable_bus_master(uint16_t vendor, uint16_t device) {
     } else {
         KDBG1("Failed to find device Vendor=0x%x Device=0x%x to enable Bus Master", vendor, device);
     }
+    if (dev) delete dev;
 }
 }
