@@ -67,11 +67,38 @@ void* ModuleLoader::LoadDriver(File* file) {
         return 0;
     }
 
+    // Validate section header metadata before using it
+    if (header.sh_entry_count == 0 || header.sh_size == 0) {
+        KDBG1("Module Error: Empty section header table");
+        return 0;
+    }
+    if (header.sh_entry_count > 65536 || header.sh_size > sizeof(elf_section_header) * 2) {
+        KDBG1("Module Error: Section header counts look unreasonable");
+        return 0;
+    }
+    if (header.sh_str_index >= header.sh_entry_count) {
+        KDBG1("Module Error: String table index out of range");
+        return 0;
+    }
+    uint64_t sh_size64 = (uint64_t)header.sh_entry_count * (uint64_t)header.sh_size;
+    if (sh_size64 > 0xFFFFFFFFu) {
+        KDBG1("Module Error: Section header table too large");
+        return 0;
+    }
+    uint32_t sh_size = (uint32_t)sh_size64;
+
     // Read Section Headers
-    uint32_t sh_size = header.sh_entry_count * header.sh_size;
     struct elf_section_header* sections = (struct elf_section_header*)kmalloc(sh_size);
+    if (!sections) {
+        KDBG1("Module Error: Failed to allocate section headers");
+        return 0;
+    }
     file->Seek(header.sh_offset);
-    file->Read((uint8_t*)sections, sh_size);
+    if (file->Read((uint8_t*)sections, sh_size) != (int)sh_size) {
+        KDBG1("Module Error: Failed to read section headers");
+        kfree(sections);
+        return 0;
+    }
 
     // Read Section String Table (to find section names if needed)
     struct elf_section_header* strtab_hdr = &sections[header.sh_str_index];
@@ -254,6 +281,12 @@ void* ModuleLoader::LoadDriver(File* file) {
     }
 
     if (relocation_failed) {
+        // Free any SHF_ALLOC section memory before releasing section table
+        for (int i = 0; i < header.sh_entry_count; i++) {
+            if (sections[i].addr != 0 && (sections[i].flags & 0x2)) {
+                kfree((void*)sections[i].addr);
+            }
+        }
         kfree(sections);
         kfree(strtab);
         kfree(symtab);
@@ -268,11 +301,13 @@ void* ModuleLoader::LoadDriver(File* file) {
             const char* name = strtab_sym + symtab[i].name;
 
             // Check for the magic function name
-            // Simple manual strcmp
+            // Simple manual strcmp that rejects prefixes
             const char* target = "CreateDriverInstance";
             bool match = true;
             for (int c = 0; target[c]; c++)
                 if (target[c] != name[c]) match = false;
+            // Ensure the names are the same length (null terminator check)
+            if (match && name[20] != 0) match = false;
 
             if (match) {
                 uint32_t sec_idx = symtab[i].shndx;
@@ -304,11 +339,23 @@ bool ModuleLoader::Probe(File* file, DriverManifest* info) {
 
     if (header.magic != ELF_MAGIC) return false;
 
+    // Validate section header metadata before using it
+    if (header.sh_entry_count == 0 || header.sh_size == 0) return false;
+    if (header.sh_entry_count > 65536 || header.sh_size > sizeof(elf_section_header) * 2)
+        return false;
+    if (header.sh_str_index >= header.sh_entry_count) return false;
+    uint64_t sh_size64 = (uint64_t)header.sh_entry_count * (uint64_t)header.sh_size;
+    if (sh_size64 > 0xFFFFFFFFu) return false;
+    uint32_t sh_size = (uint32_t)sh_size64;
+
     // Read Section Headers
-    uint32_t sh_size = header.sh_entry_count * header.sh_size;
     struct elf_section_header* sections = (struct elf_section_header*)kmalloc(sh_size);
+    if (!sections) return false;
     file->Seek(header.sh_offset);
-    file->Read((uint8_t*)sections, sh_size);
+    if (file->Read((uint8_t*)sections, sh_size) != (int)sh_size) {
+        kfree(sections);
+        return false;
+    }
 
     // Read Section String Table (to find section names)
     // Need this to search for ".driver_info" by name

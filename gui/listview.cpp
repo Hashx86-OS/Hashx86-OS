@@ -272,7 +272,7 @@ void ListView::OnMouseMove(int32_t, int32_t oldy, int32_t mx, int32_t my) {
     if (!isFocused) return;
     int localY = my - this->y;
     int localX = mx - this->x;
-    if (localY > LISTVIEW_HEADER_HEIGHT) {
+    if (localY > LISTVIEW_HEADER_HEIGHT && localY < h) {
         if (localX >= 0 && localX < w - LISTVIEW_SCROLLBAR_WIDTH) {
             int hovered =
                 scrollOffset + (localY - LISTVIEW_HEADER_HEIGHT - 1) / LISTVIEW_ITEM_HEIGHT;

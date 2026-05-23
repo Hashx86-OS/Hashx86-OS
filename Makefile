@@ -70,7 +70,7 @@ core/%.o: core/%.cpp
 	g++ $(GPP_PARAMS) -o $@ -c $<
 
 core/%.o: core/%.c
-	g++ $(GPP_PARAMS) -o $@ -c $<
+	gcc $(GPP_PARAMS) -x c -o $@ -c $<
 
 # Compiling C++ files inside the gui directory
 gui/%.o: gui/%.cpp

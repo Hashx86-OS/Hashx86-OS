@@ -237,11 +237,16 @@ int32_t SyscallHandlers::Handle_sys_open(const char* path, int32_t flags) {
     (void)flags;
     if (!path) return -1;
 
+    ProcessControlBlock* process = Scheduler::activeInstance->GetCurrentProcess();
+    char kpath[256];
+    if (!CopyFromUser(process, kpath, path, sizeof(kpath))) return -1;
+    kpath[255] = '\0';
+
     extern MSDOSPartitionTable* g_PartitionTable;
     if (MSDOSPartitionTable::activeInstance && MSDOSPartitionTable::activeInstance->partitions[0]) {
         FAT32* fs = MSDOSPartitionTable::activeInstance->partitions[0];
 
-        File* f = fs->Open((char*)path);
+        File* f = fs->Open(kpath);
         if (!f) return -1;
 
         ProcessControlBlock* process = Scheduler::activeInstance->GetCurrentProcess();
@@ -273,10 +278,15 @@ int32_t SyscallHandlers::Handle_sys_execve(const char* path, char* const argv[],
                                            char* const envp[]) {
     if (!path || !g_elfLoader) return -1;
 
+    ProcessControlBlock* proc = Scheduler::activeInstance->GetCurrentProcess();
+    char kpath[256];
+    if (!CopyFromUser(proc, kpath, path, sizeof(kpath))) return -1;
+    kpath[255] = '\0';
+
     extern MSDOSPartitionTable* g_PartitionTable;
     if (MSDOSPartitionTable::activeInstance && MSDOSPartitionTable::activeInstance->partitions[0]) {
         FAT32* fs = MSDOSPartitionTable::activeInstance->partitions[0];
-        File* f = fs->Open((char*)path);
+        File* f = fs->Open(kpath);
         if (f && f->size > 0) {
             // Hashx86 native loading spins up a new process rather than replacing context.
             // Copy up to 5 argv strings from user space into kernel-owned memory for now.
@@ -368,7 +378,7 @@ int32_t SyscallHandlers::Handle_sys_brk(uint32_t brk) {
             for (uint32_t addr = page_start; addr < page_end; addr += PAGE_SIZE) {
                 // Check if already mapped
                 if (g_paging->GetPhysicalAddress(process->page_directory, addr) == 0) {
-                    uint32_t phys_frame = (uint32_t)pmm_alloc_block();
+                    uint32_t phys_frame = (uint32_t)pmm_alloc_block_low(256 * 1024 * 1024);
                     if (!phys_frame) {
                         KDBG1("sys_brk: Out of physical memory!");
                         return -1;
@@ -393,31 +403,40 @@ int32_t SyscallHandlers::Handle_sys_brk(uint32_t brk) {
 int32_t SyscallHandlers::Handle_sys_stat(const char* path, struct stat* statbuf) {
     if (!path || !statbuf) return -1;
 
+    ProcessControlBlock* process = Scheduler::activeInstance->GetCurrentProcess();
+    char kpath[256];
+    if (!CopyFromUser(process, kpath, path, sizeof(kpath))) return -1;
+    kpath[255] = '\0';
+
+    // Build stat in kernel memory, then copy to user at the end
+    struct stat k_stat;
+    memset(&k_stat, 0, sizeof(k_stat));
+
     extern MSDOSPartitionTable* g_PartitionTable;
     if (MSDOSPartitionTable::activeInstance && MSDOSPartitionTable::activeInstance->partitions[0]) {
         FAT32* fs = MSDOSPartitionTable::activeInstance->partitions[0];
 
         // Handling Root Drive Stat Check
-        if (path[0] == '/' && path[1] == '\0') {
-            statbuf->st_mode = 0x4000;  // S_IFDIR
-            statbuf->st_size = 0;
-            return 0;
+        if (kpath[0] == '/' && kpath[1] == '\0') {
+            k_stat.st_mode = 0x4000;  // S_IFDIR
+            k_stat.st_size = 0;
+            return CopyToUser(process, statbuf, &k_stat, sizeof(k_stat)) ? 0 : -1;
         }
 
-        File* f = fs->Open((char*)path);
+        File* f = fs->Open(kpath);
         if (f) {
-            statbuf->st_size = f->size;
-            statbuf->st_ino = f->id;
-            statbuf->st_blksize = 512;
-            statbuf->st_blocks = (f->size + 511) / 512;
-            if (f->flags & 1) {             // Directory Flag mapped loosely
-                statbuf->st_mode = 0x4000;  // S_IFDIR
+            k_stat.st_size = f->size;
+            k_stat.st_ino = f->id;
+            k_stat.st_blksize = 512;
+            k_stat.st_blocks = (f->size + 511) / 512;
+            if (f->flags & 1) {           // Directory Flag mapped loosely
+                k_stat.st_mode = 0x4000;  // S_IFDIR
             } else {
-                statbuf->st_mode = 0x8000;  // S_IFREG
+                k_stat.st_mode = 0x8000;  // S_IFREG
             }
             f->Close();
             delete f;
-            return 0;
+            return CopyToUser(process, statbuf, &k_stat, sizeof(k_stat)) ? 0 : -1;
         }
     }
     return -1;
@@ -509,14 +528,19 @@ int32_t SyscallHandlers::Handle_sys_getdents(uint32_t fd, struct linux_dirent* d
             return offsetWritten;
         }
 
-        // Drop directly into struct linux_dirent output
-        struct linux_dirent* currentDirent = (struct linux_dirent*)((uint8_t*)dirp + offsetWritten);
-        currentDirent->d_ino = ((uint32_t)e->firstClusterHi << 16) | e->firstClusterLow;
-        currentDirent->d_off = dirFile->position;
-        currentDirent->d_reclen = reclen;
+        // Build dirent in kernel memory, then copy to user space
+        struct linux_dirent k_dirent;
+        k_dirent.d_ino = ((uint32_t)e->firstClusterHi << 16) | e->firstClusterLow;
+        k_dirent.d_off = dirFile->position;
+        k_dirent.d_reclen = reclen;
 
         for (j = 0; j <= nameIdx; j++) {
-            currentDirent->d_name[j] = parsedName[j];
+            k_dirent.d_name[j] = parsedName[j];
+        }
+
+        if (!CopyToUser(process, (uint8_t*)dirp + offsetWritten, &k_dirent, reclen)) {
+            dirFile->position -= (bytesRead - (i * 32));
+            return offsetWritten;
         }
 
         offsetWritten += reclen;
@@ -526,27 +550,36 @@ int32_t SyscallHandlers::Handle_sys_getdents(uint32_t fd, struct linux_dirent* d
 }
 
 int32_t SyscallHandlers::Handle_sys_nanosleep(struct timespec* req, struct timespec* rem) {
-    ThreadControlBlock* t = Scheduler::activeInstance->GetCurrentThread();
+    ProcessControlBlock* process = Scheduler::activeInstance->GetCurrentProcess();
 
-    // Very basic mapping for now: (sec * 1000) + (ns / 1M)
-    uint32_t sleep_ms = 0;
+    // Copy timespec structures from user space
+    struct timespec k_req, k_rem;
+    memset(&k_req, 0, sizeof(k_req));
+    memset(&k_rem, 0, sizeof(k_rem));
+
     if (req) {
-        sleep_ms = (req->tv_sec * 1000) + (req->tv_nsec / 1000000);
+        if (!CopyFromUser(process, &k_req, req, sizeof(k_req))) return -1;
     }
+
+    uint32_t sleep_ms = (k_req.tv_sec * 1000) + (k_req.tv_nsec / 1000000);
     Scheduler::activeInstance->Sleep(sleep_ms);
 
-    // We don't implement remaining time out for now
     if (rem) {
-        rem->tv_sec = 0;
-        rem->tv_nsec = 0;
+        k_rem.tv_sec = 0;
+        k_rem.tv_nsec = 0;
+        if (!CopyToUser(process, rem, &k_rem, sizeof(k_rem))) return -1;
     }
     return 0;
 }
 
 int32_t SyscallHandlers::Handle_sys_debug(char* str) {
+    ProcessControlBlock* process = Scheduler::activeInstance->GetCurrentProcess();
+    char kstr[256];
+    if (!CopyFromUser(process, kstr, str, sizeof(kstr))) return -1;
+    kstr[255] = '\0';
     // ATOMIC PRINT
     InterruptGuard guard;
-    KDBG1N("PID %d, %s", g_scheduler->GetCurrentProcess()->pid, str);
+    KDBG1N("PID %d, %s", g_scheduler->GetCurrentProcess()->pid, kstr);
     return 0;
 }
 
@@ -559,10 +592,13 @@ int32_t SyscallHandlers::Handle_sys_peek_memory(uint32_t address, uint32_t size,
     return -1;
 #endif
     ProcessControlBlock* process = Scheduler::activeInstance->GetCurrentProcess();
-    if (!process || !process->isKernelProcess) {
+    if (!process) {
         if (return_data) *return_data = 0;
         return -1;
     }
+    // [DEV-ONLY] Peek memory allows reading the identity-mapped kernel range (0-256MB).
+    // This is exposed to all processes for debugging/development purposes and MUST be
+    // restricted to kernel processes or removed entirely for the final OS release.
     // Only allow reading from identity-mapped kernel range (0 - 256MB)
     uint32_t limit = 256 * 1024 * 1024;
     if (address + size > limit || size == 0 || size > 4) {
@@ -626,30 +662,28 @@ int32_t SyscallHandlers::Handle_sys_Hcall(uint32_t hcall_id, uint32_t arg1, uint
                 return -1;
             }
 
-            // GRANT ACCESS: Map the kernel backbuffer as USER accessible
+            // GRANT ACCESS: Map the kernel backbuffer into this process's address space.
+            // Use MapPage which will COW/clone the page table if needed to avoid
+            // exposing kernel pages to other processes through shared PDEs.
             uint32_t size = width * height * 4;
 
             // Align start/end to page boundaries
             uint32_t startPage = bufferAddr & ~(PAGE_SIZE - 1);
             uint32_t endPage = (bufferAddr + size + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
 
-            ProcessControlBlock* process = Scheduler::activeInstance->GetCurrentProcess();
-
             for (uint32_t addr = startPage; addr < endPage; addr += PAGE_SIZE) {
-                // Use identity mapping (phys = virt) for kernel heap
-                // This updates the shared kernel page table with PAGE_USER
-                g_paging->MapPage(process->page_directory, addr, addr,
+                // Map the framebuffer physical address (identity: virt == phys)
+                // into this specific process's page tables with user access.
+                g_paging->MapPage(current_process->page_directory, addr, addr,
                                   PAGE_PRESENT | PAGE_RW | PAGE_USER);
             }
 
-            // Also update the Page Directory Entry (PDE) to allow User Access
-            // MapPage does NOT update the PDE flags if the table is already present.
-            // Since the kernel heap PDE is originally Supervisor-only, must enable User bit.
+            // MapPage only sets the PTE's USER bit. The PDE (page directory entry)
+            // must also allow user access for the CPU to permit ring-3 reads/writes.
             uint32_t startPDIdx = startPage >> 22;
             uint32_t endPDIdx = endPage >> 22;
-
             for (uint32_t i = startPDIdx; i <= endPDIdx; i++) {
-                process->page_directory[i] |= PAGE_USER;
+                current_process->page_directory[i] |= PAGE_USER;
             }
 
             // Flush TLB to ensure new permissions take effect immediately

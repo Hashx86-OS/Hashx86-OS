@@ -13,19 +13,19 @@ PMM_INFO g_pmm_info;
 
 // Set bit in memory map array with bounds check
 static inline void pmm_mmap_set(int bit) {
-    if (bit < g_pmm_info.max_blocks * 32)
+    if (bit >= 0 && bit < (int)g_pmm_info.max_blocks)
         g_pmm_info.memory_map_array[bit / 32] |= (1 << (bit % 32));
 }
 
 // Unset bit in memory map array with bounds check
 static inline void pmm_mmap_unset(int bit) {
-    if (bit < g_pmm_info.max_blocks * 32)
+    if (bit >= 0 && bit < (int)g_pmm_info.max_blocks)
         g_pmm_info.memory_map_array[bit / 32] &= ~(1 << (bit % 32));
 }
 
 // Test if given nth bit is set with bounds check
 static inline char pmm_mmap_test(int bit) {
-    if (bit < g_pmm_info.max_blocks * 32)
+    if (bit >= 0 && bit < (int)g_pmm_info.max_blocks)
         return g_pmm_info.memory_map_array[bit / 32] & (1 << (bit % 32));
     return 0;
 }
@@ -143,10 +143,10 @@ void pmm_init(PMM_PHYSICAL_ADDRESS bitmap, uint32_t total_memory_size) {
     g_pmm_info.used_blocks = g_pmm_info.max_blocks;
 
     // Mark ALL memory as Used (0xFF)
-    memset(g_pmm_info.memory_map_array, 0xff, (g_pmm_info.max_blocks / 8));
+    uint32_t map_size = (g_pmm_info.max_blocks + 7) / 8;
+    memset(g_pmm_info.memory_map_array, 0xff, map_size);
 
     // Calculate End of Bitmap
-    uint32_t map_size = g_pmm_info.max_blocks / 8;
     g_pmm_info.memory_map_end = (uint32_t)g_pmm_info.memory_map_array + map_size;
 
     // FORCE ALIGNMENT
@@ -224,7 +224,7 @@ void* pmm_alloc_block() {
 }
 
 void* pmm_alloc_block_low(uint32_t limit_addr) {
-    if ((g_pmm_info.max_blocks - g_pmm_info.used_blocks) <= 0) {
+    if ((g_pmm_info.max_blocks - g_pmm_info.used_blocks) < 1) {
         KDBG2("low-memory allocation failed reason=no_free_blocks limit=0x%x", limit_addr);
         return NULL;
     }
@@ -263,7 +263,6 @@ void pmm_free_block(void* p) {
 
 void* pmm_alloc_blocks(uint32_t size) {
     uint32_t i;
-
     if ((g_pmm_info.max_blocks - g_pmm_info.used_blocks) <= size) {
         KDBG2("contiguous allocation failed reason=no_free_blocks size=%u", size);
         return NULL;

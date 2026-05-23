@@ -54,7 +54,14 @@ uint32_t AdvancedTechnologyAttachment::Identify() {
         return 0;
     }
 
-    while (((status & 0x80) == 0x80) && ((status & 0x01) != 0x01)) status = commandPort.Read();
+    uint32_t bsyWait = 0;
+    while (((status & 0x80) == 0x80) && ((status & 0x01) != 0x01)) {
+        if (bsyWait++ > 1000000) {
+            KDBG1("IDENTIFY ERROR: BSY timeout");
+            return 0;
+        }
+        status = commandPort.Read();
+    }
 
     if (status & 0x01) {
         KDBG1("IDENTIFY ERROR");
@@ -96,7 +103,14 @@ void AdvancedTechnologyAttachment::Read28(uint32_t sectorNum, uint8_t* data, int
     uint8_t status3 = commandPort.Read();
     uint8_t status4 = commandPort.Read();
 
-    while ((status & 0x80) == 0x80) status = commandPort.Read();
+    uint32_t bsyWait = 0;
+    while ((status & 0x80) == 0x80) {
+        if (bsyWait++ > 1000000) {
+            KDBG1("READ ERROR: BSY timeout");
+            return;
+        }
+        status = commandPort.Read();
+    }
     if ((status & 0x01) == 0x01) {
         KDBG1("READ ERROR");
         return;
@@ -154,7 +168,14 @@ void AdvancedTechnologyAttachment::Write28(uint32_t sectorNum, uint8_t* data, ui
     uint8_t status3 = commandPort.Read();
     uint8_t status4 = commandPort.Read();
 
-    while ((status & 0x80) == 0x80) status = commandPort.Read();
+    uint32_t bsyWait = 0;
+    while ((status & 0x80) == 0x80) {
+        if (bsyWait++ > 1000000) {
+            KDBG1("READ ERROR: BSY timeout");
+            return;
+        }
+        status = commandPort.Read();
+    }
     uint32_t drqWait = 0;
     while ((status & 0x08) != 0x08) {
         if ((status & 0x01) == 0x01) {
@@ -207,5 +228,15 @@ void AdvancedTechnologyAttachment::Flush() {
             return;
         }
         status = commandPort.Read();
+    }
+
+    // Check for error flags after BSY clears
+    if ((status & 0x01) == 0x01) {
+        KDBG1("FLUSH ERROR: ERR set after BSY");
+        return;
+    }
+    if ((status & 0x20) == 0x20) {
+        KDBG1("FLUSH ERROR: DF set after BSY");
+        return;
     }
 }

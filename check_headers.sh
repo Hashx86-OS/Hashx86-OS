@@ -22,7 +22,7 @@ while IFS= read -r -d '' f; do
             ERROR=1
         fi
     done
-done < <(find . -type f \( -name "*.cpp" -o -name "*.c" \) -print0)
+done < <(find . -type f \( -name "*.cpp" -o -name "*.c" -o -name "*.h" -o -name "*.hpp" \) -print0)
 
 if [ $ERROR -eq 1 ]; then
     echo "FAILED: Some files are missing header information."

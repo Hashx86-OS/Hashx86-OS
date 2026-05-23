@@ -104,7 +104,7 @@ BaseAddressRegister PeripheralComponentInterconnectController::GetBaseAddressReg
 PeripheralComponentInterconnectDeviceDescriptor*
 PeripheralComponentInterconnectController::FindHardwareDevice(uint16_t vendorID,
                                                               uint16_t deviceID) {
-    for (int bus = 0; bus < 8; bus++) {
+    for (int bus = 0; bus < 256; bus++) {
         for (int device = 0; device < 32; device++) {
             int numFunctions = DeviceHasFunctions(bus, device) ? 8 : 1;
             for (int function = 0; function < numFunctions; function++) {
@@ -162,9 +162,9 @@ void pci_enable_bus_master(uint16_t vendor, uint16_t device) {
     if (dev && dev->vendor_id != 0) {
         uint32_t cmd = pci.Read(dev->bus, dev->device, dev->function, 0x04);
         if ((cmd & 0x07) != 0x07) {
+            // Write only the command word (lower 16 bits) to avoid clearing status bits
             uint32_t new_command = (cmd & 0xFFFF) | 0x0007;
-            uint32_t new_value = (cmd & 0xFFFF0000) | new_command;
-            pci.Write(dev->bus, dev->device, dev->function, 0x04, new_value);
+            pci.Write(dev->bus, dev->device, dev->function, 0x04, new_command);
             KDBG2("Enabled Bus Master for Vendor=0x%x Device=0x%x", vendor, device);
         }
     } else {

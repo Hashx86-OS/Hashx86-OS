@@ -362,7 +362,7 @@ void MemoryViewer::onPressRead() {
     }
 
     valueScreen->setText(valueStr);
-    printf("Read from 0x%08X: 0x%X (%d bytes)\n", address, value, readSize);
+    printf("Read from 0x%x: 0x%x (%d bytes)\n", address, value, readSize);
 }
 
 void MemoryViewer::onPressSize(int size) {

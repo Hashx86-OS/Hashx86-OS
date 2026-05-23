@@ -28,7 +28,7 @@ void AudioMixer::SetOutputSampleRate(uint32_t rate) {
 }
 
 void AudioMixer::PlayBuffer(uint8_t* data, uint32_t length, bool loop) {
-    if (!data || length == 0 || !driver) return;
+    if (!data || length == 0 || (length % 2 != 0) || !driver) return;
 
     for (int i = 0; i < 8; i++) {
         if (!streams[i].active) {

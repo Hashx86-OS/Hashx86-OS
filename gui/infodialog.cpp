@@ -88,7 +88,6 @@ void InfoDialog::ShowDialog() {
 
 void InfoDialog::HideDialog() {
     setVisible(false);
-    if (this->parent) this->parent->RemoveChild(this);
     MarkDirty();
 }
 

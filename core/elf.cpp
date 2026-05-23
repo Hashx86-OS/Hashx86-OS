@@ -37,6 +37,11 @@ ProcessControlBlock* ELFLoader::loadELF(File* elf, void* args) {
     ProcessControlBlock* pELF =
         scheduler->CreateProcess(false, (void (*)(void*))header.entry, args);
 
+    if (!pELF) {
+        KDBG1("Error: Failed to create process for ELF");
+        return nullptr;
+    }
+
     auto cleanup_process = [&]() {
         if (pELF) {
             scheduler->KillProcess(pELF->pid);

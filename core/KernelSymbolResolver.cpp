@@ -66,6 +66,10 @@ void KernelSymbolTable::Load(FAT32* fs, const char* path) {
             // EOL check
             if (*cursor != '\n' && *cursor != '\r' && *cursor != 0) {
                 // Store the symbol
+                if (symbolCount >= maxEntries) {
+                    KDBG1("Warning: Too many symbols, truncating");
+                    break;
+                }
                 symbolIndex[symbolCount].addr = addr;
                 symbolIndex[symbolCount].name = cursor;
                 symbolCount++;

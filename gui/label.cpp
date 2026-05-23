@@ -43,7 +43,10 @@ void Label::setSize(FontSize size) {
 }
 
 void Label::RedrawToCache() {
-    if (!cache) return;
+    if (!cache) {
+        isDirty = false;
+        return;
+    }
     // Clear background to transparent (0)
     memset(cache, 0, sizeof(uint32_t) * w * h);
 

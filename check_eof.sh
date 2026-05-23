@@ -24,7 +24,7 @@ while IFS= read -r -d '' f; do
             ERROR=1
         fi
     fi
-done < <(find . -type f \( -name "*.cpp" -o -name "*.c" -o -name "*.h" -o -name "*.asm" \) -print0)
+done < <(find . -type f \( -name "*.cpp" -o -name "*.c" -o -name "*.h" -o -name "*.asm" -o -name "*.s" -o -name "*.S" \) -print0)
 
 if [ $FIX_MODE -eq 0 ]; then
     if [ $ERROR -eq 1 ]; then

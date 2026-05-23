@@ -220,9 +220,8 @@ public:
 
     uint32_t WriteData(uint8_t* buffer, uint32_t size) override {
         if (size > AC97_HALF_SIZE) size = AC97_HALF_SIZE;
-        asm volatile("cli");
+        InterruptGuard guard;
         if (buffersOccupied >= 2) {
-            asm volatile("sti");
             return 0;
         }
 
@@ -253,7 +252,6 @@ public:
         }
 
         buffersOccupied++;
-        asm volatile("sti");
         return size;
     }
 

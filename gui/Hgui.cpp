@@ -159,11 +159,18 @@ int32_t HguiHandler::HandleWidget(CPUState* cpu, const WidgetData* _data) {
         if (parentWidget->ID == 0) {
             Desktop* desktop = Desktop::activeInstance;
             if (desktop && desktop->GetTaskbar()) {
-                // Get the window title using the public accessor
+                // Safely check if childWidget is a Window before casting
                 const char* tabTitle = "App";
-                Window* win = (Window*)childWidget;
-                if (win && win->getWindowTitle()) {
-                    tabTitle = win->getWindowTitle();
+                // Only Window widgets have getWindowTitle(); check by attempting
+                // dynamic-like cast: verify the widget is actually a Window.
+                // Since we don't have RTTI, we check if its parent is Desktop (ID==0)
+                // and the widget itself responds to window semantics.
+                if (childWidget->IsComposite()) {
+                    // Might be a Window — try the getWindowTitle accessor
+                    Window* win = static_cast<Window*>(childWidget);
+                    if (win && win->getWindowTitle()) {
+                        tabTitle = win->getWindowTitle();
+                    }
                 }
                 desktop->GetTaskbar()->AddTab(childWidget->PID, tabTitle, childWidget);
             }
@@ -171,9 +178,17 @@ int32_t HguiHandler::HandleWidget(CPUState* cpu, const WidgetData* _data) {
 
         return 1;
     } else if ((uint32_t)cpu->ebx == DELETE) {
-        HguiWidgets.Remove([&](Widget* c) { return c->ID == _data->param1; });
-
-        // TODO: Implement cleanup
+        Widget* target = this->FindWidgetByID(_data->param1);
+        if (target) {
+            // Detach from parent first
+            if (target->parent) {
+                target->parent->RemoveChild(target);
+            }
+            // Remove from global widget list
+            HguiWidgets.Remove([&](Widget* c) { return c->ID == _data->param1; });
+            // Destroy the widget
+            delete target;
+        }
         return 1;
     }
 
@@ -202,8 +217,9 @@ int32_t HguiHandler::HandleWindow(CPUState* cpu, const WidgetData* _data) {
         HguiWidgets.Add(_widget);
         return (uint32_t)_newID;
     } else if ((uint32_t)cpu->ebx == SET_TEXT) {
-        Window* widget = (Window*)this->FindWidgetByID(_data->param0);
-        if (!widget) return -1;
+        Widget* w = this->FindWidgetByID(_data->param0);
+        if (!w || !w->IsComposite()) return -1;
+        Window* widget = static_cast<Window*>(w);
         if (!CopyUserString(proc, _data->param5, titleBuf, sizeof(titleBuf))) {
             return -1;
         }
@@ -272,8 +288,9 @@ int32_t HguiHandler::HandleLabel(CPUState* cpu, const WidgetData* _data) {
         HguiWidgets.Add(_widget);
         return (int32_t)_newID;
     } else if ((uint32_t)cpu->ebx == SET_TEXT) {
-        Label* widget = (Label*)this->FindWidgetByID(_data->param0);
-        if (!widget) return -1;
+        Widget* w = this->FindWidgetByID(_data->param0);
+        if (!w || w->IsComposite()) return -1;
+        Label* widget = static_cast<Label*>(w);
         if (!CopyUserString(proc, _data->param5, textBuf, sizeof(textBuf))) {
             return -1;
         }
@@ -281,8 +298,9 @@ int32_t HguiHandler::HandleLabel(CPUState* cpu, const WidgetData* _data) {
 
         return 1;
     } else if ((uint32_t)cpu->ebx == SET_FONT_SIZE) {
-        Label* widget = (Label*)this->FindWidgetByID(_data->param0);
-        if (!widget) return -1;
+        Widget* w = this->FindWidgetByID(_data->param0);
+        if (!w || w->IsComposite()) return -1;
+        Label* widget = static_cast<Label*>(w);
 
         widget->setSize((FontSize)_data->param1);
 
@@ -316,8 +334,9 @@ int32_t HguiHandler::HandleListView(CPUState* cpu, const WidgetData* _data) {
         return (int32_t)_newID;
     } else if ((uint32_t)cpu->ebx == SET_ITEMS) {
         // param0 = widgetID, param5 = pointer to ListViewItemData array, param1 = count
-        ListView* widget = (ListView*)this->FindWidgetByID(_data->param0);
-        if (!widget) return -1;
+        Widget* w = this->FindWidgetByID(_data->param0);
+        if (!w || w->IsComposite()) return -1;
+        ListView* widget = static_cast<ListView*>(w);
 
         struct ListViewItemData {
             char name[64];
@@ -342,17 +361,20 @@ int32_t HguiHandler::HandleListView(CPUState* cpu, const WidgetData* _data) {
         }
         return count;
     } else if ((uint32_t)cpu->ebx == CLEAR_ITEMS) {
-        ListView* widget = (ListView*)this->FindWidgetByID(_data->param0);
-        if (!widget) return -1;
+        Widget* w = this->FindWidgetByID(_data->param0);
+        if (!w || w->IsComposite()) return -1;
+        ListView* widget = static_cast<ListView*>(w);
         widget->Clear();
         return 1;
     } else if ((uint32_t)cpu->ebx == GET_SELECTED) {
-        ListView* widget = (ListView*)this->FindWidgetByID(_data->param0);
-        if (!widget) return -1;
+        Widget* w = this->FindWidgetByID(_data->param0);
+        if (!w || w->IsComposite()) return -1;
+        ListView* widget = static_cast<ListView*>(w);
         return widget->GetSelectedIndex();
     } else if ((uint32_t)cpu->ebx == SET_TEXT) {
-        ListView* widget = (ListView*)this->FindWidgetByID(_data->param0);
-        if (!widget) return -1;
+        Widget* w = this->FindWidgetByID(_data->param0);
+        if (!w || w->IsComposite()) return -1;
+        ListView* widget = static_cast<ListView*>(w);
         if (!CopyUserString(proc, _data->param5, headerBuf, sizeof(headerBuf))) {
             return -1;
         }
@@ -390,29 +412,30 @@ int32_t HguiHandler::HandleTerminalView(CPUState* cpu, const WidgetData* _data) 
         HguiWidgets.Add(_widget);
         return (int32_t)_newID;
     } else if ((uint32_t)cpu->ebx == SET_TEXT) {
-        TerminalView* widget = (TerminalView*)this->FindWidgetByID(_data->param0);
-        if (!widget) return -1;
+        Widget* w = this->FindWidgetByID(_data->param0);
+        if (!w || w->IsComposite()) return -1;
+        TerminalView* widget = static_cast<TerminalView*>(w);
         if (!CopyUserString(proc, _data->param5, textBuf, sizeof(textBuf))) {
             return -1;
         }
         widget->setText(textBuf);
         return 1;
     } else if ((uint32_t)cpu->ebx == SET_FONT_SIZE) {
-        TerminalView* widget = (TerminalView*)this->FindWidgetByID(_data->param0);
-        if (!widget) return -1;
-
+        Widget* w = this->FindWidgetByID(_data->param0);
+        if (!w || w->IsComposite()) return -1;
+        TerminalView* widget = static_cast<TerminalView*>(w);
         widget->setSize((FontSize)_data->param1);
         return 1;
     } else if ((uint32_t)cpu->ebx == SET_SCROLL_META) {
-        TerminalView* widget = (TerminalView*)this->FindWidgetByID(_data->param0);
-        if (!widget) return -1;
-
+        Widget* w = this->FindWidgetByID(_data->param0);
+        if (!w || w->IsComposite()) return -1;
+        TerminalView* widget = static_cast<TerminalView*>(w);
         widget->setScrollMeta((int)_data->param1, (int)_data->param2, (int)_data->param3);
         return 1;
     } else if ((uint32_t)cpu->ebx == GET_SCROLL_ACTION) {
-        TerminalView* widget = (TerminalView*)this->FindWidgetByID(_data->param0);
-        if (!widget) return -1;
-
+        Widget* w = this->FindWidgetByID(_data->param0);
+        if (!w || w->IsComposite()) return -1;
+        TerminalView* widget = static_cast<TerminalView*>(w);
         return widget->consumeScrollAction();
     }
 

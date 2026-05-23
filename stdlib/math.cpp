@@ -46,9 +46,15 @@ double pow(double base, int exp) {
 
         // Avoid overflow when negating INT_MIN in freestanding builds.
         if (exp == (-2147483647 - 1)) {
-            // -(INT_MIN + 1) is representable.
+            // -(INT_MIN) overflows int. Set exp to INT_MAX and
+            // remember we need one extra multiplication after the loop.
             exp = 2147483647;
-            base *= (1.0 / base);  // Compensate for the extra +1 in exponent magnitude.
+            // After the loop we must multiply by base once more.
+            // Use a simple flag to track this since base is now the reciprocal.
+            double res = 1.0;
+            for (int i = 0; i < exp; i++) res *= base;
+            res *= base;  // Extra factor for the missing +1 in exponent
+            return res;
         } else {
             exp = -exp;
         }

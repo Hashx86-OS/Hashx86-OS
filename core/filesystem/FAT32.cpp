@@ -147,12 +147,16 @@ uint32_t FAT32::GetFATEntry(uint32_t cluster) {
 
 void FAT32::SetFATEntry(uint32_t cluster, uint32_t value) {
     uint32_t fatOffset = cluster * 4;
-    uint32_t fatSector = fatStart + (fatOffset / 512);
     uint32_t entOffset = fatOffset % 512;
     uint8_t buffer[512];
-    hd->Read28(fatSector, buffer, 512);
-    memcpy(&buffer[entOffset], &value, sizeof(uint32_t));
-    hd->Write28(fatSector, buffer, 512);
+
+    // Update all FAT copies to keep them synchronized
+    for (uint32_t copy = 0; copy < bpb.fatCopies; copy++) {
+        uint32_t fatSector = fatStart + (copy * bpb.tableSize) + (fatOffset / 512);
+        hd->Read28(fatSector, buffer, 512);
+        memcpy(&buffer[entOffset], &value, sizeof(uint32_t));
+        hd->Write28(fatSector, buffer, 512);
+    }
 }
 
 uint32_t FAT32::AllocateCluster() {
@@ -622,11 +626,16 @@ void FAT32::Format() {
     fatStartArr[1] = 0x0FFFFFFF;
     fatStartArr[2] = 0x0FFFFFFF;
 
-    hd->Write28(this->fatStart, zeros, 512);
-
-    memset(zeros, 0, 512);
-    for (int i = 1; i < 32; i++) {
-        hd->Write28(this->fatStart + i, zeros, 512);
+    // Write full FAT for all copies
+    for (uint32_t copy = 0; copy < bpb.fatCopies; copy++) {
+        uint32_t fatBase = this->fatStart + (copy * bpb.tableSize);
+        // First sector has the special markers
+        hd->Write28(fatBase, zeros, 512);
+        // Remaining sectors are zeroed
+        memset(zeros, 0, 512);
+        for (uint32_t i = 1; i < bpb.tableSize; i++) {
+            hd->Write28(fatBase + i, zeros, 512);
+        }
     }
 
     uint32_t rootSec = ClusterToSector(bpb.rootCluster);
@@ -833,7 +842,6 @@ void FAT32::FormatRaw(AdvancedTechnologyAttachment* hd, uint32_t startSector,
     hd->Write28(startSector, buffer, 512);
 
     // Initialize FAT Tables
-    // Only clear the first few sectors to ensure chains are broken.
     memset(buffer, 0, 512);
 
     // First sector of FAT needs special markers
@@ -842,16 +850,16 @@ void FAT32::FormatRaw(AdvancedTechnologyAttachment* hd, uint32_t startSector,
     fatEntries[1] = 0x0FFFFFFF;  // EOC
     fatEntries[2] = 0x0FFFFFFF;  // EOC (End of Root Dir Chain)
 
-    // Write start of FAT 1
-    hd->Write28(startSector + reserved, buffer, 512);
-    // Write start of FAT 2
-    hd->Write28(startSector + reserved + sectorsPerFat, buffer, 512);
-
-    // Clear following sectors
-    memset(buffer, 0, 512);
-    for (int i = 1; i < 16; i++) {
-        hd->Write28(startSector + reserved + i, buffer, 512);
-        hd->Write28(startSector + reserved + sectorsPerFat + i, buffer, 512);
+    // Write all FAT sectors for each FAT copy
+    for (uint32_t copy = 0; copy < fats; copy++) {
+        uint32_t fatBaseSector = startSector + reserved + (copy * sectorsPerFat);
+        // First sector has the special markers
+        hd->Write28(fatBaseSector, buffer, 512);
+        // Remaining sectors are zeroed
+        memset(buffer, 0, 512);
+        for (uint32_t i = 1; i < sectorsPerFat; i++) {
+            hd->Write28(fatBaseSector + i, buffer, 512);
+        }
     }
 
     // Clear Root Directory Cluster (Cluster 2)

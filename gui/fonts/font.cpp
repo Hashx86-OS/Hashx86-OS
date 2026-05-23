@@ -49,6 +49,8 @@ uint32_t Font::getStringLength(const char* str) {
 
         // Find glyph index (assuming glyphs are stored in order for ASCII)
         int idx = (c - 32) * 8;
+        // Validate glyph index range to prevent reading past font_glyphs
+        if (idx < 0 || idx + 7 < idx) break;
         int16_t xadvance = this->font_glyphs[idx + 7];
         length += xadvance;
 
@@ -327,7 +329,7 @@ void FontManager::LoadFile(uint32_t mod_start, uint32_t mod_end) {
 
 void FontManager::LoadFile(File* file) {
     if (!file || file->size == 0) {
-        KDBG1("Font error, file not found or empty: %s", file);
+        KDBG1("Font error: file is null or empty");
         return;
     }
 

@@ -275,11 +275,15 @@ ThreadControlBlock* Scheduler::CloneCurrentThread(CPUState* parentContext, uint3
 
     if ((clone_flags & CLONE_PARENT_SETTID) && parent_tid &&
         (uint32_t)parent_tid >= USER_LOWER_BOUND) {
-        *((uint32_t*)parent_tid) = tcb->tid;
+        uint32_t tid_val = tcb->tid;
+        uint32_t phys = _pager->GetPhysicalAddress(parent->page_directory, (uint32_t)parent_tid);
+        if (phys) *(uint32_t*)phys = tid_val;
     }
     if ((clone_flags & CLONE_CHILD_SETTID) && child_tid &&
         (uint32_t)child_tid >= USER_LOWER_BOUND) {
-        *((uint32_t*)child_tid) = tcb->tid;
+        uint32_t tid_val = tcb->tid;
+        uint32_t phys = _pager->GetPhysicalAddress(parent->page_directory, (uint32_t)child_tid);
+        if (phys) *(uint32_t*)phys = tid_val;
     }
 
     // TLS install is architecture-ABI specific; keep ignored for now.
@@ -413,16 +417,16 @@ ThreadControlBlock* Scheduler::CloneCurrentProcess(CPUState* parentContext, uint
 
     if ((clone_flags & CLONE_PARENT_SETTID) && parent_tid &&
         (uint32_t)parent_tid >= USER_LOWER_BOUND) {
-        *((uint32_t*)parent_tid) = tcb->tid;
+        uint32_t tid_val = tcb->tid;
+        uint32_t phys = _pager->GetPhysicalAddress(parent->page_directory, (uint32_t)parent_tid);
+        if (phys) *(uint32_t*)phys = tid_val;
     }
 
     if ((clone_flags & CLONE_CHILD_SETTID) && child_tid &&
         (uint32_t)child_tid >= USER_LOWER_BOUND) {
-        uint32_t childTidPhys =
-            _pager->GetPhysicalAddress(childProc->page_directory, (uint32_t)child_tid);
-        if (childTidPhys) {
-            *((uint32_t*)childTidPhys) = tcb->tid;
-        }
+        uint32_t tid_val = tcb->tid;
+        uint32_t phys = _pager->GetPhysicalAddress(childProc->page_directory, (uint32_t)child_tid);
+        if (phys) *(uint32_t*)phys = tid_val;
     }
 
     // TLS setup is deferred until TLS/GDT model support is wired.

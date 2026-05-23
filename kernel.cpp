@@ -200,9 +200,13 @@ int get_kernel_memory_map(KERNEL_MEMORY_MAP* kmap, MultibootInfo* mboot_info) {
 
     kmap->system.total_memory = mboot_info->mem_lower + mboot_info->mem_upper;
 
-    for (int i = 0; i < mboot_info->mmap_length; i += sizeof(MULTIBOOT_MEMORY_MAP)) {
-        MULTIBOOT_MEMORY_MAP* mmap = (MULTIBOOT_MEMORY_MAP*)(mboot_info->mmap_addr + i);
-        if (mmap->type != MULTIBOOT_MEMORY_AVAILABLE) continue;
+    for (int offset = 0; offset < (int)mboot_info->mmap_length;) {
+        MULTIBOOT_MEMORY_MAP* mmap =
+            (MULTIBOOT_MEMORY_MAP*)((uint32_t)mboot_info->mmap_addr + offset);
+        if (mmap->type != MULTIBOOT_MEMORY_AVAILABLE) {
+            offset += mmap->size + sizeof(mmap->size);
+            continue;
+        }
         // make sure kernel is loaded at 0x100000 by bootloader(see linker.ld)
         if (mmap->addr_low == kmap->kernel.text_start_addr) {
             // set available memory starting from end of our kernel, leaving 1MB size for functions
@@ -213,6 +217,7 @@ int get_kernel_memory_map(KERNEL_MEMORY_MAP* kmap, MultibootInfo* mboot_info) {
             kmap->available.size = kmap->available.end_addr - kmap->available.start_addr;
             return 0;
         }
+        offset += mmap->size + sizeof(mmap->size);
     }
 
     return -1;
@@ -401,7 +406,6 @@ void init_pci(FAT32* boot_partition, DriverManager* driverManager) {
 
                 if (raw) {
                     Driver* drv = (Driver*)raw;
-                    drv->Activate();
                     driverManager->AddDriver(drv);
 
                     // SAFE CAST
@@ -554,8 +558,8 @@ void pDesktop(void* arg) {
 extern "C" void kernelMain(void* multiboot_structure, uint32_t magicnumber) {
     initSerial();
     if (magicnumber != 0x2BADB002) {
-        KDBG1("Invalid magic number : [%x], Ignoring...", magicnumber);
-        // return;
+        KDBG1("Invalid magic number : [%x]", magicnumber);
+        return;
     }
 
     MultibootInfo* mbinfo = (MultibootInfo*)multiboot_structure;

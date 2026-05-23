@@ -269,6 +269,7 @@ void* kmalloc(int size) {
 void* aligned_kmalloc(size_t size, size_t alignment) {
     InterruptGuard guard;
     if (alignment == 0) return nullptr;
+    static_assert(sizeof(uintptr_t) == sizeof(void*), "uintptr_t must match pointer size");
     uintptr_t raw_addr = (uintptr_t)kmalloc(size + alignment + sizeof(void*));
     if (!raw_addr) return nullptr;
 

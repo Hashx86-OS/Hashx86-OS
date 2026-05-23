@@ -363,6 +363,7 @@ void NINA::DrawCharacter(uint32_t* buffer, int32_t bufferWidth, int32_t bufferHe
                          int32_t y, char c, Font* font, uint32_t colorIndex) {
     if (!buffer || !font || !font->font_glyphs || !font->font_atlas) return;
     int idx = (uint8_t)c - 32;
+    if (idx < 0 || idx > 95) return;           // Only standard ASCII printable range
     int16_t* g = &font->font_glyphs[idx * 8];  // each glyph = 8 values
 
     int charID = g[0];

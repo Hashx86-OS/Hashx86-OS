@@ -132,7 +132,10 @@ public:
             (this->physFramebufferAddr + (uint32_t)fb_size + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
 
         for (uint32_t addr = start; addr < end; addr += PAGE_SIZE) {
-            if (g_paging->GetPhysicalAddress(g_paging->KernelPageDirectory, addr) == 0) {
+            uint32_t existing = g_paging->GetPhysicalAddress(g_paging->KernelPageDirectory, addr);
+            // Only map if not already mapped. If mapped to a different physical frame,
+            // overwrite the mapping so videoMemory writes go to the correct framebuffer.
+            if (existing == 0 || existing != addr) {
                 if (!g_paging->MapPage(g_paging->KernelPageDirectory, addr, addr,
                                        PAGE_PRESENT | PAGE_RW)) {
                     printf("[BGA] Error: Failed to map framebuffer\n");
