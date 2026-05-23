@@ -202,8 +202,16 @@ void GraphicsDriver::DrawRoundedRectangleShadow(int32_t x, int32_t y, uint32_t w
 
 void GraphicsDriver::BlurRoundedRectangle(int32_t x, int32_t y, uint32_t w, uint32_t h,
                                           uint32_t radius, uint32_t blurRadius) {
+    uint64_t pixelCount = (uint64_t)w * (uint64_t)h;
+    if (pixelCount == 0 || pixelCount > (uint64_t)(0xFFFFFFFFu / sizeof(uint32_t))) {
+        return;
+    }
+
     // Temporary buffer for blurred pixels
-    uint32_t tempBuffer[w * h];
+    uint32_t* tempBuffer = new uint32_t[pixelCount];
+    if (!tempBuffer) {
+        return;
+    }
 
     // First pass: Compute blurred colors
     for (int32_t dy = 0; dy < (int32_t)h; dy++) {
@@ -281,6 +289,8 @@ void GraphicsDriver::BlurRoundedRectangle(int32_t x, int32_t y, uint32_t w, uint
             PutPixel(px, py, tempBuffer[dy * w + dx]);
         }
     }
+
+    delete[] tempBuffer;
 }
 
 void GraphicsDriver::FillCircle(int32_t cx, int32_t cy, uint32_t radius, uint32_t colorIndex) {

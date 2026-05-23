@@ -78,6 +78,8 @@ public:
     virtual void OnSpecialKeyDown(uint8_t key);
     virtual void OnKeyUp(const char* key);
     virtual void OnSpecialKeyUp(uint8_t key);
+
+    virtual bool IsComposite() const;
 };
 
 /**
@@ -92,6 +94,8 @@ private:
 public:
     CompositeWidget(CompositeWidget* parent, int32_t x, int32_t y, int32_t w, int32_t h);
     virtual ~CompositeWidget();
+
+    bool IsComposite() const override;
 
     virtual void GetFocus(Widget* widget) override;
     virtual bool RemoveChild(Widget* child) override;

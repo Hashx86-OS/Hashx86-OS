@@ -44,8 +44,12 @@ struct CPUState {
 } __attribute__((packed));
 
 class Process;  // Forward declaration
+class File;     // Forward declaration
 
 struct ProcessControlBlock;  // Forward declaration
+
+constexpr uint32_t FD_MIN = 3;
+constexpr uint32_t FD_MAX = 128;
 
 struct HeapSegment {
     uint32_t startAddress;
@@ -73,6 +77,7 @@ struct ProcessControlBlock {
     ProcessControlBlock* parent;
     bool isKernelProcess;
     HeapSegment heap;
+    File* fdTable[FD_MAX];
 };
 
 #endif  // PROCESS_TYPES_H

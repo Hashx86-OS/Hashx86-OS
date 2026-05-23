@@ -42,11 +42,13 @@ uint32_t pmm_get_used_blocks() {
 
 // Find first free frame in bitmap array and return its index
 int pmm_mmap_first_free() {
-    for (uint32_t i = 0; i < g_pmm_info.max_blocks; i++) {
+    uint32_t entries = (g_pmm_info.max_blocks + 31) / 32;
+    for (uint32_t i = 0; i < entries; i++) {
         if (g_pmm_info.memory_map_array[i] != 0xffffffff) {
             for (uint32_t j = 0; j < 32; j++) {
+                int bit = i * 32 + j;
+                if (bit >= (int)g_pmm_info.max_blocks) break;
                 if (!(g_pmm_info.memory_map_array[i] & (1 << j))) {
-                    int bit = i * 32 + j;
                     KDBG3("first_free bit=%d", bit);
                     return bit;
                 }
@@ -59,7 +61,8 @@ int pmm_mmap_first_free() {
 
 // Find first free frame below a certain limit (for Low Mem Alloc)
 int pmm_mmap_first_free_low(uint32_t limit_frame) {
-    for (uint32_t i = 0; i < g_pmm_info.max_blocks; i++) {
+    uint32_t entries = (g_pmm_info.max_blocks + 31) / 32;
+    for (uint32_t i = 0; i < entries; i++) {
         // If we exceed limit, stop early (i*32 is the first bit in this chunk)
         if (i * 32 >= limit_frame) {
             KDBG2("low-memory search result=none limit_frame=%u", limit_frame);
@@ -95,7 +98,8 @@ int pmm_mmap_first_free_by_size(uint32_t size) {
     uint32_t free = 0;
     int start_index = -1;
 
-    for (uint32_t i = 0; i < g_pmm_info.max_blocks; i++) {
+    uint32_t entries = (g_pmm_info.max_blocks + 31) / 32;
+    for (uint32_t i = 0; i < entries; i++) {
         if (g_pmm_info.memory_map_array[i] != 0xffffffff) {
             for (uint32_t j = 0; j < 32; j++) {
                 int bit = i * 32 + j;

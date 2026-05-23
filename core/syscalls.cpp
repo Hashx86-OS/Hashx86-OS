@@ -150,7 +150,8 @@ int32_t SyscallHandlers::Handle_sys_exit(uint32_t status) {
 
 int32_t SyscallHandlers::Handle_sys_read(uint32_t fd, char* buf, uint32_t count) {
     if (fd <= 2 || !buf || count == 0) return -1;
-    File* file = GetFileByFd(fd);
+    ProcessControlBlock* process = Scheduler::activeInstance->GetCurrentProcess();
+    File* file = GetFileByFd(process, fd);
     if (!file) return -1;
 
     // Validate Buffer is User Space
@@ -174,7 +175,8 @@ int32_t SyscallHandlers::Handle_sys_open(const char* path, int32_t flags) {
         File* f = fs->Open((char*)path);
         if (!f) return -1;
 
-        int32_t fd = AllocateFd(f);
+        ProcessControlBlock* process = Scheduler::activeInstance->GetCurrentProcess();
+        int32_t fd = AllocateFd(process, f);
         if (fd < 0) {
             f->Close();
             delete f;
@@ -188,12 +190,13 @@ int32_t SyscallHandlers::Handle_sys_open(const char* path, int32_t flags) {
 int32_t SyscallHandlers::Handle_sys_close(uint32_t fd) {
     if (fd <= 2) return 0;  // stdin/stdout/stderr placeholders
 
-    File* file = GetFileByFd(fd);
+    ProcessControlBlock* process = Scheduler::activeInstance->GetCurrentProcess();
+    File* file = GetFileByFd(process, fd);
     if (!file) return -1;
 
     file->Close();
     delete file;
-    ReleaseFd(fd);
+    ReleaseFd(process, fd);
     return 0;
 }
 
@@ -339,7 +342,8 @@ int32_t SyscallHandlers::Handle_sys_clone(CPUState* parent_context, uint32_t clo
 int32_t SyscallHandlers::Handle_sys_getdents(uint32_t fd, struct linux_dirent* dirp,
                                              uint32_t count) {
     if (fd <= 2 || !dirp || count == 0) return -1;
-    File* dirFile = GetFileByFd(fd);
+    ProcessControlBlock* process = Scheduler::activeInstance->GetCurrentProcess();
+    File* dirFile = GetFileByFd(process, fd);
     if (!dirFile || !dirFile->filesystem) return -1;
     if ((dirFile->flags & 1) == 0) return -1;
 

@@ -60,13 +60,13 @@ public:
     ~HguiHandler();
 
     virtual uint32_t HandleInterrupt(uint32_t esp);
-    virtual int32_t HandleWidget(uint32_t esp);
-    virtual int32_t HandleWindow(uint32_t esp);
-    virtual int32_t HandleButton(uint32_t esp);
-    virtual int32_t HandleLabel(uint32_t esp);
-    virtual int32_t HandleListView(uint32_t esp);
-    virtual int32_t HandleTerminalView(uint32_t esp);
-    virtual int32_t HandleEvent(uint32_t esp);
+    virtual int32_t HandleWidget(CPUState* cpu, const WidgetData* data);
+    virtual int32_t HandleWindow(CPUState* cpu, const WidgetData* data);
+    virtual int32_t HandleButton(CPUState* cpu, const WidgetData* data);
+    virtual int32_t HandleLabel(CPUState* cpu, const WidgetData* data);
+    virtual int32_t HandleListView(CPUState* cpu, const WidgetData* data);
+    virtual int32_t HandleTerminalView(CPUState* cpu, const WidgetData* data);
+    virtual int32_t HandleEvent(CPUState* cpu);
     void RemoveAppByPID(uint32_t PID);
     Widget* FindWidgetByID(uint32_t searchID);
     uint32_t getNewID();

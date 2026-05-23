@@ -34,7 +34,7 @@ uint32_t AdvancedTechnologyAttachment::Identify() {
     devicePort.Write(master ? 0xA0 : 0xB0);
     controlPort.Write(0);
 
-    devicePort.Write(0xA0);
+    devicePort.Write(master ? 0xA0 : 0xB0);
     uint8_t status = commandPort.Read();
     if (status == 0xFF) {
         KDBG1("No Device (Status 0xFF)");
@@ -101,7 +101,22 @@ void AdvancedTechnologyAttachment::Read28(uint32_t sectorNum, uint8_t* data, int
         KDBG1("READ ERROR");
         return;
     }
-    while ((status & 0x08) != 0x08) status = commandPort.Read();
+    uint32_t drqWait = 0;
+    while ((status & 0x08) != 0x08) {
+        if ((status & 0x01) == 0x01) {
+            KDBG1("READ ERROR: ERR set while waiting for DRQ");
+            return;
+        }
+        if ((status & 0x20) == 0x20) {
+            KDBG1("READ ERROR: DF set while waiting for DRQ");
+            return;
+        }
+        if (drqWait++ > 1000000) {
+            KDBG1("READ ERROR: DRQ timeout");
+            return;
+        }
+        status = commandPort.Read();
+    }
 
     // --- OPTIMIZED READ ---
     if (count == 512) {
@@ -112,7 +127,11 @@ void AdvancedTechnologyAttachment::Read28(uint32_t sectorNum, uint8_t* data, int
         uint8_t sectorBuffer[512];
         insw(dataPort.getPortNumber(), sectorBuffer, 256);
 
-        for (int i = 0; i < count; i++) {
+        int safeCount = count;
+        if (safeCount < 0) safeCount = 0;
+        if (safeCount > 512) safeCount = 512;
+
+        for (int i = 0; i < safeCount; i++) {
             data[i] = sectorBuffer[i];
         }
     }
@@ -136,7 +155,22 @@ void AdvancedTechnologyAttachment::Write28(uint32_t sectorNum, uint8_t* data, ui
     uint8_t status4 = commandPort.Read();
 
     while ((status & 0x80) == 0x80) status = commandPort.Read();
-    while ((status & 0x08) != 0x08) status = commandPort.Read();
+    uint32_t drqWait = 0;
+    while ((status & 0x08) != 0x08) {
+        if ((status & 0x01) == 0x01) {
+            KDBG1("WRITE ERROR: ERR set while waiting for DRQ");
+            return;
+        }
+        if ((status & 0x20) == 0x20) {
+            KDBG1("WRITE ERROR: DF set while waiting for DRQ");
+            return;
+        }
+        if (drqWait++ > 1000000) {
+            KDBG1("WRITE ERROR: DRQ timeout");
+            return;
+        }
+        status = commandPort.Read();
+    }
 
     // --- OPTIMIZED WRITE ---
     // If we are writing a full sector, use outsw

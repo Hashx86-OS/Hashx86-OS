@@ -93,6 +93,9 @@ ProcessControlBlock* Scheduler::CreateProcess(bool isKernel, void (*entrypoint)(
     }
     pcb->pid = _pidCounter++;
     pcb->isKernelProcess = isKernel;
+    for (uint32_t fd = FD_MIN; fd < FD_MAX; fd++) {
+        pcb->fdTable[fd] = nullptr;
+    }
 
     // MEMORY SPACE SETUP
     if (isKernel) {
@@ -313,6 +316,9 @@ ThreadControlBlock* Scheduler::CloneCurrentProcess(CPUState* parentContext, uint
     childProc->parent = parent;
     childProc->page_directory = _pager->CreateProcessDirectory();
     childProc->heap = parent->heap;
+    for (uint32_t fd = FD_MIN; fd < FD_MAX; fd++) {
+        childProc->fdTable[fd] = parent->fdTable[fd];
+    }
 
     if (!childProc->page_directory) {
         delete childProc;

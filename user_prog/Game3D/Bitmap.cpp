@@ -68,12 +68,33 @@ void Bitmap::LoadFromMemory(uint8_t* rawData, uint32_t rawSize) {
         isTopDown = true;
     }
 
+    if (width <= 0 || height == 0) {
+        printf("BMP Error: Invalid dimensions %dx%d\n", width, height);
+        return;
+    }
+
+    int bytesPerPixel = infoHeader->bitCount / 8;
+    uint64_t rowBytes = (uint64_t)width * (uint64_t)bytesPerPixel;
+    uint64_t rowPadding64 = (4 - (rowBytes % 4)) % 4;
+    uint64_t totalPixelBytes = (rowBytes + rowPadding64) * (uint64_t)height;
+
+    if (fileHeader->offBits >= rawSize ||
+        totalPixelBytes > (uint64_t)(rawSize - fileHeader->offBits)) {
+        printf("BMP Error: Pixel data out of bounds\n");
+        return;
+    }
+
+    uint64_t pixelCount = (uint64_t)width * (uint64_t)height;
+    if (pixelCount > (uint64_t)(0xFFFFFFFFu / sizeof(uint32_t))) {
+        printf("BMP Error: Dimensions too large %dx%d\n", width, height);
+        return;
+    }
+
     buffer = new uint32_t[width * height];
     if (!buffer) return;
 
     uint8_t* pixelData = rawData + fileHeader->offBits;
-    int bytesPerPixel = infoHeader->bitCount / 8;
-    int rowPadding = (4 - (width * bytesPerPixel) % 4) % 4;
+    int rowPadding = (int)rowPadding64;
 
     for (int y = 0; y < height; y++) {
         int targetY = isTopDown ? y : (height - 1 - y);

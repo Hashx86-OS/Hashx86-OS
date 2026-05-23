@@ -67,20 +67,19 @@ void AudioMixer::ProcessAudio() {
         if (!st.active) continue;
 
         activeStreams = true;
-        int16_t* src = (int16_t*)(st.data + st.position);
-
         for (uint32_t i = 0; i < samples; i++) {
             if (st.position >= st.length) {
                 if (st.looping) {
                     st.position = 0;
-                    src = (int16_t*)st.data;
                 } else {
                     st.active = false;
                     break;
                 }
             }
 
-            int32_t mixed = out[i] + src[i];
+            uint32_t sampleIndex = st.position / sizeof(int16_t);
+            int16_t sample = ((int16_t*)st.data)[sampleIndex];
+            int32_t mixed = out[i] + sample;
 
             // Hard Clipping prevention
             if (mixed > 32767) mixed = 32767;

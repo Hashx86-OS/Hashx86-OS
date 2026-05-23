@@ -48,7 +48,7 @@ class FontFile {
     friend class FontManager;
 
 private:
-    FontData* font_data_list[10][3];  // size, type - 0=Normal, 1=Bold, 2=Italic
+    FontData* font_data_list[10][4];  // size, type - 0=Normal, 1=Bold, 2=Italic, 3=BoldItalic
 public:
     FontFile();
     ~FontFile();

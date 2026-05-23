@@ -8,6 +8,78 @@
 
 #define KDBG_COMPONENT "GUI"
 #include <gui/Hgui.h>
+#include <core/globals.h>
+
+namespace {
+constexpr uint32_t USER_LOWER_BOUND = 0x10000000;
+constexpr size_t MAX_USER_TEXT = 256;
+
+bool IsUserRange(ProcessControlBlock* proc, uint32_t addr, size_t size) {
+    if (!proc || !g_paging || size == 0) return false;
+    if (addr < USER_LOWER_BOUND) return false;
+    uint32_t end = addr + (uint32_t)size - 1;
+    if (end < addr) return false;
+
+    uint32_t start_page = addr & ~(PAGE_SIZE - 1);
+    uint32_t end_page = end & ~(PAGE_SIZE - 1);
+    for (uint32_t page = start_page; page <= end_page; page += PAGE_SIZE) {
+        if (g_paging->GetPhysicalAddress(proc->page_directory, page) == 0) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool CopyFromUser(ProcessControlBlock* proc, void* dst, const void* src_user, size_t size) {
+    if (!dst || !src_user || size == 0) return false;
+    uint32_t user_addr = (uint32_t)src_user;
+    if (!IsUserRange(proc, user_addr, size)) return false;
+
+    uint8_t* out = (uint8_t*)dst;
+    size_t remaining = size;
+    while (remaining > 0) {
+        uint32_t phys = g_paging->GetPhysicalAddress(proc->page_directory, user_addr);
+        if (!phys) return false;
+        uint32_t offset = user_addr & (PAGE_SIZE - 1);
+        uint32_t chunk = PAGE_SIZE - offset;
+        if (chunk > remaining) chunk = (uint32_t)remaining;
+        memcpy(out, (void*)phys, chunk);
+        out += chunk;
+        user_addr += chunk;
+        remaining -= chunk;
+    }
+    return true;
+}
+
+bool CopyUserString(ProcessControlBlock* proc, const char* src_user, char* dst, size_t dst_size) {
+    if (!dst || dst_size == 0) return false;
+    if (!src_user) {
+        dst[0] = '\0';
+        return true;
+    }
+
+    uint32_t user_addr = (uint32_t)src_user;
+    if (user_addr < USER_LOWER_BOUND) {
+        dst[0] = '\0';
+        return false;
+    }
+
+    size_t i = 0;
+    while (i + 1 < dst_size) {
+        uint32_t phys = g_paging->GetPhysicalAddress(proc->page_directory, user_addr);
+        if (!phys) {
+            dst[0] = '\0';
+            return false;
+        }
+        char c = *(char*)phys;
+        dst[i++] = c;
+        user_addr++;
+        if (c == '\0') return true;
+    }
+    dst[dst_size - 1] = '\0';
+    return true;
+}
+}  // namespace
 
 HguiHandler* HguiHandler::activeInstance = nullptr;
 
@@ -25,28 +97,40 @@ HguiHandler::~HguiHandler() {}
 uint32_t HguiHandler::HandleInterrupt(uint32_t esp) {
     CPUState* cpu = (CPUState*)esp;
     int32_t ret = -1;
+    ProcessControlBlock* proc = Scheduler::activeInstance ?
+        Scheduler::activeInstance->GetCurrentProcess() : nullptr;
+    WidgetData data;
+    const WidgetData* data_ptr = nullptr;
+
+    if (cpu->eax != EVENT) {
+        if (!proc || !CopyFromUser(proc, &data, (void*)cpu->ecx, sizeof(WidgetData))) {
+            cpu->eax = (uint32_t)-1;
+            return esp;
+        }
+        data_ptr = &data;
+    }
 
     switch ((uint32_t)cpu->eax) {
         case WIDGET:
-            ret = HandleWidget(esp);
+            ret = HandleWidget(cpu, data_ptr);
             break;
         case WINDOW:
-            ret = HandleWindow(esp);
+            ret = HandleWindow(cpu, data_ptr);
             break;
         case BUTTON:
-            ret = HandleButton(esp);
+            ret = HandleButton(cpu, data_ptr);
             break;
         case LABEL:
-            ret = HandleLabel(esp);
+            ret = HandleLabel(cpu, data_ptr);
             break;
         case LISTVIEW:
-            ret = HandleListView(esp);
+            ret = HandleListView(cpu, data_ptr);
             break;
         case TERMINAL_VIEW:
-            ret = HandleTerminalView(esp);
+            ret = HandleTerminalView(cpu, data_ptr);
             break;
         case EVENT:
-            ret = HandleEvent(esp);
+            ret = HandleEvent(cpu);
             break;
 
         default:
@@ -57,15 +141,15 @@ uint32_t HguiHandler::HandleInterrupt(uint32_t esp) {
     return esp;
 }
 
-int32_t HguiHandler::HandleWidget(uint32_t esp) {
-    CPUState* cpu = (CPUState*)esp;
-    WidgetData* _data = (WidgetData*)cpu->ecx;
+int32_t HguiHandler::HandleWidget(CPUState* cpu, const WidgetData* _data) {
+    if (!cpu || !_data) return -1;
 
     if ((uint32_t)cpu->ebx == ADD_CHILD) {
-        CompositeWidget* parentWidget = (CompositeWidget*)this->FindWidgetByID(_data->param0);
-        if (!parentWidget) return -1;
+        Widget* parentBase = this->FindWidgetByID(_data->param0);
+        if (!parentBase || !parentBase->IsComposite()) return -1;
+        CompositeWidget* parentWidget = static_cast<CompositeWidget*>(parentBase);
 
-        CompositeWidget* childWidget = (CompositeWidget*)this->FindWidgetByID(_data->param1);
+        Widget* childWidget = this->FindWidgetByID(_data->param1);
         if (!childWidget) return -1;  // Also fixes a bug where parentWidget was checked twice
 
         // TODO: Add checks for widgets before add to desktop
@@ -96,13 +180,15 @@ int32_t HguiHandler::HandleWidget(uint32_t esp) {
     return -1;
 }
 
-int32_t HguiHandler::HandleWindow(uint32_t esp) {
-    CPUState* cpu = (CPUState*)esp;
-    WidgetData* _data = (WidgetData*)cpu->ecx;
+int32_t HguiHandler::HandleWindow(CPUState* cpu, const WidgetData* _data) {
+    if (!cpu || !_data) return -1;
+    ProcessControlBlock* proc = Scheduler::activeInstance->GetCurrentProcess();
+    char titleBuf[MAX_USER_TEXT];
 
     if ((uint32_t)cpu->ebx == CREATE) {
-        CompositeWidget* parentWidget = (CompositeWidget*)this->FindWidgetByID(_data->param0);
-        if (!parentWidget) return -1;
+        Widget* parentBase = this->FindWidgetByID(_data->param0);
+        if (!parentBase || !parentBase->IsComposite()) return -1;
+        CompositeWidget* parentWidget = static_cast<CompositeWidget*>(parentBase);
 
         uint32_t _newID = this->getNewID();
         Widget* _widget =
@@ -118,8 +204,10 @@ int32_t HguiHandler::HandleWindow(uint32_t esp) {
     } else if ((uint32_t)cpu->ebx == SET_TEXT) {
         Window* widget = (Window*)this->FindWidgetByID(_data->param0);
         if (!widget) return -1;
-
-        widget->setWindowTitle(_data->param5);
+        if (!CopyUserString(proc, _data->param5, titleBuf, sizeof(titleBuf))) {
+            return -1;
+        }
+        widget->setWindowTitle(titleBuf);
 
         return 1;
     }
@@ -127,18 +215,24 @@ int32_t HguiHandler::HandleWindow(uint32_t esp) {
     return -1;
 }
 
-int32_t HguiHandler::HandleButton(uint32_t esp) {
-    CPUState* cpu = (CPUState*)esp;
-    WidgetData* _data = (WidgetData*)cpu->ecx;
+int32_t HguiHandler::HandleButton(CPUState* cpu, const WidgetData* _data) {
+    if (!cpu || !_data) return -1;
+    ProcessControlBlock* proc = Scheduler::activeInstance->GetCurrentProcess();
+    char labelBuf[MAX_USER_TEXT];
 
     if ((uint32_t)cpu->ebx == CREATE) {
-        CompositeWidget* parentWidget = (CompositeWidget*)this->FindWidgetByID(_data->param0);
-        if (!parentWidget || parentWidget->ID == 0)
+        Widget* parentBase = this->FindWidgetByID(_data->param0);
+        if (!parentBase || !parentBase->IsComposite())
             return -1;  // Minor structural fix for bitwise vs Logical or originally
+        CompositeWidget* parentWidget = static_cast<CompositeWidget*>(parentBase);
+        if (parentWidget->ID == 0) return -1;
 
+        if (!CopyUserString(proc, _data->param5, labelBuf, sizeof(labelBuf))) {
+            return -1;
+        }
         uint32_t _newID = this->getNewID();
         Widget* _widget = new Button(parentWidget, _data->param1, _data->param2, _data->param3,
-                                     _data->param4, _data->param5);
+                                     _data->param4, labelBuf);
         if (!_widget) {
             HALT("CRITICAL: Failed to allocate Button widget!\n");
         }
@@ -152,17 +246,23 @@ int32_t HguiHandler::HandleButton(uint32_t esp) {
     return -1;
 }
 
-int32_t HguiHandler::HandleLabel(uint32_t esp) {
-    CPUState* cpu = (CPUState*)esp;
-    WidgetData* _data = (WidgetData*)cpu->ecx;
+int32_t HguiHandler::HandleLabel(CPUState* cpu, const WidgetData* _data) {
+    if (!cpu || !_data) return -1;
+    ProcessControlBlock* proc = Scheduler::activeInstance->GetCurrentProcess();
+    char textBuf[MAX_USER_TEXT];
 
     if ((uint32_t)cpu->ebx == CREATE) {
-        CompositeWidget* parentWidget = (CompositeWidget*)this->FindWidgetByID(_data->param0);
-        if (!parentWidget || parentWidget->ID == 0) return -1;
+        Widget* parentBase = this->FindWidgetByID(_data->param0);
+        if (!parentBase || !parentBase->IsComposite()) return -1;
+        CompositeWidget* parentWidget = static_cast<CompositeWidget*>(parentBase);
+        if (parentWidget->ID == 0) return -1;
 
+        if (!CopyUserString(proc, _data->param5, textBuf, sizeof(textBuf))) {
+            return -1;
+        }
         uint32_t _newID = this->getNewID();
         Widget* _widget = new Label(parentWidget, _data->param1, _data->param2, _data->param3,
-                                    _data->param4, _data->param5);
+                                    _data->param4, textBuf);
         if (!_widget) {
             HALT("CRITICAL: Failed to allocate Label widget!\n");
         }
@@ -174,8 +274,10 @@ int32_t HguiHandler::HandleLabel(uint32_t esp) {
     } else if ((uint32_t)cpu->ebx == SET_TEXT) {
         Label* widget = (Label*)this->FindWidgetByID(_data->param0);
         if (!widget) return -1;
-
-        widget->setText(_data->param5);
+        if (!CopyUserString(proc, _data->param5, textBuf, sizeof(textBuf))) {
+            return -1;
+        }
+        widget->setText(textBuf);
 
         return 1;
     } else if ((uint32_t)cpu->ebx == SET_FONT_SIZE) {
@@ -190,13 +292,16 @@ int32_t HguiHandler::HandleLabel(uint32_t esp) {
     return -1;
 }
 
-int32_t HguiHandler::HandleListView(uint32_t esp) {
-    CPUState* cpu = (CPUState*)esp;
-    WidgetData* _data = (WidgetData*)cpu->ecx;
+int32_t HguiHandler::HandleListView(CPUState* cpu, const WidgetData* _data) {
+    if (!cpu || !_data) return -1;
+    ProcessControlBlock* proc = Scheduler::activeInstance->GetCurrentProcess();
+    char headerBuf[MAX_USER_TEXT];
 
     if ((uint32_t)cpu->ebx == CREATE) {
-        CompositeWidget* parentWidget = (CompositeWidget*)this->FindWidgetByID(_data->param0);
-        if (!parentWidget || parentWidget->ID == 0) return -1;
+        Widget* parentBase = this->FindWidgetByID(_data->param0);
+        if (!parentBase || !parentBase->IsComposite()) return -1;
+        CompositeWidget* parentWidget = static_cast<CompositeWidget*>(parentBase);
+        if (parentWidget->ID == 0) return -1;
 
         uint32_t _newID = this->getNewID();
         Widget* _widget =
@@ -221,9 +326,18 @@ int32_t HguiHandler::HandleListView(uint32_t esp) {
         };
 
         widget->Clear();
-        ListViewItemData* items = (ListViewItemData*)_data->param5;
         int count = (int)_data->param1;
-        for (int i = 0; i < count && i < LISTVIEW_MAX_ITEMS; i++) {
+        if (count < 0) return -1;
+        if (count > LISTVIEW_MAX_ITEMS) count = LISTVIEW_MAX_ITEMS;
+
+        ListViewItemData items[LISTVIEW_MAX_ITEMS];
+        size_t bytes = (size_t)count * sizeof(ListViewItemData);
+        if (bytes > 0 && !CopyFromUser(proc, items, _data->param5, bytes)) {
+            return -1;
+        }
+
+        for (int i = 0; i < count; i++) {
+            items[i].name[63] = 0;
             widget->AddItem(items[i].name, items[i].size, items[i].type);
         }
         return count;
@@ -239,25 +353,34 @@ int32_t HguiHandler::HandleListView(uint32_t esp) {
     } else if ((uint32_t)cpu->ebx == SET_TEXT) {
         ListView* widget = (ListView*)this->FindWidgetByID(_data->param0);
         if (!widget) return -1;
-        widget->SetHeader(_data->param5);
+        if (!CopyUserString(proc, _data->param5, headerBuf, sizeof(headerBuf))) {
+            return -1;
+        }
+        widget->SetHeader(headerBuf);
         return 1;
     }
 
     return -1;
 }
 
-int32_t HguiHandler::HandleTerminalView(uint32_t esp) {
-    CPUState* cpu = (CPUState*)esp;
-    WidgetData* _data = (WidgetData*)cpu->ecx;
+int32_t HguiHandler::HandleTerminalView(CPUState* cpu, const WidgetData* _data) {
+    if (!cpu || !_data) return -1;
+    ProcessControlBlock* proc = Scheduler::activeInstance->GetCurrentProcess();
+    char textBuf[MAX_USER_TEXT];
 
     if ((uint32_t)cpu->ebx == CREATE) {
-        CompositeWidget* parentWidget = (CompositeWidget*)this->FindWidgetByID(_data->param0);
-        if (!parentWidget || parentWidget->ID == 0) return -1;
+        Widget* parentBase = this->FindWidgetByID(_data->param0);
+        if (!parentBase || !parentBase->IsComposite()) return -1;
+        CompositeWidget* parentWidget = static_cast<CompositeWidget*>(parentBase);
+        if (parentWidget->ID == 0) return -1;
 
+        if (!CopyUserString(proc, _data->param5, textBuf, sizeof(textBuf))) {
+            return -1;
+        }
         uint32_t _newID = this->getNewID();
         Widget* _widget =
             new TerminalView(parentWidget, (int32_t)_data->param1, (int32_t)_data->param2,
-                             (int32_t)_data->param3, (int32_t)_data->param4, _data->param5);
+                             (int32_t)_data->param3, (int32_t)_data->param4, textBuf);
         if (!_widget) {
             HALT("CRITICAL: Failed to allocate TerminalView widget!\n");
         }
@@ -269,8 +392,10 @@ int32_t HguiHandler::HandleTerminalView(uint32_t esp) {
     } else if ((uint32_t)cpu->ebx == SET_TEXT) {
         TerminalView* widget = (TerminalView*)this->FindWidgetByID(_data->param0);
         if (!widget) return -1;
-
-        widget->setText(_data->param5);
+        if (!CopyUserString(proc, _data->param5, textBuf, sizeof(textBuf))) {
+            return -1;
+        }
+        widget->setText(textBuf);
         return 1;
     } else if ((uint32_t)cpu->ebx == SET_FONT_SIZE) {
         TerminalView* widget = (TerminalView*)this->FindWidgetByID(_data->param0);
@@ -294,8 +419,8 @@ int32_t HguiHandler::HandleTerminalView(uint32_t esp) {
     return -1;
 }
 
-int32_t HguiHandler::HandleEvent(uint32_t esp) {
-    CPUState* cpu = (CPUState*)esp;
+int32_t HguiHandler::HandleEvent(CPUState* cpu) {
+    if (!cpu) return -1;
 
     if (!Scheduler::activeInstance || !Desktop::activeInstance) {
         return -1;

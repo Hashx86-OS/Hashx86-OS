@@ -5,6 +5,7 @@
 #include <types.h>
 
 class FAT32;
+struct ProcessControlBlock;
 
 class File {
 public:
@@ -36,8 +37,8 @@ public:
     void Close();
 };
 
-int32_t AllocateFd(File* file);
-File* GetFileByFd(uint32_t fd);
-void ReleaseFd(uint32_t fd);
+int32_t AllocateFd(ProcessControlBlock* pcb, File* file);
+File* GetFileByFd(ProcessControlBlock* pcb, uint32_t fd);
+void ReleaseFd(ProcessControlBlock* pcb, uint32_t fd);
 
 #endif

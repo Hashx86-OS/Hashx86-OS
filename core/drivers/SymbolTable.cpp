@@ -23,8 +23,10 @@ void SymbolTable::Register(const char* name, uint32_t addr) {
 }
 
 uint32_t SymbolTable::Lookup(const char* name) {
+    if (!name) return 0;
     for (int i = 0; i < count; i++) {
-        if (strncmp(symbols[i].name, name, 64) == 0) {
+        if (!symbols[i].name) continue;
+        if (strcmp(symbols[i].name, name) == 0) {
             return symbols[i].address;
         }
     }

@@ -7,8 +7,9 @@
  */
 
 #include <stdlib.h>
+#include <stdint.h>
 
-char* itoa(uint32_t num, char* str, uint32_t base) {
+char* itoa(int32_t num, char* str, uint32_t base) {
     uint32_t i = 0;
     bool isNegative = false;
 
@@ -18,15 +19,19 @@ char* itoa(uint32_t num, char* str, uint32_t base) {
         return str;
     }
 
-    if (num < 0 && base == 10) {
+    int32_t n = num;
+    uint32_t unum;
+    if (n < 0 && base == 10) {
         isNegative = true;
-        num = -num;
+        unum = (uint32_t)(-(int64_t)n);
+    } else {
+        unum = (uint32_t)n;
     }
 
-    while (num != 0) {
-        uint32_t rem = num % base;
+    while (unum != 0) {
+        uint32_t rem = unum % base;
         str[i++] = (rem > 9) ? (rem - 10) + 'A' : rem + '0';
-        num = num / base;
+        unum = unum / base;
     }
 
     if (isNegative) {

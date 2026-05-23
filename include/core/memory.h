@@ -7,6 +7,10 @@
 #include <stddef.h>
 #include <types.h>
 
+namespace std {
+enum class align_val_t : size_t;
+}
+
 // Memory manipulation functions
 extern "C" {
 void* memset(void* ptr, int value, size_t num);

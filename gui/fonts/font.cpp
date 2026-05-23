@@ -121,8 +121,23 @@ FontManager::~FontManager() {}
 
 void FontManager::LoadFile(uint32_t mod_start, uint32_t mod_end) {
     uint8_t* ptr = reinterpret_cast<uint8_t*>(mod_start);
+    uint8_t* end = reinterpret_cast<uint8_t*>(mod_end);
+
+    if (end <= ptr) {
+        KDBG1("Error: Invalid font module bounds");
+        return;
+    }
+
+    auto has_bytes = [&](size_t n) -> bool {
+        return (size_t)(end - ptr) >= n;
+    };
 
     // ---- Main header ----
+    if (!has_bytes(8)) {
+        KDBG1("Error: Font header too small");
+        return;
+    }
+
     uint32_t magic = *(uint32_t*)ptr;
     ptr += 4;
     uint16_t version = *(uint16_t*)ptr;
@@ -140,8 +155,42 @@ void FontManager::LoadFile(uint32_t mod_start, uint32_t mod_end) {
         HALT("CRITICAL: Failed to allocate font file!\n");
     }
 
+    for (int s = 0; s < 10; s++) {
+        for (int t = 0; t < 4; t++) {
+            new_font_file->font_data_list[s][t] = nullptr;
+        }
+    }
+
+    auto cleanup_font_file = [&]() {
+        for (int s = 0; s < 10; s++) {
+            for (int t = 0; t < 4; t++) {
+                FontData* f = new_font_file->font_data_list[s][t];
+                if (!f) continue;
+                delete[] f->atlas;
+                delete[] f->glyphs;
+                delete[] f->kernings;
+                delete f;
+                new_font_file->font_data_list[s][t] = nullptr;
+            }
+        }
+        delete new_font_file;
+    };
+
+    (void)version;
+    const uint16_t max_fonts = 64;
+    if (font_count == 0 || font_count > max_fonts) {
+        KDBG1("Error: Invalid font count %d", font_count);
+        cleanup_font_file();
+        return;
+    }
+
     for (int i = 0; i < font_count; i++) {
         // ---- Per-font header ----
+        if (!has_bytes(11)) {
+            KDBG1("Error: Font entry header truncated at entry %d", i);
+            break;  // Can't parse further entries without header
+        }
+
         uint16_t size = *(uint16_t*)ptr;
         ptr += 2;
         uint8_t style = *(uint8_t*)ptr;
@@ -154,6 +203,72 @@ void FontManager::LoadFile(uint32_t mod_start, uint32_t mod_end) {
         ptr += 2;
         uint16_t kerning_count = *(uint16_t*)ptr;
         ptr += 2;
+
+        const uint16_t max_atlas_dim = 4096;
+        const uint16_t max_glyphs = 2048;
+        const uint16_t max_kernings = 8192;
+
+        // Compute data sizes first so we can skip past the entry on validation failure
+        uint64_t atlas_elems = (uint64_t)atlas_width * (uint64_t)atlas_height;
+        uint64_t glyph_elems = (uint64_t)glyph_count * 8u;
+        uint64_t kerning_elems = (uint64_t)kerning_count * 3u;
+        size_t atlas_bytes = (size_t)atlas_elems * sizeof(uint32_t);
+        size_t glyph_bytes = (size_t)glyph_elems * sizeof(int16_t);
+        size_t kerning_bytes = (size_t)kerning_elems * sizeof(int16_t);
+        size_t entry_total = atlas_bytes + glyph_bytes + kerning_bytes;
+
+        // Validate index bounds — skip entry if it won't fit in font_data_list[10][4]
+        if (size >= 10 || style >= 4) {
+            KDBG1("Warning: Skipping font entry %d (size=%d style=%d) — out of array bounds",
+                  i, size, style);
+            // Advance ptr past this entry's data so we can parse the next one
+            if (has_bytes(entry_total)) {
+                ptr += entry_total;
+            }
+            continue;
+        }
+
+        // Validate dimensions
+        if (atlas_width == 0 || atlas_height == 0 ||
+            atlas_width > max_atlas_dim || atlas_height > max_atlas_dim) {
+            KDBG1("Warning: Skipping font entry %d — invalid atlas size %dx%d",
+                  i, atlas_width, atlas_height);
+            if (has_bytes(entry_total)) {
+                ptr += entry_total;
+            }
+            continue;
+        }
+        if (glyph_count == 0 || glyph_count > max_glyphs) {
+            KDBG1("Warning: Skipping font entry %d — invalid glyph count %d", i, glyph_count);
+            if (has_bytes(entry_total)) {
+                ptr += entry_total;
+            }
+            continue;
+        }
+        if (kerning_count > max_kernings) {
+            KDBG1("Warning: Skipping font entry %d — invalid kerning count %d", i, kerning_count);
+            if (has_bytes(entry_total)) {
+                ptr += entry_total;
+            }
+            continue;
+        }
+
+        // Overflow checks
+        if (atlas_elems > (uint64_t)(0xFFFFFFFFu / sizeof(uint32_t))) {
+            KDBG1("Warning: Skipping font entry %d — atlas overflow", i);
+            continue;
+        }
+        if (glyph_elems > (uint64_t)(0xFFFFFFFFu / sizeof(int16_t)) ||
+            kerning_elems > (uint64_t)(0xFFFFFFFFu / sizeof(int16_t))) {
+            KDBG1("Warning: Skipping font entry %d — glyph/kerning overflow", i);
+            continue;
+        }
+
+        // Bounds check against remaining buffer
+        if (!has_bytes(entry_total)) {
+            KDBG1("Error: Font entry %d data exceeds module bounds", i);
+            break;  // Can't recover — remaining data is truncated
+        }
 
         FontData* new_font = new FontData{};
         if (!new_font) {
@@ -168,31 +283,31 @@ void FontManager::LoadFile(uint32_t mod_start, uint32_t mod_end) {
         new_font->kerning_count = kerning_count;
 
         // ---- Atlas ----
-        size_t atlasSize = atlas_width * atlas_height;
+        size_t atlasSize = (size_t)atlas_elems;
         new_font->atlas = new uint32_t[atlasSize];
         if (!new_font->atlas) {
             HALT("CRITICAL: Failed to allocate font atlas!\n");
         }
-        memcpy(new_font->atlas, ptr, atlasSize * sizeof(uint32_t));
-        ptr += atlasSize * sizeof(uint32_t);
+        memcpy(new_font->atlas, ptr, atlas_bytes);
+        ptr += atlas_bytes;
 
         // ---- Glyphs ----
-        size_t glyphSize = glyph_count * 8;
+        size_t glyphSize = (size_t)glyph_elems;
         new_font->glyphs = new int16_t[glyphSize];
         if (!new_font->glyphs) {
             HALT("CRITICAL: Failed to allocate font glyphs!\n");
         }
-        memcpy(new_font->glyphs, ptr, glyphSize * sizeof(int16_t));
-        ptr += glyphSize * sizeof(int16_t);
+        memcpy(new_font->glyphs, ptr, glyph_bytes);
+        ptr += glyph_bytes;
 
         // ---- Kernings ----
-        size_t kerningSize = kerning_count * 3;
+        size_t kerningSize = (size_t)kerning_elems;
         new_font->kernings = new int16_t[kerningSize];
         if (!new_font->kernings) {
             HALT("CRITICAL: Failed to allocate font kernings!\n");
         }
-        memcpy(new_font->kernings, ptr, kerningSize * sizeof(int16_t));
-        ptr += kerningSize * sizeof(int16_t);
+        memcpy(new_font->kernings, ptr, kerning_bytes);
+        ptr += kerning_bytes;
 
         new_font_file->font_data_list[size][style] = new_font;
 

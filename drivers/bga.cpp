@@ -9,6 +9,8 @@
 #include <core/driver.h>
 #include <core/drivers/GraphicsDriver.h>
 #include <core/drivers/driver_info.h>
+#include <core/globals.h>
+#include <core/paging.h>
 #include <core/pci.h>
 #include <gui/config/config.h>
 
@@ -109,6 +111,30 @@ public:
         if (bpp_result != 32) {
             printf("[BGA] Warning: Hardware refused 32-bit mode! Got: %d\n", bpp_result);
         }
+        uint64_t fb_size = (uint64_t)this->width * (uint64_t)this->height * 4;
+        if (fb_size == 0 || fb_size > 0xFFFFFFFFu) {
+            printf("[BGA] Error: Invalid framebuffer size\n");
+            return;
+        }
+        if (!g_paging || !g_paging->KernelPageDirectory) {
+            printf("[BGA] Error: Paging not initialized\n");
+            return;
+        }
+
+        uint32_t start = this->physFramebufferAddr & ~(PAGE_SIZE - 1);
+        uint32_t end = (this->physFramebufferAddr + (uint32_t)fb_size + PAGE_SIZE - 1) &
+                       ~(PAGE_SIZE - 1);
+
+        for (uint32_t addr = start; addr < end; addr += PAGE_SIZE) {
+            if (g_paging->GetPhysicalAddress(g_paging->KernelPageDirectory, addr) == 0) {
+                if (!g_paging->MapPage(g_paging->KernelPageDirectory, addr, addr,
+                                       PAGE_PRESENT | PAGE_RW)) {
+                    printf("[BGA] Error: Failed to map framebuffer\n");
+                    return;
+                }
+            }
+        }
+
         // Update GraphicsDriver Pointers
         this->videoMemory = (uint32_t*)this->physFramebufferAddr;
 

@@ -73,10 +73,10 @@ global loader            ; Make the loader function globally accessible
 ; The loader function is the entry point executed after the bootloader loads the kernel
 loader:
     mov esp, kernel_stack     ; Set the stack pointer to the beginning of the kernel stack
-    call callConstructors     ; Call the constructor functions
-
     push eax                  ; Save the value of EAX register (for passing data)
     push ebx                  ; Save the value of EBX register (for passing data)
+
+    call callConstructors     ; Call the constructor functions
 
     call kernelMain           ; Call the kernel's main entry function
 

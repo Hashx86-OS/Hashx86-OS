@@ -375,12 +375,12 @@ void init_pci(FAT32* boot_partition, DriverManager* driverManager) {
     }
     PeripheralComponentInterconnectDeviceDescriptor* dev = nullptr;
 
-    if (dev == nullptr) dev = pciCheck->FindHardwareDevice(0x1234, 0x1111);
-    if (dev->vendor_id == 0) dev = pciCheck->FindHardwareDevice(0x80EE, 0xBEEF);
-    if (dev->vendor_id == 0) dev = pciCheck->FindHardwareDevice(0x15AD, 0x0405);
+    dev = pciCheck->FindHardwareDevice(0x1234, 0x1111);
+    if (dev == nullptr || dev->vendor_id == 0) dev = pciCheck->FindHardwareDevice(0x80EE, 0xBEEF);
+    if (dev == nullptr || dev->vendor_id == 0) dev = pciCheck->FindHardwareDevice(0x15AD, 0x0405);
 
     // Only Proceed if Device Found
-    if (dev->vendor_id != 0) {
+    if (dev != nullptr && dev->vendor_id != 0) {
         char* BGAfilename = "DRIVERS/BGA.SYS";
 
         KDBG1("BGA Hardware Detected (ID: %x:%x). Loading Driver... [%s]", dev->vendor_id,
@@ -449,7 +449,7 @@ void init_pci(FAT32* boot_partition, DriverManager* driverManager) {
     // Check for AC97 (0x8086:0x2415)
     dev = pciCheck->FindHardwareDevice(0x8086, 0x2415);
 
-    if (dev->vendor_id != 0) {
+    if (dev != nullptr && dev->vendor_id != 0) {
         char* driverName = "DRIVERS/ac97.sys";
         KDBG1("Audio Hardware Detected. Loading... [%s]", driverName);
 
@@ -550,27 +550,20 @@ void pDesktop(void* arg) {
 extern "C" void kernelMain(void* multiboot_structure, uint32_t magicnumber) {
     initSerial();
     if (magicnumber != 0x2BADB002) {
-#ifdef DEBUG_ENABLED
         KDBG1("Invalid magic number : [%x], Ignoring...", magicnumber);
-#endif
         // return;
     }
 
     MultibootInfo* mbinfo = (MultibootInfo*)multiboot_structure;
-#ifdef DEBUG_ENABLED
     KDBG1("Initializing Hardware");
-#endif
 
     gdt_init();
-    // tss_init();
 
     // Initialize PMM and Kheap
     init_memory(mbinfo);
     InitializePIT(1000);
 
-#ifdef DEBUG_ENABLED
     KDBG1("Initializing paging...");
-#endif
 
     g_paging = new Paging();
     if (!g_paging) {
@@ -660,9 +653,9 @@ extern "C" void kernelMain(void* multiboot_structure, uint32_t magicnumber) {
     }
     char* fontFileName = (char*)"FONTS/SEGOEUI.BIN";
     File* fontFile = g_bootPartition->Open(fontFileName);
-    if (fontFile->size == 0) {
+    if (fontFile == nullptr || fontFile->size == 0) {
         KDBG1("Font error, file not found or empty: %s. Please reinstall the OS using 'make hdd'.",
-              fontFile);
+              fontFileName);
         while (1) {
             asm volatile("hlt");
         }

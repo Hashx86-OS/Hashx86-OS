@@ -4,8 +4,8 @@ OUTPUT_ARCH(i386:i386)
 
 SECTIONS
 {
-    __kernel_section_start = .;
     . = 0x0100000;
+    __kernel_section_start = .;
     .text : ALIGN(4)
     {
         __kernel_text_section_start = .;

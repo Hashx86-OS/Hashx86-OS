@@ -26,6 +26,11 @@ Bitmap::Bitmap(char* path) {
     this->width = 0;
     this->height = 0;
 
+    if (!MSDOSPartitionTable::activeInstance) {
+        KDBG1("Error: No active MSDOS partition table");
+        return;
+    }
+
     FAT32* fs = MSDOSPartitionTable::activeInstance->partitions[0];
     if (!fs) return;
 
@@ -98,6 +103,11 @@ void Bitmap::Load(File* file) {
     }
 
     // Parse Headers
+    if (bytesRead < (int)(sizeof(BitmapFileHeader) + sizeof(BitmapInfoHeader))) {
+        KDBG1("Error: BMP file too small (%d bytes)", bytesRead);
+        delete[] rawFile;
+        return;
+    }
     BitmapFileHeader* fileHeader = (BitmapFileHeader*)rawFile;
     BitmapInfoHeader* infoHeader = (BitmapInfoHeader*)(rawFile + sizeof(BitmapFileHeader));
 
@@ -123,6 +133,31 @@ void Bitmap::Load(File* file) {
         isTopDown = true;
     }
 
+    if (this->width <= 0 || this->height == 0) {
+        KDBG1("Error: Invalid BMP dimensions %dx%d", this->width, this->height);
+        delete[] rawFile;
+        return;
+    }
+
+    int bytesPerPixel = infoHeader->bitCount / 8;
+    uint64_t rowBytes = (uint64_t)this->width * (uint64_t)bytesPerPixel;
+    uint64_t rowPadding64 = (4 - (rowBytes % 4)) % 4;
+    uint64_t totalPixelBytes = (rowBytes + rowPadding64) * (uint64_t)this->height;
+
+    if (fileHeader->offBits >= (uint32_t)bytesRead ||
+        totalPixelBytes > (uint64_t)(bytesRead - (int)fileHeader->offBits)) {
+        KDBG1("Error: BMP pixel data out of bounds");
+        delete[] rawFile;
+        return;
+    }
+
+    uint64_t pixelCount = (uint64_t)this->width * (uint64_t)this->height;
+    if (pixelCount > (uint64_t)(0xFFFFFFFFu / sizeof(uint32_t))) {
+        KDBG1("Error: BMP dimensions too large %dx%d", this->width, this->height);
+        delete[] rawFile;
+        return;
+    }
+
     // Allocate Pixel Buffer
     this->buffer = new uint32_t[width * height];
     if (!this->buffer) {
@@ -131,8 +166,7 @@ void Bitmap::Load(File* file) {
 
     // Decode
     uint8_t* pixelData = rawFile + fileHeader->offBits;
-    int bytesPerPixel = infoHeader->bitCount / 8;
-    int rowPadding = (4 - (width * bytesPerPixel) % 4) % 4;
+    int rowPadding = (int)rowPadding64;
 
     for (int y = 0; y < height; y++) {
         int targetY = isTopDown ? y : (height - 1 - y);

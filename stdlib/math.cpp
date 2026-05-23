@@ -45,7 +45,14 @@ double pow(double base, int exp) {
 }
 
 int floor(double x) {
-    return (int)x;
+    int intPart = (int)x;
+
+    // If x is negative and has a fractional part, floor is one less than intPart.
+    if (x < 0 && x != intPart) {
+        return intPart - 1;
+    }
+
+    return intPart;
 }
 
 int ceil(double x) {

@@ -30,8 +30,9 @@ Window::Window(CompositeWidget* parent, int32_t x, int32_t y, int32_t w, int32_t
 
 Window::~Window() {
     delete[] windowTitle;
-    delete closeButton;
     if (font) delete font;
+    // closeButton is owned by childrenList (added via AddChild in the constructor),
+    // so CompositeWidget::~CompositeWidget() handles its deletion automatically.
 }
 
 void Window::OnClose() {

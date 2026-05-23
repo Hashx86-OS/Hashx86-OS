@@ -84,35 +84,6 @@ int get_kernel_memory_map(KERNEL_MEMORY_MAP* kmap, MultibootInfo* mboot_info);
 void display_kernel_memory_map(KERNEL_MEMORY_MAP* kmap);
 
 /**
- * @typedef constructor
- * @brief Defines a pointer to a function with no arguments and no return value.
- *
- * This is used to reference global constructors during initialization.
- */
-typedef void (*constructor)();
-
-/**
- * @brief External declaration for the start and end of the constructors section.
- *
- * These symbols are defined by the linker and mark the range of global constructors to call during
- * initialization.
- */
-extern "C" constructor start_ctors;
-extern "C" constructor end_ctors;
-
-/**
- * @brief Calls all global constructors in the range defined by `start_ctors` and `end_ctors`.
- *
- * This function is called during kernel initialization to ensure all static/global objects are
- * properly constructed.
- */
-extern "C" void callConstructors() {
-    for (constructor* i = &start_ctors; i != &end_ctors; i++) {
-        (*i)();  // Call each constructor in the range.
-    }
-}
-
-/**
  * @class ConsoleKeyboardEventHandler
  * @brief Handles keyboard events and processes them for the console.
  *

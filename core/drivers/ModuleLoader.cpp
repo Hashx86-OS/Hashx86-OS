@@ -124,24 +124,91 @@ void* ModuleLoader::LoadDriver(File* file) {
     }
 
     // Process Relocation Sections
+    bool relocation_failed = false;
     for (int i = 0; i < header.sh_entry_count; i++) {
         if (sections[i].type == 9) {  // SHT_REL (Relocation without Addend)
-
+            if (sections[i].ent_size == 0) {
+                KDBG1("Module Link Error: Relocation entry size is 0");
+                relocation_failed = true;
+                break;
+            }
             uint32_t count = sections[i].size / sections[i].ent_size;
+            if (count == 0 || (sections[i].size % sections[i].ent_size) != 0) {
+                KDBG1("Module Link Error: Invalid relocation table size");
+                relocation_failed = true;
+                break;
+            }
+            if (!symtab || symtab_count == 0) {
+                KDBG1("Module Link Error: Missing symbol table for relocations");
+                relocation_failed = true;
+                break;
+            }
 
             // Allocate buffer for relocs
             struct elf32_rel* rels = (struct elf32_rel*)kmalloc(sections[i].size);
+            if (!rels) {
+                KDBG1("Module Link Error: Failed to allocate relocation buffer");
+                relocation_failed = true;
+                break;
+            }
             file->Seek(sections[i].offset);
-            file->Read((uint8_t*)rels, sections[i].size);
+            int relBytes = file->Read((uint8_t*)rels, sections[i].size);
+            if (relBytes != (int)sections[i].size) {
+                KDBG1("Module Link Error: Failed to read relocation entries");
+                kfree(rels);
+                relocation_failed = true;
+                break;
+            }
 
             // The section modifying (patching)
             uint32_t target_section_idx = sections[i].info;
+            if (target_section_idx >= header.sh_entry_count) {
+                KDBG1("Module Link Error: Invalid relocation target section index");
+                kfree(rels);
+                relocation_failed = true;
+                break;
+            }
+            if ((sections[target_section_idx].flags & 0x2) == 0) {
+                KDBG2("Module Link: Skipping relocations for non-alloc section index %d",
+                      target_section_idx);
+                kfree(rels);
+                continue;
+            }
+            uint32_t target_size = sections[target_section_idx].size;
             uint32_t target_base = sections[target_section_idx].addr;
+            if (target_base == 0 || target_size == 0) {
+                KDBG1("Module Link Error: Relocation target section not loaded");
+                kfree(rels);
+                relocation_failed = true;
+                break;
+            }
+            if (target_size < sizeof(uint32_t)) {
+                KDBG1("Module Link Error: Relocation target section too small");
+                kfree(rels);
+                relocation_failed = true;
+                break;
+            }
 
             for (uint32_t r = 0; r < count; r++) {
                 uint32_t sym_idx = ELF32_R_SYM(rels[r].info);
                 uint32_t type = ELF32_R_TYPE(rels[r].info);
                 uint32_t offset = rels[r].offset;  // Offset inside the target section
+
+                if (sym_idx >= symtab_count) {
+                    KDBG1("Module Link Error: Relocation symbol index out of range");
+                    relocation_failed = true;
+                    break;
+                }
+                if (type != R_386_32 && type != R_386_PC32) {
+                    KDBG1("Module Link Error: Unsupported relocation type %d", type);
+                    relocation_failed = true;
+                    break;
+                }
+                if (offset > target_size - sizeof(uint32_t)) {
+                    KDBG1("Module Link Error: Relocation offset out of bounds");
+                    relocation_failed = true;
+                    break;
+                }
 
                 // Need to write the patched address
                 uint32_t* patch_addr = (uint32_t*)(target_base + offset);
@@ -175,7 +242,16 @@ void* ModuleLoader::LoadDriver(File* file) {
                 }
             }
             kfree(rels);
+            if (relocation_failed) break;
         }
+    }
+
+    if (relocation_failed) {
+        kfree(sections);
+        kfree(strtab);
+        kfree(symtab);
+        kfree(strtab_sym);
+        return 0;
     }
 
     // Find Entry Point (CreateDriverInstance)

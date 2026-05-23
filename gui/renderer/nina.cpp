@@ -73,21 +73,37 @@ void NINA::DrawBitmapToBuffer(uint32_t* dst, int dstW, int dstH, int dstX, int d
 void NINA::DrawBitmap(uint32_t* buffer, int32_t bufferWidth, int32_t bufferHeight, int32_t x,
                       int32_t y, const uint32_t* bitmapData, int32_t bitmapWidth,
                       int32_t bitmapHeight) {
+    if (!buffer || !bitmapData || bufferWidth <= 0 || bufferHeight <= 0 || bitmapWidth <= 0 ||
+        bitmapHeight <= 0) {
+        return;
+    }
+    if (x >= bufferWidth || y >= bufferHeight) return;
+    if (x + bitmapWidth <= 0 || y + bitmapHeight <= 0) return;
+
+    int32_t startCol = (x < 0) ? -x : 0;
+    int32_t drawWidth = bitmapWidth - startCol;
+    int32_t startX = (x < 0) ? 0 : x;
+    if (startX + drawWidth > bufferWidth) {
+        drawWidth = bufferWidth - startX;
+    }
+    if (drawWidth <= 0) return;
+
     for (int32_t row = 0; row < bitmapHeight; ++row) {
         int32_t screenY = y + row;
         if (screenY < 0 || screenY >= bufferHeight) continue;
 
-        uint32_t* pixelPtr = &buffer[screenY * bufferWidth + x];
-        const uint32_t* bmpPtr = &bitmapData[row * bitmapWidth];
+        uint32_t* pixelPtr = &buffer[screenY * bufferWidth + startX];
+        const uint32_t* bmpPtr = &bitmapData[row * bitmapWidth + startCol];
 
         int32_t col = 0;
 
         // Fast-path memcpy if fully opaque and fits
-        while (col < bitmapWidth) {
-            if ((x + col) >= bufferWidth) break;
+        while (col < drawWidth) {
+            if ((startX + col) >= bufferWidth) break;
 
             int32_t runStart = col;
-            while (col < bitmapWidth && ((x + col) < bufferWidth) && ((bmpPtr[col] >> 24) == 255)) {
+            while (col < drawWidth && ((startX + col) < bufferWidth) &&
+                   ((bmpPtr[col] >> 24) == 255)) {
                 col++;
             }
 
@@ -97,7 +113,7 @@ void NINA::DrawBitmap(uint32_t* buffer, int32_t bufferWidth, int32_t bufferHeigh
             }
 
             // Blending for rest
-            while (col < bitmapWidth && (x + col) < bufferWidth) {
+            while (col < drawWidth && (startX + col) < bufferWidth) {
                 uint32_t srcColor = bmpPtr[col];
                 uint8_t alpha = (srcColor >> 24) & 0xFF;
 

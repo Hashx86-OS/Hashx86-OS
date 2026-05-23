@@ -23,6 +23,7 @@ objects = asm/common_handler.o \
           core/filesystem/File.o \
           core/filesystem/msdospart.o \
 		  core/CrashReporter.o \
+		  core/constructors.o \
           core/gdt.o \
           core/globals.o \
           core/interrupts.o \
@@ -104,6 +105,8 @@ build:
 	make
 	make -C user_prog clean
 	make -C user_prog
+	make -C drivers clean
+	make -C drivers
 	make iso
 	make hdd
 	@echo "[BUILD] Waiting $(RUNQ_DELAY)s to release the HDD file..."

@@ -300,7 +300,8 @@ uint32_t KeyboardDriver::HandleInterrupt(uint32_t esp) {
                     }
 
                     if (character != 0) {  // Valid character
-                        eventHandler->OnKeyDown(&character);
+                        char keyStr[2] = {character, '\0'};
+                        eventHandler->OnKeyDown(keyStr);
                     }
                 }
                 break;

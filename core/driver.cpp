@@ -10,7 +10,7 @@
 #include <core/driver.h>
 
 extern "C" void pci_enable_bus_master(uint16_t vendor, uint16_t device);
-extern "C" void pci_find_bar0(uint16_t vendor, uint16_t device);
+extern "C" uint32_t pci_find_bar0(uint16_t vendor, uint16_t device);
 extern void vprintf(const char* format, va_list args);
 
 void drvPrintf(const char* format, ...) {
@@ -83,6 +83,11 @@ DriverManager::DriverManager() {
     EXPORT_SYMBOL_ASM("_ZN41PeripheralComponentInterconnectController5WriteEtttjj");
     EXPORT_SYMBOL_ASM(
         "_ZN41PeripheralComponentInterconnectController22GetBaseAddressRegisterEtttt");
+
+    // Export Paging
+    EXPORT_SYMBOL_ASM("g_paging");
+    EXPORT_SYMBOL_ASM("_ZN6Paging7MapPageEPjjjj");           // Paging::MapPage
+    EXPORT_SYMBOL_ASM("_ZN6Paging18GetPhysicalAddressEPjj");  // Paging::GetPhysicalAddress
 
     // Export GraphicsDriver Methods
     EXPORT_SYMBOL_ASM("_ZN14GraphicsDriverC2EjjjPj");  // Constructor

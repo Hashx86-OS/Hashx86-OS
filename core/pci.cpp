@@ -111,13 +111,18 @@ PeripheralComponentInterconnectController::FindHardwareDevice(uint16_t vendorID,
                 PeripheralComponentInterconnectDeviceDescriptor* dev =
                     GetDeviceDescriptor(bus, device, function);
 
-                if (dev->vendor_id == 0x0000 || dev->vendor_id == 0xFFFF) continue;
+                if (dev->vendor_id == 0x0000 || dev->vendor_id == 0xFFFF) {
+                    delete dev;
+                    continue;
+                }
 
                 if (dev->vendor_id == vendorID && dev->device_id == deviceID) {
                     KDBG2("Found Hardware: Vendor=0x%x Device=0x%x at Bus=%d Device=%d Func=%d",
                           dev->vendor_id, dev->device_id, dev->bus, dev->device, dev->function);
                     return dev;
                 }
+
+                delete dev;
             }
         }
     }
@@ -154,7 +159,9 @@ void pci_enable_bus_master(uint16_t vendor, uint16_t device) {
     if (dev->vendor_id != 0) {
         uint32_t cmd = pci.Read(dev->bus, dev->device, dev->function, 0x04);
         if ((cmd & 0x07) != 0x07) {
-            pci.Write(dev->bus, dev->device, dev->function, 0x04, cmd | 0x07);
+            uint32_t new_command = (cmd & 0xFFFF) | 0x0007;
+            uint32_t new_value = (cmd & 0xFFFF0000) | new_command;
+            pci.Write(dev->bus, dev->device, dev->function, 0x04, new_value);
             KDBG2("Enabled Bus Master for Vendor=0x%x Device=0x%x", vendor, device);
         }
     } else {

@@ -8,6 +8,7 @@
 
 #include <core/filesystem/FAT32.h>
 #include <core/filesystem/File.h>
+#include <core/process_types.h>
 
 File::File() {
     this->size = 0;
@@ -55,29 +56,23 @@ void File::Close() {
     // Cleanup
 }
 
-namespace {
-constexpr uint32_t FD_MIN = 3;
-constexpr uint32_t FD_MAX = 128;
-File* g_fdTable[FD_MAX] = {nullptr};
-}  // namespace
-
-int32_t AllocateFd(File* file) {
-    if (!file) return -1;
+int32_t AllocateFd(ProcessControlBlock* pcb, File* file) {
+    if (!pcb || !file) return -1;
     for (uint32_t fd = FD_MIN; fd < FD_MAX; fd++) {
-        if (!g_fdTable[fd]) {
-            g_fdTable[fd] = file;
+        if (!pcb->fdTable[fd]) {
+            pcb->fdTable[fd] = file;
             return (int32_t)fd;
         }
     }
     return -1;
 }
 
-File* GetFileByFd(uint32_t fd) {
-    if (fd < FD_MIN || fd >= FD_MAX) return nullptr;
-    return g_fdTable[fd];
+File* GetFileByFd(ProcessControlBlock* pcb, uint32_t fd) {
+    if (!pcb || fd < FD_MIN || fd >= FD_MAX) return nullptr;
+    return pcb->fdTable[fd];
 }
 
-void ReleaseFd(uint32_t fd) {
-    if (fd < FD_MIN || fd >= FD_MAX) return;
-    g_fdTable[fd] = nullptr;
+void ReleaseFd(ProcessControlBlock* pcb, uint32_t fd) {
+    if (!pcb || fd < FD_MIN || fd >= FD_MAX) return;
+    pcb->fdTable[fd] = nullptr;
 }

@@ -62,6 +62,18 @@ ProcessControlBlock* ELFLoader::loadELF(File* elf, void* args) {
         KDBG3("Segment: Virt=0x%x MemSize=0x%x FileSize=0x%x", ph->virt_addr, ph->mem_size,
               ph->file_size);
 
+        if (ph->file_size > ph->mem_size) {
+            KDBG1("ELF Load Error: file_size > mem_size");
+            delete[] ph_table;
+            return nullptr;
+        }
+        uint64_t file_end = (uint64_t)ph->offset + (uint64_t)ph->file_size;
+        if (file_end > (uint64_t)elf->size) {
+            KDBG1("ELF Load Error: Segment exceeds file size");
+            delete[] ph_table;
+            return nullptr;
+        }
+
         // Calculate alignment
         uint32_t start = (uint32_t)ph->virt_addr;
         uint32_t end = start + ph->mem_size;
@@ -78,9 +90,12 @@ ProcessControlBlock* ELFLoader::loadELF(File* elf, void* args) {
                 delete[] ph_table;
                 return nullptr;
             }
-            this->pager->MapPage(pELF->page_directory, addr, phys_frame,
-                                 PAGE_PRESENT | PAGE_RW | PAGE_USER  // Allow User Mode Access
-            );
+            if (!this->pager->MapPage(pELF->page_directory, addr, phys_frame,
+                                      PAGE_PRESENT | PAGE_RW | PAGE_USER)) {
+                KDBG1("ELF Load: Failed to map segment page");
+                delete[] ph_table;
+                return nullptr;
+            }
             KDBG3("Mapped Page: Virt=0x%x Phys=0x%x", addr, phys_frame);
         }
 
@@ -93,12 +108,21 @@ ProcessControlBlock* ELFLoader::loadELF(File* elf, void* args) {
 
         while (bytes_to_read > 0) {
             uint32_t phys_ptr = pager->GetPhysicalAddress(pELF->page_directory, virtual_addr);
+            if (!phys_ptr) {
+                KDBG1("ELF Load Error: Failed to resolve physical address");
+                delete[] ph_table;
+                return nullptr;
+            }
 
             uint32_t offset_in_page = virtual_addr % PAGE_SIZE;
             uint32_t space_in_page = PAGE_SIZE - offset_in_page;
             uint32_t chunk = (bytes_to_read < space_in_page) ? bytes_to_read : space_in_page;
 
-            elf->Read((uint8_t*)phys_ptr, chunk);
+            if (elf->Read((uint8_t*)phys_ptr, chunk) != (int)chunk) {
+                KDBG1("ELF Load Error: Failed to read segment data");
+                delete[] ph_table;
+                return nullptr;
+            }
 
             virtual_addr += chunk;
             bytes_to_read -= chunk;
@@ -108,6 +132,11 @@ ProcessControlBlock* ELFLoader::loadELF(File* elf, void* args) {
         uint32_t bytes_to_zero = ph->mem_size - ph->file_size;
         while (bytes_to_zero > 0) {
             uint32_t phys_ptr = pager->GetPhysicalAddress(pELF->page_directory, virtual_addr);
+            if (!phys_ptr) {
+                KDBG1("ELF Load Error: Failed to resolve physical address for BSS");
+                delete[] ph_table;
+                return nullptr;
+            }
 
             uint32_t offset_in_page = virtual_addr % PAGE_SIZE;
             uint32_t space_in_page = PAGE_SIZE - offset_in_page;

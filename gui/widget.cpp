@@ -159,13 +159,26 @@ void Widget::OnSpecialKeyDown(uint8_t) {}
 void Widget::OnKeyUp(const char*) {}
 void Widget::OnSpecialKeyUp(uint8_t) {}
 
+bool Widget::IsComposite() const {
+    return false;
+}
+
 // Composite Widget
 
 CompositeWidget::CompositeWidget(CompositeWidget* parent, int32_t x, int32_t y, int32_t w,
                                  int32_t h)
     : Widget(parent, x, y, w, h), focusedChild(nullptr) {}
 
-CompositeWidget::~CompositeWidget() {}
+CompositeWidget::~CompositeWidget() {
+    // Delete all children — they are owned by this CompositeWidget
+    // via AddChild() which pushes them into childrenList.
+    childrenList.ForEach([&](Widget* child) { delete child; });
+    childrenList.Clear();
+}
+
+bool CompositeWidget::IsComposite() const {
+    return true;
+}
 
 void CompositeWidget::GetFocus(Widget* widget) {
     if (widget && !widget->isFocussable) {
