@@ -161,9 +161,9 @@ void pci_enable_bus_master(uint16_t vendor, uint16_t device) {
     PeripheralComponentInterconnectDeviceDescriptor* dev = pci.FindHardwareDevice(vendor, device);
     if (dev && dev->vendor_id != 0) {
         uint32_t cmd = pci.Read(dev->bus, dev->device, dev->function, 0x04);
-        if ((cmd & 0x07) != 0x07) {
-            // Write only the command word (lower 16 bits) to avoid clearing status bits
-            uint32_t new_command = (cmd & 0xFFFF) | 0x0007;
+        if (!(cmd & 0x0004)) {
+            // Only set the bus-master bit (bit 2), preserving I/O and memory decode bits
+            uint32_t new_command = (cmd & 0xFFFF) | 0x0004;
             pci.Write(dev->bus, dev->device, dev->function, 0x04, new_command);
             KDBG2("Enabled Bus Master for Vendor=0x%x Device=0x%x", vendor, device);
         }

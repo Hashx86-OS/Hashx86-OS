@@ -48,8 +48,12 @@ void AudioMixer::PlayBuffer(uint8_t* data, uint32_t length, bool loop) {
 
     if (!driver->IsPlaying()) {
         // Fill ALL available hardware buffers before starting.
-        while (driver->IsReadyForData()) {
-            ProcessAudio();
+        // Only enter the prefill loop if mixBuffer was allocated;
+        // otherwise ProcessAudio is a no-op and would spin forever.
+        if (mixBuffer) {
+            while (driver->IsReadyForData()) {
+                ProcessAudio();
+            }
         }
         driver->Start();
     }

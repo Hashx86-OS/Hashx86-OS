@@ -161,12 +161,7 @@ int32_t HguiHandler::HandleWidget(CPUState* cpu, const WidgetData* _data) {
             if (desktop && desktop->GetTaskbar()) {
                 // Safely check if childWidget is a Window before casting
                 const char* tabTitle = "App";
-                // Only Window widgets have getWindowTitle(); check by attempting
-                // dynamic-like cast: verify the widget is actually a Window.
-                // Since we don't have RTTI, we check if its parent is Desktop (ID==0)
-                // and the widget itself responds to window semantics.
-                if (childWidget->IsComposite()) {
-                    // Might be a Window — try the getWindowTitle accessor
+                if (childWidget->IsWindow()) {
                     Window* win = static_cast<Window*>(childWidget);
                     if (win && win->getWindowTitle()) {
                         tabTitle = win->getWindowTitle();

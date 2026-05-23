@@ -207,13 +207,18 @@ int get_kernel_memory_map(KERNEL_MEMORY_MAP* kmap, MultibootInfo* mboot_info) {
             offset += mmap->size + sizeof(mmap->size);
             continue;
         }
-        // make sure kernel is loaded at 0x100000 by bootloader(see linker.ld)
-        if (mmap->addr_low == kmap->kernel.text_start_addr) {
+        // Check that this available range contains the kernel,
+        // not just starts at the same address
+        if (mmap->addr_low <= kmap->kernel.text_start_addr &&
+            mmap->addr_low + mmap->len_low >= kmap->kernel.k_end_addr) {
             // set available memory starting from end of our kernel, leaving 1MB size for functions
-            // exceution
-            kmap->available.start_addr = kmap->kernel.k_end_addr + 1024 * 1024;
+            // execution
+            uint32_t suggested_start = kmap->kernel.k_end_addr + 1024 * 1024;
+            kmap->available.start_addr = (suggested_start <= mmap->addr_low + mmap->len_low)
+                                             ? suggested_start
+                                             : kmap->kernel.k_end_addr;
             kmap->available.end_addr = mmap->addr_low + mmap->len_low;
-            // get availabel memory in bytes
+            // get available memory in bytes
             kmap->available.size = kmap->available.end_addr - kmap->available.start_addr;
             return 0;
         }
@@ -559,7 +564,8 @@ extern "C" void kernelMain(void* multiboot_structure, uint32_t magicnumber) {
     initSerial();
     if (magicnumber != 0x2BADB002) {
         KDBG1("Invalid magic number : [%x]", magicnumber);
-        return;
+        // Halt the CPU — return is undefined in a freestanding kernel
+        while (1) { asm volatile("hlt"); }
     }
 
     MultibootInfo* mbinfo = (MultibootInfo*)multiboot_structure;

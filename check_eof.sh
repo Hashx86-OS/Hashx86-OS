@@ -11,9 +11,9 @@ fi
 ERROR=0
 
 while IFS= read -r -d '' f; do
-    # Skip build/tool directories
-    if [[ $f == *"./build"* ]]; then continue; fi
-    if [[ $f == *"./tools"* ]]; then continue; fi
+    # Skip build/tool directories at any depth
+    if [[ $f == */build/* || $f == */build ]]; then continue; fi
+    if [[ $f == */tools/* || $f == */tools ]]; then continue; fi
     if [[ -s "$f" && -n "$(tail -c 1 "$f")" ]]; then
         if [ $FIX_MODE -eq 1 ]; then
             # Append a newline

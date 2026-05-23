@@ -71,6 +71,25 @@ uint32_t AdvancedTechnologyAttachment::Identify() {
     uint32_t totalSectors = 0;
 
     for (int i = 0; i < 256; i++) {
+        // Poll for DRQ before each word, with timeout/error handling
+        uint32_t drqWait = 0;
+        status = commandPort.Read();
+        while ((status & 0x08) != 0x08) {
+            if ((status & 0x01) == 0x01) {
+                KDBG1("IDENTIFY ERROR: ERR set while waiting for DRQ");
+                return 0;
+            }
+            if ((status & 0x20) == 0x20) {
+                KDBG1("IDENTIFY ERROR: DF set while waiting for DRQ");
+                return 0;
+            }
+            if (drqWait++ > 1000000) {
+                KDBG1("IDENTIFY ERROR: DRQ timeout at word %d", i);
+                return 0;
+            }
+            status = commandPort.Read();
+        }
+
         uint16_t data = dataPort.Read();
 
         // Words 60 and 61 contain the total sector count for LBA28
@@ -153,6 +172,7 @@ void AdvancedTechnologyAttachment::Read28(uint32_t sectorNum, uint8_t* data, int
 
 void AdvancedTechnologyAttachment::Write28(uint32_t sectorNum, uint8_t* data, uint32_t count) {
     if (sectorNum > 0x0FFFFFFF) return;
+    if (count == 0) return;  // No-op: reject zero-length writes
     if (count > 512) count = 512;
 
     devicePort.Write((master ? 0xE0 : 0xF0) | ((sectorNum & 0x0F000000) >> 24));

@@ -82,6 +82,7 @@ public:
     virtual bool IsComposite() const;
     virtual bool IsMouseCaptured() const;
     virtual bool IsPressed() const;
+    virtual bool IsWindow() const { return false; }
 };
 
 /**

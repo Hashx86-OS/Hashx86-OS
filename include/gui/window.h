@@ -32,6 +32,9 @@ public:
     void Draw(GraphicsDriver* gc) override;
     void RedrawToCache() override;
 
+    // Type check
+    bool IsWindow() const override { return true; }
+
     // Events
     void OnMouseDown(int32_t x, int32_t y, uint8_t button) override;
     void OnMouseUp(int32_t x, int32_t y, uint8_t button) override;

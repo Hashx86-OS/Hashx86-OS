@@ -8,9 +8,9 @@ ERROR=0
 
 # Find all .cpp and .c
 while IFS= read -r -d '' f; do
-    # Skip "build" or "tools" folders
-    if [[ $f == *"./build"* ]]; then continue; fi
-    if [[ $f == *"./tools"* ]]; then continue; fi
+    # Skip build/tool directories at any depth
+    if [[ $f == */build/* || $f == */build ]]; then continue; fi
+    if [[ $f == */tools/* || $f == */tools ]]; then continue; fi
 
     # Read the first 15 lines of the file
     header_content=$(head -n 15 "$f")

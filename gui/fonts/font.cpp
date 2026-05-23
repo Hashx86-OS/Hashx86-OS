@@ -48,10 +48,10 @@ uint32_t Font::getStringLength(const char* str) {
         }
 
         // Find glyph index (assuming glyphs are stored in order for ASCII)
-        int idx = (c - 32) * 8;
-        // Validate glyph index range to prevent reading past font_glyphs
-        if (idx < 0 || idx + 7 < idx) break;
-        int16_t xadvance = this->font_glyphs[idx + 7];
+        int glyph_index = c - 32;
+        // Validate glyph index against the actual number of glyphs
+        if (glyph_index < 0 || glyph_index >= (int)this->glyph_count) break;
+        int16_t xadvance = this->font_glyphs[glyph_index * 8 + 7];
         length += xadvance;
 
         // Apply kerning (if previous char exists)
@@ -102,6 +102,7 @@ void Font::update() {
     this->font_glyphs = data->glyphs;
     this->font_kernings = data->kernings;
     this->font_kerning_count = data->kerning_count;
+    this->glyph_count = data->glyph_count;
 }
 
 uint16_t Font::getLineHeight() {

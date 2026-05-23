@@ -77,6 +77,35 @@ bool CopyFromUser(ProcessControlBlock* proc, void* dst, const void* src_user, si
     }
     return true;
 }
+
+// Bounded NUL-terminated user string copy: reads up to dst_size-1 bytes,
+// stops at first NUL, always NUL-terminates dst. Returns true on success.
+bool CopyUserString(ProcessControlBlock* proc, const char* src_user, char* dst, size_t dst_size) {
+    if (!dst || dst_size == 0) return false;
+    if (!src_user) {
+        dst[0] = '\0';
+        return true;
+    }
+    uint32_t user_addr = (uint32_t)src_user;
+    if (user_addr < USER_LOWER_BOUND) {
+        dst[0] = '\0';
+        return false;
+    }
+    size_t i = 0;
+    while (i + 1 < dst_size) {
+        uint32_t phys = g_paging->GetPhysicalAddress(proc->page_directory, user_addr);
+        if (!phys) {
+            dst[0] = '\0';
+            return false;
+        }
+        char c = *(char*)phys;
+        dst[i++] = c;
+        user_addr++;
+        if (c == '\0') return true;
+    }
+    dst[dst_size - 1] = '\0';
+    return true;
+}
 }  // namespace
 
 SyscallHandler::SyscallHandler(uint8_t InterruptNumber, InterruptManager* interruptManager)
@@ -239,8 +268,7 @@ int32_t SyscallHandlers::Handle_sys_open(const char* path, int32_t flags) {
 
     ProcessControlBlock* process = Scheduler::activeInstance->GetCurrentProcess();
     char kpath[256];
-    if (!CopyFromUser(process, kpath, path, sizeof(kpath))) return -1;
-    kpath[255] = '\0';
+    if (!CopyUserString(process, path, kpath, sizeof(kpath))) return -1;
 
     extern MSDOSPartitionTable* g_PartitionTable;
     if (MSDOSPartitionTable::activeInstance && MSDOSPartitionTable::activeInstance->partitions[0]) {
@@ -249,7 +277,6 @@ int32_t SyscallHandlers::Handle_sys_open(const char* path, int32_t flags) {
         File* f = fs->Open(kpath);
         if (!f) return -1;
 
-        ProcessControlBlock* process = Scheduler::activeInstance->GetCurrentProcess();
         int32_t fd = AllocateFd(process, f);
         if (fd < 0) {
             f->Close();
@@ -280,8 +307,7 @@ int32_t SyscallHandlers::Handle_sys_execve(const char* path, char* const argv[],
 
     ProcessControlBlock* proc = Scheduler::activeInstance->GetCurrentProcess();
     char kpath[256];
-    if (!CopyFromUser(proc, kpath, path, sizeof(kpath))) return -1;
-    kpath[255] = '\0';
+    if (!CopyUserString(proc, path, kpath, sizeof(kpath))) return -1;
 
     extern MSDOSPartitionTable* g_PartitionTable;
     if (MSDOSPartitionTable::activeInstance && MSDOSPartitionTable::activeInstance->partitions[0]) {
@@ -405,8 +431,7 @@ int32_t SyscallHandlers::Handle_sys_stat(const char* path, struct stat* statbuf)
 
     ProcessControlBlock* process = Scheduler::activeInstance->GetCurrentProcess();
     char kpath[256];
-    if (!CopyFromUser(process, kpath, path, sizeof(kpath))) return -1;
-    kpath[255] = '\0';
+    if (!CopyUserString(process, path, kpath, sizeof(kpath))) return -1;
 
     // Build stat in kernel memory, then copy to user at the end
     struct stat k_stat;
@@ -529,16 +554,26 @@ int32_t SyscallHandlers::Handle_sys_getdents(uint32_t fd, struct linux_dirent* d
         }
 
         // Build dirent in kernel memory, then copy to user space
-        struct linux_dirent k_dirent;
-        k_dirent.d_ino = ((uint32_t)e->firstClusterHi << 16) | e->firstClusterLow;
-        k_dirent.d_off = dirFile->position;
-        k_dirent.d_reclen = reclen;
+        // Use a temporary byte buffer sized to reclen (flexible d_name trailing member)
+        uint8_t* direntBuffer = (uint8_t*)kmalloc(reclen);
+        if (!direntBuffer) {
+            dirFile->position -= (bytesRead - (i * 32));
+            return offsetWritten;
+        }
+        struct linux_dirent* k_dirent = (struct linux_dirent*)direntBuffer;
+        k_dirent->d_ino = ((uint32_t)e->firstClusterHi << 16) | e->firstClusterLow;
+        k_dirent->d_off = dirFile->position;
+        k_dirent->d_reclen = reclen;
 
+        // Copy the name string into the buffer at the flexible array offset
         for (j = 0; j <= nameIdx; j++) {
-            k_dirent.d_name[j] = parsedName[j];
+            k_dirent->d_name[j] = parsedName[j];
         }
 
-        if (!CopyToUser(process, (uint8_t*)dirp + offsetWritten, &k_dirent, reclen)) {
+        bool copyOk = CopyToUser(process, (uint8_t*)dirp + offsetWritten, direntBuffer, reclen);
+        kfree(direntBuffer);
+
+        if (!copyOk) {
             dirFile->position -= (bytesRead - (i * 32));
             return offsetWritten;
         }
@@ -575,8 +610,7 @@ int32_t SyscallHandlers::Handle_sys_nanosleep(struct timespec* req, struct times
 int32_t SyscallHandlers::Handle_sys_debug(char* str) {
     ProcessControlBlock* process = Scheduler::activeInstance->GetCurrentProcess();
     char kstr[256];
-    if (!CopyFromUser(process, kstr, str, sizeof(kstr))) return -1;
-    kstr[255] = '\0';
+    if (!CopyUserString(process, str, kstr, sizeof(kstr))) return -1;
     // ATOMIC PRINT
     InterruptGuard guard;
     KDBG1N("PID %d, %s", g_scheduler->GetCurrentProcess()->pid, kstr);

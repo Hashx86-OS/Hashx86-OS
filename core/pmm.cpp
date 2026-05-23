@@ -224,7 +224,7 @@ void* pmm_alloc_block() {
 }
 
 void* pmm_alloc_block_low(uint32_t limit_addr) {
-    if ((g_pmm_info.max_blocks - g_pmm_info.used_blocks) < 1) {
+    if (g_pmm_info.used_blocks >= g_pmm_info.max_blocks) {
         KDBG2("low-memory allocation failed reason=no_free_blocks limit=0x%x", limit_addr);
         return NULL;
     }

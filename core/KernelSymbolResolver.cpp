@@ -31,6 +31,12 @@ void KernelSymbolTable::Load(FAT32* fs, const char* path) {
 
     // Load file
     fileBuffer = (char*)kmalloc(file->size + 1);
+    if (!fileBuffer) {
+        KDBG1("Failed to allocate file buffer for map file!");
+        file->Close();
+        delete file;
+        return;
+    }
     file->Read((uint8_t*)fileBuffer, file->size);
     fileBuffer[file->size] = 0;  // Null terminate
     file->Close();
@@ -38,6 +44,13 @@ void KernelSymbolTable::Load(FAT32* fs, const char* path) {
     // Allocate Index
     uint32_t maxEntries = file->size / 20;
     symbolIndex = (SymbolEntry*)kmalloc(maxEntries * sizeof(SymbolEntry));
+    if (!symbolIndex) {
+        KDBG1("Failed to allocate symbol index array!");
+        kfree(fileBuffer);
+        fileBuffer = nullptr;
+        delete file;
+        return;
+    }
     symbolCount = 0;
     delete file;
 

@@ -73,6 +73,7 @@ public:
     int16_t* font_glyphs;
     int16_t* font_kernings;
     int font_kerning_count;
+    int glyph_count;
 
     uint8_t fontSize;   // chosen size
     FontType fontType;  // chosen style

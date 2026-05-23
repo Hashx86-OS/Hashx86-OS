@@ -72,15 +72,16 @@ void* ModuleLoader::LoadDriver(File* file) {
         KDBG1("Module Error: Empty section header table");
         return 0;
     }
-    if (header.sh_entry_count > 65536 || header.sh_size > sizeof(elf_section_header) * 2) {
-        KDBG1("Module Error: Section header counts look unreasonable");
+    if (header.sh_entry_count > 65536 || header.sh_size != sizeof(elf_section_header)) {
+        KDBG1("Module Error: Section header size mismatch (expected %d, got %d)",
+              sizeof(elf_section_header), header.sh_size);
         return 0;
     }
     if (header.sh_str_index >= header.sh_entry_count) {
         KDBG1("Module Error: String table index out of range");
         return 0;
     }
-    uint64_t sh_size64 = (uint64_t)header.sh_entry_count * (uint64_t)header.sh_size;
+    uint64_t sh_size64 = (uint64_t)header.sh_entry_count * (uint64_t)sizeof(elf_section_header);
     if (sh_size64 > 0xFFFFFFFFu) {
         KDBG1("Module Error: Section header table too large");
         return 0;
@@ -341,10 +342,13 @@ bool ModuleLoader::Probe(File* file, DriverManifest* info) {
 
     // Validate section header metadata before using it
     if (header.sh_entry_count == 0 || header.sh_size == 0) return false;
-    if (header.sh_entry_count > 65536 || header.sh_size > sizeof(elf_section_header) * 2)
+    if (header.sh_entry_count > 65536 || header.sh_size != sizeof(elf_section_header)) {
+        KDBG1("Probe: Section header size mismatch (expected %d, got %d)",
+              sizeof(elf_section_header), header.sh_size);
         return false;
+    }
     if (header.sh_str_index >= header.sh_entry_count) return false;
-    uint64_t sh_size64 = (uint64_t)header.sh_entry_count * (uint64_t)header.sh_size;
+    uint64_t sh_size64 = (uint64_t)header.sh_entry_count * (uint64_t)sizeof(elf_section_header);
     if (sh_size64 > 0xFFFFFFFFu) return false;
     uint32_t sh_size = (uint32_t)sh_size64;
 

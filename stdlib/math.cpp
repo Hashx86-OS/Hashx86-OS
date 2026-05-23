@@ -6,6 +6,7 @@
  * @version     1.0.0
  */
 
+#include <stdint.h>
 #include <stdlib/math.h>
 
 double sin(double x) {
@@ -40,27 +41,32 @@ double abs(double x) {
 
 double pow(double base, int exp) {
     if (exp == 0) return 1.0;
+
+    // Handle negative exponents: invert base and use |exp|
     if (exp < 0) {
         if (base == 0.0) return 0.0;
         base = 1.0 / base;
-
-        // Avoid overflow when negating INT_MIN in freestanding builds.
-        if (exp == (-2147483647 - 1)) {
-            // -(INT_MIN) overflows int. Set exp to INT_MAX and
-            // remember we need one extra multiplication after the loop.
-            exp = 2147483647;
-            // After the loop we must multiply by base once more.
-            // Use a simple flag to track this since base is now the reciprocal.
-            double res = 1.0;
-            for (int i = 0; i < exp; i++) res *= base;
-            res *= base;  // Extra factor for the missing +1 in exponent
-            return res;
-        } else {
-            exp = -exp;
+        // Use int64_t to safely handle -INT_MIN without overflow
+        int64_t e = exp;
+        e = -e;
+        // Exponentiation by squaring in O(log |exp|)
+        double res = 1.0;
+        while (e > 0) {
+            if (e & 1) res *= base;
+            base *= base;
+            e >>= 1;
         }
+        return res;
     }
+
+    // Positive exponent: binary exponentiation
     double res = 1.0;
-    for (int i = 0; i < exp; i++) res *= base;
+    int64_t e = exp;
+    while (e > 0) {
+        if (e & 1) res *= base;
+        base *= base;
+        e >>= 1;
+    }
     return res;
 }
 
