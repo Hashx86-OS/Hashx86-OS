@@ -140,12 +140,11 @@ InterruptManager::InterruptManager(Scheduler* scheduler, Paging* pager)
     SetInterruptDescriptorTableEntry(HWInterruptOffset + 0x0F, CodeSegment,
                                      &HandleInterruptRequest0x0F, 0, IDT_INTERRUPT_GATE);
 
-    // Use TRAP GATE (0xF) for syscalls so interrupts remain enabled.
-    // This prevents long syscalls (e.g. 2MB disk reads) from blocking
-    // the timer, mouse, keyboard, and scheduler for seconds at a time.
-    const uint8_t IDT_TRAP_GATE = 0xF;
+    // Both syscall entries use INTERRUPT GATE so that interrupts are disabled
+    // during kernel syscall processing, preventing IRQ re-entrance on paths
+    // that are not yet IRQ-safe.
     SetInterruptDescriptorTableEntry(0x80, CodeSegment, &HandleInterruptRequest0x80, 3,
-                                     IDT_TRAP_GATE);
+                                     IDT_INTERRUPT_GATE);
     SetInterruptDescriptorTableEntry(0x81, CodeSegment, &HandleInterruptRequest0x81, 3,
                                      IDT_INTERRUPT_GATE);
 
@@ -314,13 +313,15 @@ uint32_t InterruptManager::DohandleException(uint8_t interruptNumber, uint32_t e
 
         uint32_t userEBP = state->ebp;
         for (int i = 0; i < 32 && userEBP >= 0x1000; i++) {
-            uint32_t physAddr = pager->GetPhysicalAddress(userPD, userEBP);
-            if (!physAddr) {
-                KDBG1(" (EBP 0x%x not mapped)", userEBP);
+            // Validate both words [EBP+0] and [EBP+4] are mapped before reading
+            uint32_t physAddr0 = pager->GetPhysicalAddress(userPD, userEBP);
+            uint32_t physAddr4 = pager->GetPhysicalAddress(userPD, userEBP + 4);
+            if (!physAddr0 || !physAddr4) {
+                KDBG1(" (EBP 0x%x not fully mapped)", userEBP);
                 break;
             }
 
-            uint32_t* frame = (uint32_t*)physAddr;
+            uint32_t* frame = (uint32_t*)physAddr0;
             uint32_t nextEBP = frame[0];  // saved EBP at [EBP+0]
             uint32_t retAddr = frame[1];  // return address at [EBP+4]
 
@@ -351,164 +352,173 @@ uint32_t InterruptManager::DohandleException(uint8_t interruptNumber, uint32_t e
         return (uint32_t)scheduler->Schedule((CPUState*)esp);
     }
     Deactivate();
-    this->pager->SwitchDirectory(this->pager->KernelPageDirectory);
-    Font* g_GraphicsDriver_font = FontManager::activeInstance->getNewFont();
-
-    // PANIC
-    g_GraphicsDriver->FillRectangle(0, 0, GUI_SCREEN_WIDTH, GUI_SCREEN_HEIGHT, 0x0);
-    char* panicImageName = (char*)"BITMAPS/PANIC.BMP";
-    Bitmap* panicImg = new Bitmap(panicImageName);
-    if (!panicImg) {
-        HALT("CRITICAL: Failed to allocate panic bitmap!\n");
+    if (this->pager) {
+        this->pager->SwitchDirectory(this->pager->KernelPageDirectory);
     }
-    if (panicImg->IsValid()) {
-        g_GraphicsDriver->DrawBitmap(100, 200, panicImg->GetBuffer(), panicImg->GetWidth(),
-                                     panicImg->GetHeight());
+
+    // Try to show graphical panic; if any graphics subsystem is unavailable,
+    // fall through to the reboot path immediately.
+    if (g_GraphicsDriver && FontManager::activeInstance && this->pager) {
+        Font* g_GraphicsDriver_font = FontManager::activeInstance->getNewFont();
+        if (g_GraphicsDriver_font) {
+            // PANIC
+            g_GraphicsDriver->FillRectangle(0, 0, GUI_SCREEN_WIDTH, GUI_SCREEN_HEIGHT, 0x0);
+            char* panicImageName = (char*)"BITMAPS/PANIC.BMP";
+            Bitmap* panicImg = new Bitmap(panicImageName);
+            if (panicImg && panicImg->IsValid()) {
+                g_GraphicsDriver->DrawBitmap(100, 200, panicImg->GetBuffer(), panicImg->GetWidth(),
+                                             panicImg->GetHeight());
+            }
+            if (panicImg) delete panicImg;
+
+            g_GraphicsDriver_font->setSize(XLARGE);
+            g_GraphicsDriver->DrawString(
+                120, 400,
+                "Your PC ran into a problem and needs to restart.\nWe'll restart it for you.",
+                g_GraphicsDriver_font, 0xFFFFFFFF);
+            g_GraphicsDriver_font->setSize(MEDIUM);
+            g_GraphicsDriver->DrawString(120, 600, "Stop code : 0x", g_GraphicsDriver_font,
+                                         0xFFFFFFFF);
+            char Buffer[16];
+            itoa(interruptNumber, Buffer, sizeof(Buffer), 16);
+            g_GraphicsDriver->DrawString(
+                120 + g_GraphicsDriver_font->getStringLength("Stop code : 0x"), 600,
+                (const char*)Buffer, g_GraphicsDriver_font, 0xFFFFFFFF);
+
+            const char* massage;
+            switch (interruptNumber) {
+                case 0x00:
+                    massage = "Division By Zero";
+                    break;
+                case 0x01:
+                    massage = "Debug Exception";
+                    break;
+                case 0x02:
+                    massage = "Non-Maskable Interrupt";
+                    break;
+                case 0x03:
+                    massage = "Breakpoint Exception";
+                    break;
+                case 0x04:
+                    massage = "Overflow Exception";
+                    break;
+                case 0x05:
+                    massage = "BOUND Range Exceeded";
+                    break;
+                case 0x06:
+                    massage = "Invalid Opcode";
+                    break;
+                case 0x07:
+                    massage = "Device Not Available";
+                    break;
+                case 0x08:
+                    massage = "Double Fault";
+                    break;
+                case 0x09:
+                    massage = "Coprocessor Segment Overrun";
+                    break;
+                case 0x0A:
+                    massage = "Invalid TSS";
+                    break;
+                case 0x0B:
+                    massage = "Segment Not Present";
+                    break;
+                case 0x0C:
+                    massage = "Stack Segment Fault";
+                    break;
+                case 0x0D:
+                    massage = "General Protection Fault";
+                    break;
+                case 0x0E:
+                    massage = "Page Fault";
+                    break;
+                case 0x0F:
+                    massage = "Reserved (0x0F)";
+                    break;
+                case 0x10:
+                    massage = "x87 FPU Error";
+                    break;
+                case 0x11:
+                    massage = "Alignment Check";
+                    break;
+                case 0x12:
+                    massage = "Machine Check";
+                    break;
+                case 0x13:
+                    massage = "SIMD Floating Point Exception";
+                    break;
+                case 0x14:
+                    massage = "Virtualization Exception";
+                    break;
+                case 0x15:
+                    massage = "Control Protection Exception";
+                    break;
+                case 0x16:
+                    massage = "Reserved (0x16)";
+                    break;
+                case 0x17:
+                    massage = "Reserved (0x17)";
+                    break;
+                case 0x18:
+                    massage = "Reserved (0x18)";
+                    break;
+                case 0x19:
+                    massage = "Reserved (0x19)";
+                    break;
+                case 0x1A:
+                    massage = "Reserved (0x1A)";
+                    break;
+                case 0x1B:
+                    massage = "Reserved (0x1B)";
+                    break;
+                case 0x1C:
+                    massage = "Reserved (0x1C)";
+                    break;
+                case 0x1D:
+                    massage = "Reserved (0x1D)";
+                    break;
+                case 0x1E:
+                    massage = "Security Exception";
+                    break;
+                case 0x1F:
+                    massage = "Reserved (0x1F)";
+                    break;
+                default:
+                    break;
+            }
+            g_GraphicsDriver->DrawString(120, 620, massage, g_GraphicsDriver_font, 0xFFFFFFFF);
+
+            // Show register dump
+            int x = 450;
+            int y = 540;
+            g_GraphicsDriver->DrawString(x, y, "Registers:", g_GraphicsDriver_font, 0xFFFFFFFF);
+            y += 20;
+
+            auto print_reg = [&](const char* name, uint32_t value) {
+                char buf[32];
+                g_GraphicsDriver->DrawString(x, y, name, g_GraphicsDriver_font, 0xFFFFFFFF);
+                g_GraphicsDriver->DrawString(x + 60, y, "0x", g_GraphicsDriver_font, 0xFFFFFFFF);
+                itoa(value, buf, sizeof(buf), 16);
+                g_GraphicsDriver->DrawString(x + 77, y, buf, g_GraphicsDriver_font, 0xFFFFFFFF);
+                y += 20;
+            };
+
+            print_reg("EAX", state->eax);
+            print_reg("EBX", state->ebx);
+            print_reg("ECX", state->ecx);
+            print_reg("EDX", state->edx);
+            print_reg("ESI", state->esi);
+            print_reg("EDI", state->edi);
+            print_reg("EBP", state->ebp);
+            print_reg("EIP", state->eip);
+            print_reg("CS", state->cs);
+            print_reg("EFLAGS", state->eflags);
+
+            g_GraphicsDriver->Flush();
+            wait(10000);
+        }
     }
-    delete panicImg;
-
-    g_GraphicsDriver_font->setSize(XLARGE);
-    g_GraphicsDriver->DrawString(
-        120, 400, "Your PC ran into a problem and needs to restart.\nWe'll restart it for you.",
-        g_GraphicsDriver_font, 0xFFFFFFFF);
-    g_GraphicsDriver_font->setSize(MEDIUM);
-    g_GraphicsDriver->DrawString(120, 600, "Stop code : 0x", g_GraphicsDriver_font, 0xFFFFFFFF);
-    itoa(Buffer, 16, interruptNumber);
-    g_GraphicsDriver->DrawString(120 + g_GraphicsDriver_font->getStringLength("Stop code : 0x"),
-                                 600, (const char*)Buffer, g_GraphicsDriver_font, 0xFFFFFFFF);
-
-    const char* massage;
-    switch (interruptNumber) {
-        case 0x00:
-            massage = "Division By Zero";
-            break;
-        case 0x01:
-            massage = "Debug Exception";
-            break;
-        case 0x02:
-            massage = "Non-Maskable Interrupt";
-            break;
-        case 0x03:
-            massage = "Breakpoint Exception";
-            break;
-        case 0x04:
-            massage = "Overflow Exception";
-            break;
-        case 0x05:
-            massage = "BOUND Range Exceeded";
-            break;
-        case 0x06:
-            massage = "Invalid Opcode";
-            break;
-        case 0x07:
-            massage = "Device Not Available";
-            break;
-        case 0x08:
-            massage = "Double Fault";
-            break;
-        case 0x09:
-            massage = "Coprocessor Segment Overrun";
-            break;
-        case 0x0A:
-            massage = "Invalid TSS";
-            break;
-        case 0x0B:
-            massage = "Segment Not Present";
-            break;
-        case 0x0C:
-            massage = "Stack Segment Fault";
-            break;
-        case 0x0D:
-            massage = "General Protection Fault";
-            break;
-        case 0x0E:
-            massage = "Page Fault";
-            break;
-        case 0x0F:
-            massage = "Reserved (0x0F)";
-            break;
-        case 0x10:
-            massage = "x87 FPU Error";
-            break;
-        case 0x11:
-            massage = "Alignment Check";
-            break;
-        case 0x12:
-            massage = "Machine Check";
-            break;
-        case 0x13:
-            massage = "SIMD Floating Point Exception";
-            break;
-        case 0x14:
-            massage = "Virtualization Exception";
-            break;
-        case 0x15:
-            massage = "Control Protection Exception";
-            break;
-        case 0x16:
-            massage = "Reserved (0x16)";
-            break;
-        case 0x17:
-            massage = "Reserved (0x17)";
-            break;
-        case 0x18:
-            massage = "Reserved (0x18)";
-            break;
-        case 0x19:
-            massage = "Reserved (0x19)";
-            break;
-        case 0x1A:
-            massage = "Reserved (0x1A)";
-            break;
-        case 0x1B:
-            massage = "Reserved (0x1B)";
-            break;
-        case 0x1C:
-            massage = "Reserved (0x1C)";
-            break;
-        case 0x1D:
-            massage = "Reserved (0x1D)";
-            break;
-        case 0x1E:
-            massage = "Security Exception";
-            break;
-        case 0x1F:
-            massage = "Reserved (0x1F)";
-            break;
-        default:
-            break;
-    }
-    g_GraphicsDriver->DrawString(120, 620, massage, g_GraphicsDriver_font, 0xFFFFFFFF);
-
-    // Show register dump
-    int x = 450;
-    int y = 540;
-    g_GraphicsDriver->DrawString(x, y, "Registers:", g_GraphicsDriver_font, 0xFFFFFFFF);
-    y += 20;
-
-    auto print_reg = [&](const char* name, uint32_t value) {
-        char buf[32];
-        g_GraphicsDriver->DrawString(x, y, name, g_GraphicsDriver_font, 0xFFFFFFFF);
-        g_GraphicsDriver->DrawString(x + 60, y, "0x", g_GraphicsDriver_font, 0xFFFFFFFF);
-        itoa(buf, 16, value);
-        g_GraphicsDriver->DrawString(x + 77, y, buf, g_GraphicsDriver_font, 0xFFFFFFFF);
-        y += 20;
-    };
-
-    print_reg("EAX", state->eax);
-    print_reg("EBX", state->ebx);
-    print_reg("ECX", state->ecx);
-    print_reg("EDX", state->edx);
-    print_reg("ESI", state->esi);
-    print_reg("EDI", state->edi);
-    print_reg("EBP", state->ebp);
-    print_reg("EIP", state->eip);
-    print_reg("CS", state->cs);
-    print_reg("EFLAGS", state->eflags);
-
-    g_GraphicsDriver->Flush();
-    wait(10000);
-    // END OF PANIC
+    // END OF PANIC (with graphics fallback)
 
     KDBG1("Attempting system reboot...\n");
 

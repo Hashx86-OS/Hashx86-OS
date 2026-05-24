@@ -10,6 +10,7 @@
 
 #include <gui/desktop.h>
 #include <gui/infodialog.h>
+#include <stdlib.h>
 #include <utils/string.h>
 
 namespace {
@@ -49,12 +50,14 @@ void CrashReporter::ShowUserCrashDialog(uint32_t pid, uint32_t tid, uint8_t exce
             HALT("CRITICAL: Failed to allocate crash info dialog!\n");
         }
 
-        g_crashDialog->SetPID(pid);
-        g_crashDialog->SetID(desktop->getNewID());
         g_crashDialog->SetTitleText("Crash Diagnostics");
         g_crashDialog->SetIconBitmap("BITMAPS/ICON.BMP");
         desktop->AddChild(g_crashDialog);
     }
+
+    // Refresh ownership metadata on every crash, not just on first allocation
+    g_crashDialog->SetPID(pid);
+    g_crashDialog->SetID(desktop->getNewID());
 
     char line1[96];
     char line2[128];
@@ -75,28 +78,28 @@ void CrashReporter::ShowUserCrashDialog(uint32_t pid, uint32_t tid, uint8_t exce
 
     line1[0] = '\0';
     append_safe(line1, sizeof(line1), "PID: ");
-    itoa(num, 10, (int)pid);
+    itoa((int)pid, num, sizeof(num), 10);
     append_safe(line1, sizeof(line1), num);
     append_safe(line1, sizeof(line1), "  TID: ");
-    itoa(num, 10, (int)tid);
+    itoa((int)tid, num, sizeof(num), 10);
     append_safe(line1, sizeof(line1), num);
 
     line2[0] = '\0';
     append_safe(line2, sizeof(line2), "Exception: 0x");
-    itoa(num, 16, (int)exceptionNumber);
+    itoa((int)exceptionNumber, num, sizeof(num), 16);
     append_safe(line2, sizeof(line2), num);
     append_safe(line2, sizeof(line2), " (");
     append_safe(line2, sizeof(line2), GetExceptionName(exceptionNumber));
     append_safe(line2, sizeof(line2), ")  ERR: 0x");
-    itoa(num, 16, (int)errorCode);
+    itoa((int)errorCode, num, sizeof(num), 16);
     append_safe(line2, sizeof(line2), num);
 
     line3[0] = '\0';
     append_safe(line3, sizeof(line3), "EIP: 0x");
-    itoa(num, 16, (int)eip);
+    itoa((int)eip, num, sizeof(num), 16);
     append_safe(line3, sizeof(line3), num);
     append_safe(line3, sizeof(line3), "  CR2: 0x");
-    itoa(num, 16, (int)cr2);
+    itoa((int)cr2, num, sizeof(num), 16);
     append_safe(line3, sizeof(line3), num);
 
     details[0] = '\0';

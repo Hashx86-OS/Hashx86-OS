@@ -48,7 +48,14 @@ void MSGPrintf(TextColor cTag, const char* tag, const char* format, ...) {
     for (const char* p = format; *p != '\0'; p++) {
         if (*p == '%') {
             p++;
+            // Check for end-of-string after increment
+            if (*p == '\0') break;
             switch (*p) {
+                case 'c': {  // Character
+                    int ch = va_arg(args, int);
+                    printf(LIGHT_GRAY, "%c", (char)ch);
+                    break;
+                }
                 case 's': {  // String
                     const char* str = va_arg(args, const char*);
                     printf(LIGHT_GRAY, str);
@@ -64,8 +71,12 @@ void MSGPrintf(TextColor cTag, const char* tag, const char* format, ...) {
                     printf(LIGHT_GRAY, "%x", num);
                     break;
                 }
+                case '%': {  // Literal percent
+                    printf(LIGHT_GRAY, "%c", '%');
+                    break;
+                }
                 default:
-                    printf(LIGHT_GRAY, "%%");
+                    printf(LIGHT_GRAY, "%c", '%');
                     printf(LIGHT_GRAY, "%c", *p);
                     break;
             }

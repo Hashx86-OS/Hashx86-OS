@@ -56,7 +56,10 @@ void* ModuleLoader::LoadDriver(File* file) {
     // Read ELF Header
     struct elf_header header;
     file->Seek(0);
-    file->Read((uint8_t*)&header, sizeof(header));
+    if (file->Read((uint8_t*)&header, sizeof(header)) != (int)sizeof(header)) {
+        KDBG1("Module Error: Failed to read ELF header");
+        return 0;
+    }
 
     if (header.magic != ELF_MAGIC) {
         KDBG1("Module Error: Invalid ELF Magic");
@@ -119,14 +122,31 @@ void* ModuleLoader::LoadDriver(File* file) {
 
     // Allocate Memory for Sections
     // Iterate all sections. If flags has SHF_ALLOC (0x2).
+    bool alloc_failed = false;
     for (int i = 0; i < header.sh_entry_count; i++) {
         if (sections[i].flags & 0x2) {
+            // Skip sections with zero size (e.g. .note.GNU-stack, empty BSS)
+            if (sections[i].size == 0) {
+                sections[i].addr = 0;
+                continue;
+            }
             void* mem = kmalloc(sections[i].size);
+            if (!mem) {
+                KDBG1("Module Error: Failed to allocate section %d (size %d)", i,
+                      sections[i].size);
+                alloc_failed = true;
+                break;
+            }
 
             // If it is NOT BSS (NOBITS), read data from file
             if (sections[i].type != 8) {
                 file->Seek(sections[i].offset);
-                file->Read((uint8_t*)mem, sections[i].size);
+                if (file->Read((uint8_t*)mem, sections[i].size) != (int)sections[i].size) {
+                    KDBG1("Module Error: Failed to read section %d data", i);
+                    kfree(mem);
+                    alloc_failed = true;
+                    break;
+                }
             } else {
                 // Zero out BSS
                 memset(mem, 0, sections[i].size);
@@ -138,11 +158,23 @@ void* ModuleLoader::LoadDriver(File* file) {
             sections[i].addr = 0;
         }
     }
+    if (alloc_failed) {
+        // Free any SHF_ALLOC sections allocated so far
+        for (int j = 0; j < header.sh_entry_count; j++) {
+            if (sections[j].addr != 0 && (sections[j].flags & 0x2)) {
+                kfree((void*)sections[j].addr);
+            }
+        }
+        kfree(sections);
+        kfree(strtab);
+        return 0;
+    }
 
     // Link (Relocate)
     struct elf32_symbol* symtab = 0;
     uint32_t symtab_count = 0;
     char* strtab_sym = 0;
+    uint32_t strtab_sym_size = 0;
 
     // Find Symbol Table
     for (int i = 0; i < header.sh_entry_count; i++) {
@@ -185,6 +217,7 @@ void* ModuleLoader::LoadDriver(File* file) {
                 symtab = nullptr;
                 break;
             }
+            strtab_sym_size = sections[link].size;
             break;
         }
     }
@@ -285,7 +318,13 @@ void* ModuleLoader::LoadDriver(File* file) {
                 if (symtab[sym_idx].shndx == 0) {
                     // SHN_UNDEF: External Symbol
                     // Lookup in Kernel Symbol Table
-                    const char* name = strtab_sym + symtab[sym_idx].name;
+                    uint32_t name_off = symtab[sym_idx].name;
+                    if (name_off >= strtab_sym_size) {
+                        KDBG1("Module Link Error: Symbol name offset out of string-table bounds");
+                        relocation_failed = true;
+                        break;
+                    }
+                    const char* name = strtab_sym + name_off;
                     sym_val = SymbolTable::Lookup(name);
 
                     if (sym_val == 0) {
@@ -335,9 +374,11 @@ void* ModuleLoader::LoadDriver(File* file) {
 
     // Find Entry Point (CreateDriverInstance)
     void* entry_point = 0;
-    if (symtab) {
+    if (symtab && strtab_sym) {
         for (uint32_t i = 0; i < symtab_count; i++) {
-            const char* name = strtab_sym + symtab[i].name;
+            uint32_t name_off = symtab[i].name;
+            if (name_off >= strtab_sym_size) continue;
+            const char* name = strtab_sym + name_off;
 
             // Check for the magic function name
             // Simple manual strcmp that rejects prefixes
@@ -402,27 +443,45 @@ bool ModuleLoader::Probe(File* file, DriverManifest* info) {
     // Read Section String Table (to find section names)
     // Need this to search for ".driver_info" by name
     struct elf_section_header* strtab_hdr = &sections[header.sh_str_index];
-    char* strtab = (char*)kmalloc(strtab_hdr->size);
-    file->Seek(strtab_hdr->offset);
-    file->Read((uint8_t*)strtab, strtab_hdr->size);
+    char* strtab = 0;
+    uint32_t strtab_size = strtab_hdr->size;
+    if (strtab_size > 0) {
+        strtab = (char*)kmalloc(strtab_hdr->size);
+        if (strtab) {
+            file->Seek(strtab_hdr->offset);
+            if (file->Read((uint8_t*)strtab, strtab_size) != (int)strtab_size) {
+                kfree(strtab);
+                strtab = 0;
+            }
+        }
+    }
 
     bool found = false;
 
     // Iterate Sections to find ".driver_info"
     for (int i = 0; i < header.sh_entry_count; i++) {
-        const char* sec_name = strtab + sections[i].name;
+        if (!strtab) break;
+        uint32_t name_off = sections[i].name;
+        if (name_off >= strtab_size) continue;
+        const char* sec_name = strtab + name_off;
 
         // Manual string comparison for ".driver_info"
         const char* target = ".driver_info";
         bool match = true;
         for (int c = 0; target[c] != 0; c++) {
+            uint32_t idx = name_off + c;
+            if (idx >= strtab_size) { match = false; break; }
             if (target[c] != sec_name[c]) {
                 match = false;
                 break;
             }
         }
         // Ensure the names are the same length (null terminator check)
-        if (match && sec_name[12] != 0) match = false;
+        if (match) {
+            uint32_t idx = name_off + 12;
+            if (idx >= strtab_size) match = false;
+            else if (sec_name[12] != 0) match = false;
+        }
 
         // If found, verify size and read data
         if (match) {

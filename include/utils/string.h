@@ -20,7 +20,6 @@ int isalpha(char c);
 char upper(char c);
 char lower(char c);
 
-void itoa(char *buf, int base, int d);
 int atoi(const char *str);
 uint32_t HexStrToInt(const char *str);
 

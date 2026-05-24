@@ -50,10 +50,15 @@ void File::Seek(uint32_t pos) {
     if (this->position > this->size) this->position = this->size;
 }
 
-void File::Write(uint8_t* buffer, uint32_t length) {}
+int File::Write(uint8_t* buffer, uint32_t length) {
+    (void)buffer;
+    (void)length;
+    // File::Write — no-op base: subclasses must override for actual writes.
+    return -1;
+}
 
 void File::Close() {
-    // Cleanup
+    // File::Close — subclasses should override for actual cleanup.
 }
 
 int32_t AllocateFd(ProcessControlBlock* pcb, File* file) {

@@ -105,6 +105,10 @@ DriverManager::DriverManager() {
  * @param drv Pointer to the driver to be added.
  */
 void DriverManager::AddDriver(Driver* drv) {
+    if (drv == nullptr) {
+        KDBG1("AddDriver failed: null driver");
+        return;
+    }
     if (numDrivers >= 255) {
         KDBG1("AddDriver failed: driver table full");
         return;

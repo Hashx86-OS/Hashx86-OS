@@ -42,9 +42,10 @@ void ListView::Clear() {
 void ListView::AddItem(const char* name, uint32_t size, uint8_t type) {
     if (itemCount >= LISTVIEW_MAX_ITEMS) return;
     ListViewItem& item = items[itemCount];
+    const char* safeName = name ? name : "";
     int i = 0;
-    while (name[i] && i < 63) {
-        item.name[i] = name[i];
+    while (safeName[i] && i < 63) {
+        item.name[i] = safeName[i];
         i++;
     }
     item.name[i] = 0;
@@ -56,9 +57,10 @@ void ListView::AddItem(const char* name, uint32_t size, uint8_t type) {
 }
 
 void ListView::SetHeader(const char* text) {
+    const char* safeText = text ? text : "";
     int i = 0;
-    while (text[i] && i < 31) {
-        headerText[i] = text[i];
+    while (safeText[i] && i < 31) {
+        headerText[i] = safeText[i];
         i++;
     }
     headerText[i] = 0;
@@ -234,7 +236,7 @@ void ListView::OnMouseDown(int32_t mx, int32_t my, uint8_t button) {
     int localY = my - this->y;
     int localX = mx - this->x;
 
-    if (localY > LISTVIEW_HEADER_HEIGHT && localX < w - LISTVIEW_SCROLLBAR_WIDTH) {
+    if (localY > LISTVIEW_HEADER_HEIGHT && localY < h && localX >= 0 && localX < w - LISTVIEW_SCROLLBAR_WIDTH) {
         int clickedItem =
             scrollOffset + (localY - LISTVIEW_HEADER_HEIGHT - 1) / LISTVIEW_ITEM_HEIGHT;
         if (clickedItem >= 0 && clickedItem < itemCount) {

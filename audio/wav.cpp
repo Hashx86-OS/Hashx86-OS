@@ -94,7 +94,11 @@ void Wav::Load(File* file) {
                 KDBG1("Error: FMT chunk too small.");
                 return;
             }
-            file->Read((uint8_t*)&fmt, sizeof(WavFmt));
+            // Only accept if Read returns exactly the expected bytes
+            if (file->Read((uint8_t*)&fmt, sizeof(WavFmt)) != sizeof(WavFmt)) {
+                KDBG1("Error: FMT chunk read failed.");
+                return;
+            }
             fmtFound = true;
 
             // Skip extra bytes if fmt chunk is larger than expected
@@ -104,9 +108,15 @@ void Wav::Load(File* file) {
         }
         // "data" chunk
         else if (strncmp(chunk.id, "data", 4) == 0) {
-            dataOffset = file->position;
-            dataSize = chunk.size;
-            dataFound = true;
+            // Compute remaining bytes from current position
+            uint32_t available = file->size - file->position;
+            dataSize = (chunk.size < available) ? chunk.size : available;
+            if (dataSize > 0) {
+                dataOffset = file->position;
+                dataFound = true;
+            } else {
+                KDBG2("Warning: data chunk size is zero or beyond file bounds, skipping.");
+            }
             break;
         }
         // Unknown chunk -> Skip
@@ -124,6 +134,9 @@ void Wav::Load(File* file) {
         KDBG1("Error: Missing FMT or DATA chunk.");
         return;
     }
+
+    // Mark file as malformed if expected reads didn't complete
+    // (fmtFound is already validated by exact-size Read above)
 
     // Validation (Enforce 16-bit PCM for now, as per your mixer limits)
     if (fmt.audioFormat != 1) {
@@ -149,7 +162,16 @@ void Wav::Load(File* file) {
     uint32_t read = file->Read(this->buffer, this->length);
 
     if (read != this->length) {
-        KDBG2("Warning: Read mismatch (%d vs %d)", (int32_t)read, (int32_t)this->length);
+        KDBG2("Warning: Read mismatch (%d vs %d); truncating to %d bytes",
+              (int32_t)read, (int32_t)this->length, (int32_t)read);
+        this->length = read;
+        // If nothing was read, fail validation
+        if (read == 0) {
+            KDBG1("Error: Data chunk read returned 0 bytes.");
+            kfree(this->buffer);
+            this->buffer = nullptr;
+            return;
+        }
     }
 
     this->valid = true;

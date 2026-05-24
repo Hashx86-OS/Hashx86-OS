@@ -538,8 +538,11 @@ static uint8_t bcd_to_bin(uint8_t bcd) {
 }
 
 void Taskbar::UpdateClock() {
-    // Wait until RTC update is not in progress
-    while (rtc_read(0x0A) & 0x80);
+    // Wait until RTC update is not in progress (bounded retry)
+    int retries = 1000;
+    while (rtc_read(0x0A) & 0x80) {
+        if (--retries <= 0) return;  // retain previous clock value, skip update
+    }
 
     // [uint8_t seconds = rtc_read(0x00);]
     uint8_t minutes = rtc_read(0x02);

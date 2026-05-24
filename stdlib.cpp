@@ -9,8 +9,8 @@
 #include <stdint.h>
 #include <stdlib.h>
 
-char* itoa(int32_t num, char* str, uint32_t base) {
-    return itoa_safe(num, str, 32, base);
+char* itoa(int32_t num, char* str, size_t capacity, uint32_t base) {
+    return itoa_safe(num, str, capacity, base);
 }
 
 char* itoa_safe(int32_t num, char* str, size_t capacity, uint32_t base) {

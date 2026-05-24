@@ -88,6 +88,6 @@ _stop:
 
 ; Define the BSS section where uninitialized data
 section .bss
-resb 1024 * 64                ; 64 KB Stack
+resb 1024 * 256               ; 256 KB Stack
 
 kernel_stack:                 ; Label for the start of the kernel stack

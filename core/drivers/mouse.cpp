@@ -82,12 +82,21 @@ void MouseDriver::Activate() {
  */
 uint32_t MouseDriver::HandleInterrupt(uint32_t esp) {
     uint8_t status = commandPort.Read();
-    if (!(status & 0x20)) return esp;
+    // Only proceed if both AUX (bit 5 = 0x20) and output-buffer-full (bit 0 = 0x01) are set
+    if ((status & 0x21) != 0x21) return esp;
 
-    buffer[offset] = dataPort.Read();
-
+    uint8_t data = dataPort.Read();
     if (eventHandler == 0) return esp;
 
+    // PS/2 mouse 3-byte packet sync: byte 0 must have bit 3 set (always 1)
+    if (offset == 0) {
+        if (!(data & 0x08)) {
+            // Lost sync — discard and stay at offset 0 waiting for a valid start byte
+            return esp;
+        }
+    }
+
+    buffer[offset] = data;
     offset = (offset + 1) % 3;
 
     if (offset == 0) {

@@ -171,8 +171,14 @@ void pmm_init_region(PMM_PHYSICAL_ADDRESS base, uint32_t region_size) {
     int blocks = region_size / PMM_BLOCK_SIZE;
 
     while (blocks > 0) {
-        pmm_mmap_unset(align++);
-        g_pmm_info.used_blocks--;
+        if (pmm_mmap_test(align)) {
+            // Bit was set (allocated); now clearing it
+            pmm_mmap_unset(align);
+            g_pmm_info.used_blocks--;
+        } else {
+            pmm_mmap_unset(align);
+        }
+        align++;
         blocks--;
     }
 
@@ -190,8 +196,14 @@ void pmm_deinit_region(PMM_PHYSICAL_ADDRESS base, uint32_t region_size) {
     int blocks = region_size / PMM_BLOCK_SIZE;
 
     while (blocks > 0) {
-        pmm_mmap_set(align++);
-        g_pmm_info.used_blocks++;
+        if (!pmm_mmap_test(align)) {
+            // Bit was clear (free); now setting it
+            pmm_mmap_set(align);
+            g_pmm_info.used_blocks++;
+        } else {
+            pmm_mmap_set(align);
+        }
+        align++;
         blocks--;
     }
 
@@ -250,6 +262,10 @@ void* pmm_alloc_block_low(uint32_t limit_addr) {
 }
 
 void pmm_free_block(void* p) {
+    if (p == nullptr) {
+        KDBG2("free_block rejected: null pointer");
+        return;
+    }
     PMM_PHYSICAL_ADDRESS addr = (PMM_PHYSICAL_ADDRESS)p;
 
     // Use Absolute Addressing
@@ -296,6 +312,10 @@ void* pmm_alloc_blocks(uint32_t size) {
 }
 
 void pmm_free_blocks(void* p, uint32_t size) {
+    if (p == nullptr) {
+        KDBG2("free_blocks rejected: null pointer size=%u", size);
+        return;
+    }
     PMM_PHYSICAL_ADDRESS addr = (PMM_PHYSICAL_ADDRESS)p;
 
     // Use Absolute Addressing

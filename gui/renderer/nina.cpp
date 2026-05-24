@@ -416,6 +416,7 @@ void NINA::DrawCharacter(uint32_t* buffer, int32_t bufferWidth, int32_t bufferHe
 
 void NINA::DrawString(uint32_t* buffer, int32_t bufferWidth, int32_t bufferHeight, int32_t x,
                       int32_t y, const char* str, Font* font, uint32_t colorIndex) {
+    if (!str || !font || !font->font_glyphs || !font->font_kernings) return;
     int penX = x;
     int penY = y;
 

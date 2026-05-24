@@ -29,6 +29,12 @@ void MSDOSPartitionTable::Initialize() {
         return;
     }
 
+    // Check for tiny disks: need at least 63 reserved sectors + some data area
+    if (totalSectors <= 63) {
+        KDBG1("Error: Disk too small (totalSectors=%u). Cannot partition.", totalSectors);
+        return;
+    }
+
     // Calculate Partitions (Split in 2)
     // Reserve 63 sectors for MBR and alignment
     uint32_t available = totalSectors - 63;
@@ -41,14 +47,10 @@ void MSDOSPartitionTable::Initialize() {
     KDBG2("Partition 1: Start %d, Size %d", (int32_t)p1_start, (int32_t)p1_size);
     KDBG2("Partition 2: Start %d, Size %d", (int32_t)p2_start, (int32_t)p2_size);
 
-    // Create MBR
+    // Create MBR — fully zero the entire structure before setting fields
     MasterBootRecord mbr;
-    // Zero out bootloader
-    uint8_t* ptr = (uint8_t*)&mbr;
-    for (int i = 0; i < 446; i++) ptr[i] = 0;
+    memset(&mbr, 0, sizeof(MasterBootRecord));
 
-    mbr.signature = 0;
-    mbr.unused = 0;
     mbr.magicnumber = 0xAA55;
 
     // Partition 1 Entry
@@ -67,14 +69,6 @@ void MSDOSPartitionTable::Initialize() {
     mbr.primaryPartition[1].start_head = 0;
     mbr.primaryPartition[1].end_head = 0;
 
-    // Zero out entries 3 and 4
-    for (int i = 2; i < 4; i++) {
-        mbr.primaryPartition[i].partition_id = 0;
-        mbr.primaryPartition[i].start_lba = 0;
-        mbr.primaryPartition[i].length = 0;
-        mbr.primaryPartition[i].bootable = 0;
-    }
-
     // Write MBR
     ata->Write28(0, (uint8_t*)&mbr, 512);
 
@@ -88,16 +82,26 @@ void MSDOSPartitionTable::Initialize() {
 }
 
 void MSDOSPartitionTable::ReadPartitions() {
+    // Get Drive Size from ATA
+    uint32_t totalSectors = ata->GetSizeInSectors();
+    if (totalSectors == 0) {
+        KDBG1("Error: Could not identify drive size.");
+        return;
+    }
+    if (totalSectors <= 63) {
+        KDBG1("Error: Disk too small (totalSectors=%u). Cannot read partitions.", totalSectors);
+        return;
+    }
+
     MasterBootRecord mbr;
+    memset(&mbr, 0, sizeof(MasterBootRecord));
     ata->Read28(0, (uint8_t*)&mbr, sizeof(MasterBootRecord));
 
-    // Check Signature. If invalid, Initialize drive.
+    // Check Signature. If invalid, log error and return — no auto-format.
     if (mbr.magicnumber != 0xAA55) {
-        KDBG1("MBR Invalid. Initializing Drive...");
-        Initialize();
-        KDBG1("Please copy the OS data files using 'make hdd' command.");
-        asm volatile("hlt");
-        while (1);
+        KDBG1("Error: Invalid MBR signature (got 0x%x, expected 0xAA55).", mbr.magicnumber);
+        KDBG1("Use FormatRaw() explicitly to format the drive.");
+        return;
     }
 
     for (int i = 0; i < 4; i++) {
@@ -106,6 +110,12 @@ void MSDOSPartitionTable::ReadPartitions() {
         KDBG2("Partition %d %sType 0x%x Start %d", i,
               (mbr.primaryPartition[i].bootable == 0x80) ? "[Bootable] " : "",
               mbr.primaryPartition[i].partition_id, mbr.primaryPartition[i].start_lba);
+
+        // Bounds check before mounting
+        if (partitionsCounter >= 4) {
+            KDBG1("Warning: Too many partitions; max 4 supported.");
+            break;
+        }
 
         // Mount FAT32
         if (mbr.primaryPartition[i].partition_id == 0x0C ||

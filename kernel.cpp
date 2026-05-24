@@ -174,6 +174,7 @@ void bootMSG(const char* msg) {
 
 int get_kernel_memory_map(KERNEL_MEMORY_MAP* kmap, MultibootInfo* mboot_info) {
     if (kmap == NULL) return -1;
+    if (!(mboot_info->flags & (1 << 6))) return -1;  // memory map not present in multiboot info
     kmap->kernel.k_start_addr = (uint32_t)&__kernel_section_start;
     kmap->kernel.k_end_addr = (uint32_t)&__kernel_section_end;
     kmap->kernel.k_len = ((uint32_t)&__kernel_section_end - (uint32_t)&__kernel_section_start);
@@ -247,7 +248,10 @@ void display_kernel_memory_map(KERNEL_MEMORY_MAP* kmap) {
 
 void init_memory(MultibootInfo* mbinfo) {
     memset(&g_kmap, 0, sizeof(KERNEL_MEMORY_MAP));
-    get_kernel_memory_map(&g_kmap, mbinfo);
+    if (get_kernel_memory_map(&g_kmap, mbinfo) != 0) {
+        KDBG1("ERROR: get_kernel_memory_map() failed - no usable RAM span found. Halting.");
+        HALT("CRITICAL: No usable memory map available!\n");
+    }
 
     // Initialize PMM at end of Kernel (Respect BSS/Stack)
     // Use bss_end_addr to ensure we are past the stack
@@ -265,13 +269,14 @@ void init_memory(MultibootInfo* mbinfo) {
     // Add 4MB padding to be safe.
     heap_start_addr += 4 * 1024 * 1024;
 
-    struct multiboot_module* modules = (struct multiboot_module*)mbinfo->mods_addr;
-
-    if (mbinfo->mods_count > 0) {
-        for (int mod_idx = 0; mod_idx < mbinfo->mods_count; mod_idx++) {
-            uint32_t mod_end = modules[mod_idx].mod_end;
-            if (mod_end > heap_start_addr) {
-                heap_start_addr = mod_end;
+    if (mbinfo->flags & (1 << 3)) {  // mods flag present
+        struct multiboot_module* modules = (struct multiboot_module*)mbinfo->mods_addr;
+        if (mbinfo->mods_count > 0) {
+            for (int mod_idx = 0; mod_idx < (int)mbinfo->mods_count; mod_idx++) {
+                uint32_t mod_end = modules[mod_idx].mod_end;
+                if (mod_end > heap_start_addr) {
+                    heap_start_addr = mod_end;
+                }
             }
         }
     }
@@ -534,7 +539,7 @@ void pDesktop(void* arg) {
             uint32_t end = timerTicks;
             uint32_t diff = (uint32_t)(end - start);
             char buf[32];
-            itoa(buf, 16, diff);
+            itoa(diff, buf, sizeof(buf), 16);
             screen->FillRectangle(5, 5, 50, 35, 0x0);
             screen->DrawString(10, 10, buf, VBE_font, 0xFFFFFFFF);
             screen->DrawString(25, 10, "ms", VBE_font, 0xFFFFFFFF);
@@ -618,6 +623,9 @@ extern "C" void kernelMain(void* multiboot_structure, uint32_t magicnumber) {
     KernelSymbolTable::Load(g_bootPartition, "kernel.map");
     KDBG1("Kernel symbols loaded from kernel.map");
 
+    if (!(mbinfo->flags & (1 << 12))) {
+        HALT("CRITICAL: Multiboot framebuffer info not available - cannot initialize graphics!\n");
+    }
     g_GraphicsDriver =
         new VESA_BIOS_Extensions(mbinfo->framebuffer_width, mbinfo->framebuffer_height, 32,
                                  (uint32_t*)mbinfo->framebuffer_addr);
@@ -728,12 +736,16 @@ extern "C" void kernelMain(void* multiboot_structure, uint32_t magicnumber) {
     }
     ProcessControlBlock* process1 = g_scheduler->CreateProcess(true, pDesktop, desktopArgs);
 
-    if (mbinfo->mods_count > 0) {
-        KDBG1("Found %d Modules", mbinfo->mods_count);
-        struct multiboot_module* modules = (struct multiboot_module*)mbinfo->mods_addr;
-        // fManager.LoadFile(modules[0].mod_start, modules[0].mod_end); // load font file
+    if (mbinfo->flags & (1 << 3)) {  // mods flag present
+        if (mbinfo->mods_count > 0) {
+            KDBG1("Found %d Modules", mbinfo->mods_count);
+            struct multiboot_module* modules = (struct multiboot_module*)mbinfo->mods_addr;
+            // fManager.LoadFile(modules[0].mod_start, modules[0].mod_end); // load font file
+        } else {
+            KDBG1("No modules found");
+        }
     } else {
-        KDBG1("No modules found");
+        KDBG1("No multiboot modules info available");
     }
 
     // Load and start sample programs

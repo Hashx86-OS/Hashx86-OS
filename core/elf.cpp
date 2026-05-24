@@ -50,10 +50,18 @@ ProcessControlBlock* ELFLoader::loadELF(File* elf, void* args) {
     };
 
     // Read ELF Headers
+    // Validate ph_entry_count before allocation to prevent oversized allocation
+    if (header.ph_entry_count == 0 || header.ph_entry_count > 65536) {
+        KDBG1("Error: Invalid program header count (%d)", header.ph_entry_count);
+        cleanup_process();
+        return nullptr;
+    }
     uint32_t ph_size = sizeof(elf_program_header) * header.ph_entry_count;
     elf_program_header* ph_table = new elf_program_header[header.ph_entry_count];
     if (!ph_table) {
-        HALT("CRITICAL: Failed to allocate ELF program header table!\n");
+        KDBG1("Error: Failed to allocate ELF program header table");
+        cleanup_process();
+        return nullptr;
     }
 
     elf->Seek(header.ph_offset);

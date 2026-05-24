@@ -13,11 +13,12 @@ Label::Label(Widget* parent, int32_t x, int32_t y, int32_t w, int32_t h, const c
     : Widget(parent, x, y, w, h) {
     this->isFocussable = false;
     this->font = FontManager::activeInstance->getNewFont();
-    this->text = new char[strlen(text) + 1];
+    const char* t = text ? text : "";
+    this->text = new char[strlen(t) + 1];
     if (!this->text) {
         HALT("CRITICAL: Failed to allocate label text!\n");
     }
-    strcpy(this->text, text);
+    strcpy(this->text, t);
 }
 
 Label::~Label() {

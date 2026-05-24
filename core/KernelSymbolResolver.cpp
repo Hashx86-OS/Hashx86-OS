@@ -37,7 +37,15 @@ void KernelSymbolTable::Load(FAT32* fs, const char* path) {
         delete file;
         return;
     }
-    file->Read((uint8_t*)fileBuffer, file->size);
+    int bytesRead = file->Read((uint8_t*)fileBuffer, file->size);
+    if (bytesRead != file->size) {
+        KDBG1("Failed to read map file: expected %d bytes, got %d", file->size, bytesRead);
+        kfree(fileBuffer);
+        fileBuffer = nullptr;
+        file->Close();
+        delete file;
+        return;
+    }
     fileBuffer[file->size] = 0;  // Null terminate
     file->Close();
 

@@ -25,7 +25,11 @@ ProgressBar::ProgressBar(Widget* parent, int32_t x, int32_t y, int32_t w, int32_
     }
 
     if (w > 0 && h > 0) {
-        cache = new uint32_t[w * h]();
+        size_t pixels = (size_t)w * (size_t)h;
+        if (pixels > (size_t)-1 / sizeof(uint32_t)) {
+            HALT("CRITICAL: ProgressBar cache size overflow!\n");
+        }
+        cache = new uint32_t[pixels]();
         if (!cache) {
             HALT("CRITICAL: Failed to allocate progressbar cache!\n");
         }
@@ -67,8 +71,13 @@ void ProgressBar::SetBackgroundColor(uint32_t color) {
 }
 
 void ProgressBar::RedrawToCache() {
+    if (!cache || w <= 0 || h <= 0) {
+        isDirty = false;
+        return;
+    }
+    size_t pixels = (size_t)w * (size_t)h;
     // Clear cache
-    memset(cache, 0, sizeof(uint32_t) * w * h);
+    memset(cache, 0, pixels * sizeof(uint32_t));
 
     // Use config colors by default, or custom colors if set
     uint32_t bgColor = (backgroundColor != 0) ? backgroundColor : PROGRESSBAR_BACKGROUND_COLOR;

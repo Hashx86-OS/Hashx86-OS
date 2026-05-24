@@ -68,40 +68,6 @@ char lower(char c) {
     return c;
 }
 
-void itoa(char *buf, int base, int d) {
-    char *p = buf;
-    char *p1, *p2;
-    unsigned int ud = (unsigned int)d;
-    int divisor = base;
-    int is_negative = 0;
-
-    if (base == 10 && d < 0) {
-        is_negative = 1;
-        ud = -d;
-    }
-
-    // Generate digits in reverse order
-    do {
-        int remainder = ud % divisor;
-        *p++ = (remainder < 10) ? remainder + '0' : remainder + 'A' - 10;
-    } while (ud /= divisor);
-
-    if (is_negative) *p++ = '-';
-
-    *p = 0;
-
-    // Reverse the string
-    p1 = buf;
-    p2 = p - 1;
-    while (p1 < p2) {
-        char tmp = *p1;
-        *p1 = *p2;
-        *p2 = tmp;
-        p1++;
-        p2--;
-    }
-}
-
 // Standard ASCII to Integer (Base 10)
 int atoi(const char *str) {
     int res = 0;

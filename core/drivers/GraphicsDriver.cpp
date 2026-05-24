@@ -20,8 +20,12 @@ GraphicsDriver::GraphicsDriver(uint32_t w, uint32_t h, uint32_t b, uint32_t* vra
         HALT("CRITICAL: Failed to allocate graphics back buffer!\n");
     }
 
-    // Clear screen
-    FillRectangle(0, 0, width, height, 0xFF000000);
+    // Clear backbuffer directly — avoids dereferencing NINA::activeInstance
+    // (which may not exist yet) via FillRectangle.
+    uint32_t clearColor = 0xFF000000;  // Opaque black
+    for (uint32_t i = 0; i < width * height; i++) {
+        backBuffer[i] = clearColor;
+    }
 
     PrecomputeAlphaTable();
 }
@@ -117,7 +121,7 @@ void GraphicsDriver::DrawBitmap(int32_t x, int32_t y, const uint32_t* bitmapData
                 uint8_t blendedGreen = alphaTable[alpha][srcGreen] + alphaTable[invAlpha][dstGreen];
                 uint8_t blendedBlue = alphaTable[alpha][srcBlue] + alphaTable[invAlpha][dstBlue];
 
-                rowDst[screenX] = (blendedRed << 16) | (blendedGreen << 8) | blendedBlue;
+                rowDst[screenX] = (0xFF << 24) | (blendedRed << 16) | (blendedGreen << 8) | blendedBlue;
             }
         }
     }
@@ -125,24 +129,28 @@ void GraphicsDriver::DrawBitmap(int32_t x, int32_t y, const uint32_t* bitmapData
 
 void GraphicsDriver::FillRectangle(int32_t x, int32_t y, uint32_t w, uint32_t h,
                                    uint32_t colorIndex) {
+    if (!NINA::activeInstance) return;
     NINA::activeInstance->FillRectangle(this->backBuffer, this->width, this->height, x, y, w, h,
                                         colorIndex);
 }
 
 void GraphicsDriver::DrawRectangle(int32_t x, int32_t y, uint32_t w, uint32_t h,
                                    uint32_t colorIndex) {
+    if (!NINA::activeInstance) return;
     NINA::activeInstance->DrawRectangle(this->backBuffer, this->width, this->height, x, y, w, h,
                                         colorIndex);
 }
 
 void GraphicsDriver::FillRoundedRectangle(int32_t x, int32_t y, uint32_t w, uint32_t h,
                                           uint32_t radius, uint32_t colorIndex) {
+    if (!NINA::activeInstance) return;
     NINA::activeInstance->FillRoundedRectangle(this->backBuffer, this->width, this->height, x, y, w,
                                                h, radius, colorIndex);
 }
 
 void GraphicsDriver::DrawRoundedRectangle(int32_t x, int32_t y, uint32_t w, uint32_t h,
                                           uint32_t radius, uint32_t colorIndex) {
+    if (!NINA::activeInstance) return;
     NINA::activeInstance->DrawRoundedRectangle(this->backBuffer, this->width, this->height, x, y, w,
                                                h, radius, colorIndex);
 }
@@ -179,8 +187,13 @@ void GraphicsDriver::DrawRoundedRectangleShadow(int32_t x, int32_t y, uint32_t w
 
             int32_t distanceSquared = dx * dx + dy * dy;
             if (distanceSquared <= (shadowRadius * shadowRadius)) {
-                uint8_t alpha = alphaTable[shadowAlpha][255 - (distanceSquared * 255) /
-                                                                  (shadowRadius * shadowRadius)];
+                uint8_t alpha;
+                if (shadowRadius == 0) {
+                    alpha = shadowAlpha;  // No falloff: constant opacity
+                } else {
+                    alpha = alphaTable[shadowAlpha][255 - (distanceSquared * 255) /
+                                                               (shadowRadius * shadowRadius)];
+                }
                 uint32_t dstColor = *pixelPtr;
                 uint32_t invAlpha = 255 - alpha;
 
@@ -193,7 +206,7 @@ void GraphicsDriver::DrawRoundedRectangleShadow(int32_t x, int32_t y, uint32_t w
                     alphaTable[alpha][shadowGreen] + alphaTable[invAlpha][dstGreen];
                 uint8_t blendedBlue = alphaTable[alpha][shadowBlue] + alphaTable[invAlpha][dstBlue];
 
-                *pixelPtr = (blendedRed << 16) | (blendedGreen << 8) | blendedBlue;
+                *pixelPtr = (0xFF << 24) | (blendedRed << 16) | (blendedGreen << 8) | blendedBlue;
             }
             pixelPtr++;
         }
@@ -294,37 +307,44 @@ void GraphicsDriver::BlurRoundedRectangle(int32_t x, int32_t y, uint32_t w, uint
 }
 
 void GraphicsDriver::FillCircle(int32_t cx, int32_t cy, uint32_t radius, uint32_t colorIndex) {
+    if (!NINA::activeInstance) return;
     NINA::activeInstance->FillCircle(this->backBuffer, this->width, this->height, cx, cy, radius,
                                      colorIndex);
 }
 
 void GraphicsDriver::DrawCircle(int32_t cx, int32_t cy, uint32_t radius, uint32_t colorIndex) {
+    if (!NINA::activeInstance) return;
     NINA::activeInstance->DrawCircle(this->backBuffer, this->width, this->height, cx, cy, radius,
                                      colorIndex);
 }
 
 void GraphicsDriver::DrawLine(int32_t x0, int32_t y0, int32_t x1, int32_t y1, uint32_t color) {
+    if (!NINA::activeInstance) return;
     NINA::activeInstance->DrawLine(this->backBuffer, this->width, this->height, x0, y0, x1, y1,
                                    color);
 }
 
 void GraphicsDriver::DrawHorizontalLine(int32_t x, int32_t y, int32_t length, uint32_t colorIndex) {
+    if (!NINA::activeInstance) return;
     NINA::activeInstance->DrawHorizontalLine(this->backBuffer, this->width, this->height, x, y,
                                              length, colorIndex);
 }
 
 void GraphicsDriver::DrawVerticalLine(int32_t x, int32_t y, int32_t length, uint32_t colorIndex) {
+    if (!NINA::activeInstance) return;
     NINA::activeInstance->DrawVerticalLine(this->backBuffer, this->width, this->height, x, y,
                                            length, colorIndex);
 }
 
 void GraphicsDriver::DrawCharacter(int32_t x, int32_t y, char c, Font* font, uint32_t colorIndex) {
+    if (!NINA::activeInstance) return;
     NINA::activeInstance->DrawCharacter(this->backBuffer, this->width, this->height, x, y, c, font,
                                         colorIndex);
 }
 
 void GraphicsDriver::DrawString(int32_t startX, int32_t startY, const char* str, Font* font,
                                 uint32_t colorIndex) {
+    if (!NINA::activeInstance) return;
     NINA::activeInstance->DrawString(this->backBuffer, this->width, this->height, startX, startY,
                                      str, font, colorIndex);
 }

@@ -26,6 +26,22 @@ private:
     uint8_t* mixBuffer;
     uint32_t bufferSize;
 
+    // IRQ-safe deferred free: ProcessAudio sets this, Update performs the actual kfree
+    uint8_t* pendingFreeBuffer;
+    uint32_t pendingFreeLength;
+
+    // Disable interrupts, return previous EFLAGS (bit 9 = IF)
+    static inline uint32_t lock() {
+        uint32_t eflags;
+        asm volatile("pushf; pop %0; cli" : "=r"(eflags));
+        return eflags;
+    }
+    // Restore interrupts if they were enabled
+    static inline void unlock(uint32_t eflags) {
+        if (eflags & 0x200)
+            asm volatile("sti");
+    }
+
 public:
     explicit AudioMixer(AudioDriver* drv);
 

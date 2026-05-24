@@ -106,8 +106,9 @@ uint32_t FAT32::ParsePath(char* path, char* filenameOut) {
 
     if (lastSlash == -1) {
         // No slash, "FILE.TXT" -> Root
-        for (int i = 0; i < len; i++) filenameOut[i] = path[i];
-        filenameOut[len] = 0;
+        int copyLen = (len < 12) ? len : 12;
+        for (int i = 0; i < copyLen; i++) filenameOut[i] = path[i];
+        filenameOut[copyLen] = 0;
         return bpb.rootCluster;
     }
 
@@ -119,12 +120,12 @@ uint32_t FAT32::ParsePath(char* path, char* filenameOut) {
     dirPath[dirLen] = 0;
     uint32_t dirCluster = ResolvePath(dirPath);
 
-    // Copy filename
+    // Copy filename (max 12 chars + null = 13 byte buffer)
     int fIdx = 0;
-    for (int i = lastSlash + 1; i < len; i++) {
+    for (int i = lastSlash + 1; i < len && fIdx < 12; i++) {
         filenameOut[fIdx++] = path[i];
     }
-    filenameOut[fIdx] = 0;
+    filenameOut[fIdx] = 0;  // Ensure null termination
 
     return dirCluster;
 }
@@ -160,21 +161,31 @@ void FAT32::SetFATEntry(uint32_t cluster, uint32_t value) {
 }
 
 uint32_t FAT32::AllocateCluster() {
+    // Compute maximum valid cluster from partition geometry
+    // Total data sectors = bpb.totalSectorCount - reservedSectors - (tableSize * fatCopies)
+    uint32_t dataSectors = (bpb.totalSectorCount > (bpb.reservedSectors + bpb.tableSize * bpb.fatCopies))
+        ? bpb.totalSectorCount - bpb.reservedSectors - (bpb.tableSize * bpb.fatCopies)
+        : 0;
+    uint32_t maxCluster = 2 + (dataSectors / bpb.sectorsPerCluster);
+
     uint8_t buffer[512];
-    uint32_t currentSector = fatStart;
     for (int i = 0; i < bpb.tableSize; i++) {
-        hd->Read28(currentSector + i, buffer, 512);
+        uint32_t sector = fatStart + i;
+        hd->Read28(sector, buffer, 512);
         for (int j = 0; j < 128; j++) {
             uint32_t* entries = (uint32_t*)buffer;
             if (i == 0 && j < 2) continue;
             if ((entries[j] & 0x0FFFFFFF) == 0) {
                 uint32_t clusterIdx = (i * 128) + j;
+                // Bounds check against real data area
+                if (clusterIdx >= maxCluster) return 0;
                 SetFATEntry(clusterIdx, 0x0FFFFFFF);
                 // Zero Disk
-                uint32_t sector = ClusterToSector(clusterIdx);
+                uint32_t sectorStart = ClusterToSector(clusterIdx);
                 uint8_t zeros[512];
                 memset(zeros, 0, 512);
-                for (int k = 0; k < bpb.sectorsPerCluster; k++) hd->Write28(sector + k, zeros, 512);
+                for (int k = 0; k < bpb.sectorsPerCluster; k++)
+                    hd->Write28(sectorStart + k, zeros, 512);
                 return clusterIdx;
             }
         }
@@ -184,7 +195,13 @@ uint32_t FAT32::AllocateCluster() {
 
 void FAT32::FreeChain(uint32_t startCluster) {
     uint32_t current = startCluster;
+    uint32_t visited = 0;
+    uint32_t maxClusters = bpb.tableSize * 128;  // Max valid cluster index
     while (current >= 0x00000002 && current < 0x0FFFFFF8) {
+        if (visited++ > maxClusters) {
+            KDBG1("FAT corruption detected: cyclic chain or too many entries in FreeChain");
+            return;
+        }
         uint32_t next = GetFATEntry(current);
         SetFATEntry(current, 0x00000000);
         current = next;
@@ -200,8 +217,14 @@ bool FAT32::FindEntryInCluster(uint32_t cluster, char* name, uint32_t& sectorOut
 
     uint32_t currentCluster = cluster;
     uint8_t buffer[512];
+    uint32_t visited = 0;
+    uint32_t maxClusters = bpb.tableSize * 128;
 
     while (currentCluster < 0x0FFFFFF8) {
+        if (visited++ > maxClusters) {
+            KDBG1("FAT corruption: cyclic chain in FindEntryInCluster");
+            return false;
+        }
         uint32_t sector = ClusterToSector(currentCluster);
         for (int s = 0; s < bpb.sectorsPerCluster; s++) {
             hd->Read28(sector + s, buffer, 512);
@@ -233,8 +256,14 @@ bool FAT32::FindEntryInCluster(uint32_t cluster, char* name, uint32_t& sectorOut
 bool FAT32::FindFreeEntryInCluster(uint32_t dirCluster, uint32_t& sectorOut, uint32_t& offsetOut) {
     uint32_t currentCluster = dirCluster;
     uint8_t buffer[512];
+    uint32_t visited = 0;
+    uint32_t maxClusters = bpb.tableSize * 128;
 
     while (true) {
+        if (visited++ > maxClusters) {
+            KDBG1("FAT corruption: cyclic chain in FindFreeEntryInCluster");
+            return false;
+        }
         uint32_t sector = ClusterToSector(currentCluster);
 
         for (int i = 0; i < bpb.sectorsPerCluster; i++) {
@@ -265,8 +294,14 @@ bool FAT32::FindFreeEntryInCluster(uint32_t dirCluster, uint32_t& sectorOut, uin
 bool FAT32::IsDirectoryEmpty(uint32_t dirCluster) {
     uint32_t currentCluster = dirCluster;
     uint8_t buffer[512];
+    uint32_t visited = 0;
+    uint32_t maxClusters = bpb.tableSize * 128;
 
     while (currentCluster < 0x0FFFFFF8) {
+        if (visited++ > maxClusters) {
+            KDBG1("FAT corruption: cyclic chain in IsDirectoryEmpty");
+            return true;  // Treat as empty rather than hanging
+        }
         uint32_t sector = ClusterToSector(currentCluster);
         for (int s = 0; s < bpb.sectorsPerCluster; s++) {
             hd->Read28(sector + s, buffer, 512);
@@ -345,6 +380,8 @@ File* FAT32::Open(char* path) {
 // Reads from the file's CURRENT position (offset) using the Cluster ID directly
 uint32_t FAT32::ReadStream(File* file, uint8_t* buffer, uint32_t length) {
     if (!file || !buffer || length == 0) return 0;
+    // Cluster 0 is invalid for reads (empty file or root placeholder)
+    if (file->id == 0) return 0;
 
     uint32_t currentCluster = file->id;
     uint32_t offset = file->position;
@@ -403,9 +440,15 @@ void FAT32::ListDir(char* path) {
 
     uint8_t buffer[512];
     uint32_t currentCluster = dirCluster;
+    uint32_t visited = 0;
+    uint32_t maxClusters = bpb.tableSize * 128;
     KDBG2("Listing: %s", path);
 
     while (currentCluster < 0x0FFFFFF8) {
+        if (visited++ > maxClusters) {
+            KDBG1("FAT corruption: cyclic chain in ListDir");
+            return;
+        }
         uint32_t sector = ClusterToSector(currentCluster);
         for (int s = 0; s < bpb.sectorsPerCluster; s++) {
             hd->Read28(sector + s, buffer, 512);
@@ -464,6 +507,7 @@ void FAT32::CreateFile(char* path) {
 
     if (!FindFreeEntryInCluster(parentCluster, s, o)) {
         KDBG1("Dir Full");
+        FreeChain(newCluster);
         return;
     }
 
@@ -576,7 +620,10 @@ void FAT32::MakeDirectory(char* path) {
     uint32_t newCluster = AllocateCluster();
     if (newCluster == 0) return;
 
-    if (!FindFreeEntryInCluster(parentCluster, s, o)) return;
+    if (!FindFreeEntryInCluster(parentCluster, s, o)) {
+        FreeChain(newCluster);
+        return;
+    }
 
     DirectoryEntryFat32 newEntry;
     memset(&newEntry, 0, sizeof(DirectoryEntryFat32));
@@ -671,8 +718,14 @@ void FAT32::ReadFile(char* path, uint8_t* buffer, uint32_t length) {
     uint32_t currentCluster = ((uint32_t)entry.firstClusterHi << 16) | entry.firstClusterLow;
     uint32_t bytesRead = 0;
     uint8_t secBuff[512];
+    uint32_t visited = 0;
+    uint32_t maxClusters = bpb.tableSize * 128;
 
     while (bytesRead < length && currentCluster < 0x0FFFFFF8) {
+        if (visited++ > maxClusters) {
+            KDBG1("FAT corruption: cyclic chain in ReadFile");
+            break;
+        }
         uint32_t sector = ClusterToSector(currentCluster);
         for (int i = 0; i < bpb.sectorsPerCluster; i++) {
             hd->Read28(sector + i, secBuff, 512);
@@ -725,8 +778,14 @@ void FAT32::WriteFile(char* path, uint8_t* buffer, uint32_t length) {
     // Write Data
     uint32_t bytesWritten = 0;
     uint8_t secBuff[512];
+    uint32_t visited = 0;
+    uint32_t maxClusters = bpb.tableSize * 128;
 
     while (bytesWritten < length) {
+        if (visited++ > maxClusters) {
+            KDBG1("FAT corruption: cyclic chain in WriteFile");
+            break;
+        }
         uint32_t sector = ClusterToSector(currentCluster);
 
         for (int i = 0; i < bpb.sectorsPerCluster; i++) {
@@ -751,11 +810,11 @@ void FAT32::WriteFile(char* path, uint8_t* buffer, uint32_t length) {
         currentCluster = next;
     }
 
-    // Update File Size
+    // Update File Size with actual bytes written (may be less than length on disk full)
     uint8_t dirBuff[512];
     hd->Read28(dirSector, dirBuff, 512);
     DirectoryEntryFat32* onDisk = (DirectoryEntryFat32*)(dirBuff + dirOffset);
-    onDisk->size = length;
+    onDisk->size = bytesWritten;
     hd->Write28(dirSector, dirBuff, 512);
 
     KDBG2("Written.");

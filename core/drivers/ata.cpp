@@ -108,6 +108,7 @@ uint32_t AdvancedTechnologyAttachment::Identify() {
 
 void AdvancedTechnologyAttachment::Read28(uint32_t sectorNum, uint8_t* data, int count) {
     if (sectorNum > 0x0FFFFFFF) return;
+    if (data == nullptr || count <= 0) return;
 
     devicePort.Write((master ? 0xE0 : 0xF0) | ((sectorNum & 0x0F000000) >> 24));
     errorPort.Write(0);
@@ -172,7 +173,7 @@ void AdvancedTechnologyAttachment::Read28(uint32_t sectorNum, uint8_t* data, int
 
 void AdvancedTechnologyAttachment::Write28(uint32_t sectorNum, uint8_t* data, uint32_t count) {
     if (sectorNum > 0x0FFFFFFF) return;
-    if (count == 0) return;  // No-op: reject zero-length writes
+    if (data == nullptr || count <= 0) return;  // No-op: reject null or zero-length
     if (count > 512) count = 512;
 
     devicePort.Write((master ? 0xE0 : 0xF0) | ((sectorNum & 0x0F000000) >> 24));
@@ -218,14 +219,15 @@ void AdvancedTechnologyAttachment::Write28(uint32_t sectorNum, uint8_t* data, ui
     if (count == 512) {
         outsw(dataPort.getPortNumber(), data, 256);
     } else {
-        // Partial write: Copy to padded buffer first
+        // Partial write: Read-modify-write to preserve existing data
         uint8_t sectorBuffer[512];
-        for (int i = 0; i < 512; i++) {
-            if (i < (int)count)
-                sectorBuffer[i] = data[i];
-            else
-                sectorBuffer[i] = 0;
+        // First read the current sector from the device
+        insw(dataPort.getPortNumber(), sectorBuffer, 256);
+        // Overwrite only the first 'count' bytes with caller's data
+        for (int i = 0; i < (int)count; i++) {
+            sectorBuffer[i] = data[i];
         }
+        // Write the merged sector back
         outsw(dataPort.getPortNumber(), sectorBuffer, 256);
     }
 

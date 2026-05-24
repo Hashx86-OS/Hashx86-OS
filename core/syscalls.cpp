@@ -329,6 +329,7 @@ int32_t SyscallHandlers::Handle_sys_execve(const char* path, char* const argv[],
             ProgramArguments* args =
                 new ProgramArguments{nullptr, nullptr, nullptr, nullptr, nullptr};
             ProcessControlBlock* proc = Scheduler::activeInstance->GetCurrentProcess();
+            bool argvFailed = false;
             if (argv && proc) {
                 const int MAX_ARGS = 5;
                 const int MAX_ARG_LEN = 512;
@@ -341,7 +342,6 @@ int32_t SyscallHandlers::Handle_sys_execve(const char* path, char* const argv[],
                     if (a->str5) { kfree((void*)a->str5); a->str5 = nullptr; }
                     delete a;
                 };
-                bool argvFailed = false;
                 for (int i = 0; i < MAX_ARGS; i++) {
                     // Read pointer from user argv array
                     char* userPtr = nullptr;
@@ -386,6 +386,9 @@ int32_t SyscallHandlers::Handle_sys_execve(const char* path, char* const argv[],
                 if (argvFailed) {
                     cleanupArgs(args);
                     args = nullptr;
+                    f->Close();
+                    delete f;
+                    return -1;  // Abort — do not continue with null args
                 }
             }
 
@@ -425,19 +428,45 @@ int32_t SyscallHandlers::Handle_sys_brk(uint32_t brk) {
         uint32_t page_end = (brk + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
 
         if (g_paging && page_end > page_start) {
+            // Track newly allocated frames for rollback on failure
+            struct BrkFrame {
+                uint32_t vaddr;
+                uint32_t phys;
+            };
+            BrkFrame brkFrames[64];  // Max 64 pages = 256KB per sys_brk call
+            int brkCount = 0;
+
             for (uint32_t addr = page_start; addr < page_end; addr += PAGE_SIZE) {
                 // Check if already mapped
                 if (g_paging->GetPhysicalAddress(process->page_directory, addr) == 0) {
                     uint32_t phys_frame = (uint32_t)pmm_alloc_block_low(256 * 1024 * 1024);
                     if (!phys_frame) {
-                        KDBG1("sys_brk: Out of physical memory!");
+                        KDBG1("sys_brk: Out of physical memory! Rolling back %d pages",
+                              brkCount);
+                        // Rollback: unmap and free all frames allocated in this call
+                        for (int r = 0; r < brkCount; r++) {
+                            g_paging->MapPage(process->page_directory, brkFrames[r].vaddr, 0, 0);
+                            asm volatile("invlpg (%0)" ::"r"(brkFrames[r].vaddr) : "memory");
+                            pmm_free_block((void*)brkFrames[r].phys);
+                        }
                         return -1;
                     }
                     if (!g_paging->MapPage(process->page_directory, addr, phys_frame,
                                            PAGE_PRESENT | PAGE_RW | PAGE_USER)) {
                         pmm_free_block((void*)phys_frame);
-                        KDBG1("sys_brk: MapPage failed!");
+                        KDBG1("sys_brk: MapPage failed! Rolling back %d pages",
+                              brkCount);
+                        for (int r = 0; r < brkCount; r++) {
+                            g_paging->MapPage(process->page_directory, brkFrames[r].vaddr, 0, 0);
+                            asm volatile("invlpg (%0)" ::"r"(brkFrames[r].vaddr) : "memory");
+                            pmm_free_block((void*)brkFrames[r].phys);
+                        }
                         return -1;
+                    }
+                    if (brkCount < 64) {
+                        brkFrames[brkCount].vaddr = addr;
+                        brkFrames[brkCount].phys = phys_frame;
+                        brkCount++;
                     }
                 }
             }

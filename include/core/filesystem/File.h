@@ -32,7 +32,7 @@ public:
     // Moves the cursor
     void Seek(uint32_t pos);
 
-    void Write(uint8_t* buffer, uint32_t length);
+    int Write(uint8_t* buffer, uint32_t length);
 
     void Close();
 };

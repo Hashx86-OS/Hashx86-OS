@@ -226,18 +226,26 @@ void* kmalloc(int size) {
         return NULL;
     }
     if (g_head == NULL) {
-        g_head = (KHEAP_BLOCK*)kbrk(sizeof(KHEAP_BLOCK));
-        if (!g_head) {
+        // Allocate metadata block and data block separately so that failure
+        // of the data allocation does not leave a half-initialized g_head.
+        KHEAP_BLOCK* temp_head = (KHEAP_BLOCK*)kbrk(sizeof(KHEAP_BLOCK));
+        if (!temp_head) {
             KDBG1("AllocFail reason=InitHeapMetadataOM");
             return NULL;
         }
 
-        g_head->metadata.is_free = false;
-        g_head->metadata.size = size;
-        g_head->next = NULL;
-        g_head->data = kbrk(size);
-        if (!g_head->data) return NULL;
-
+        temp_head->metadata.is_free = false;
+        temp_head->metadata.size = size;
+        temp_head->next = NULL;
+        temp_head->data = kbrk(size);
+        if (!temp_head->data) {
+            // Data allocation failed — do not expose temp_head.
+            // Reset used_size so the kbrk for metadata is effectively reclaimed.
+            // (kbrk only tracks g_total_used_size; we undo the metadata allocation.)
+            g_total_used_size -= sizeof(KHEAP_BLOCK);
+            return NULL;
+        }
+        g_head = temp_head;
         return g_head->data;
     } else {
         KHEAP_BLOCK* worst = worst_fit(size);
@@ -284,9 +292,15 @@ void aligned_kfree(void* ptr) {
  */
 void* kcalloc(int n, int size) {
     InterruptGuard guard;
-    if (n < 0 || size < 0) return NULL;
-    void* mem = kmalloc(n * size);
-    if (mem) memset(mem, 0, n * size);
+    if (n <= 0 || size <= 0) return NULL;
+    // Compute total bytes in a wider type to detect overflow
+    size_t total = (size_t)n * (size_t)size;
+    if (total / (size_t)size != (size_t)n) {
+        KDBG1("Calloc overflow n=%d size=%d", n, size);
+        return NULL;
+    }
+    void* mem = kmalloc((int)total);
+    if (mem) memset(mem, 0, total);
     KDBG3("Calloc n=%d size=%d addr=0x%x", n, size, mem);
     return mem;
 }
