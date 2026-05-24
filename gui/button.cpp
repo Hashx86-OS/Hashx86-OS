@@ -25,7 +25,7 @@ Button::Button(Widget* parent, int32_t x, int32_t y, uint32_t w, uint32_t h, con
 Button::~Button() {
     if (label) delete[] label;
     if (font) delete font;
-    if (cache) delete[] cache;
+    // cache is owned and freed by Widget::~Widget
 }
 
 void Button::update() {

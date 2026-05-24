@@ -332,15 +332,25 @@ int32_t SyscallHandlers::Handle_sys_execve(const char* path, char* const argv[],
             if (argv && proc) {
                 const int MAX_ARGS = 5;
                 const int MAX_ARG_LEN = 512;
+                // Cleanup helper for partial argv allocations
+                auto cleanupArgs = [](ProgramArguments* a) {
+                    if (a->str1) { kfree((void*)a->str1); a->str1 = nullptr; }
+                    if (a->str2) { kfree((void*)a->str2); a->str2 = nullptr; }
+                    if (a->str3) { kfree((void*)a->str3); a->str3 = nullptr; }
+                    if (a->str4) { kfree((void*)a->str4); a->str4 = nullptr; }
+                    if (a->str5) { kfree((void*)a->str5); a->str5 = nullptr; }
+                    delete a;
+                };
+                bool argvFailed = false;
                 for (int i = 0; i < MAX_ARGS; i++) {
                     // Read pointer from user argv array
                     char* userPtr = nullptr;
-                    if (!CopyFromUser(proc, &userPtr, &argv[i], sizeof(void*))) break;
+                    if (!CopyFromUser(proc, &userPtr, &argv[i], sizeof(void*))) { argvFailed = true; break; }
                     if (!userPtr) break;  // NULL terminator
 
                     // Measure and copy string safely (cap length)
                     char* buf = (char*)kmalloc(MAX_ARG_LEN);
-                    if (!buf) break;
+                    if (!buf) { argvFailed = true; break; }
                     // Read at most MAX_ARG_LEN-1 bytes
                     size_t read = 0;
                     while (read + 1 < (size_t)MAX_ARG_LEN) {
@@ -353,7 +363,7 @@ int32_t SyscallHandlers::Handle_sys_execve(const char* path, char* const argv[],
                         buf[read++] = c;
                         if (c == '\0') break;
                     }
-                    if (!buf) break;
+                    if (!buf) { argvFailed = true; break; }
                     buf[MAX_ARG_LEN - 1] = '\0';
                     switch (i) {
                         case 0:
@@ -372,6 +382,10 @@ int32_t SyscallHandlers::Handle_sys_execve(const char* path, char* const argv[],
                             args->str5 = buf;
                             break;
                     }
+                }
+                if (argvFailed) {
+                    cleanupArgs(args);
+                    args = nullptr;
                 }
             }
 

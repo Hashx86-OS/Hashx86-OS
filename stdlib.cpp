@@ -48,8 +48,11 @@ char* itoa_safe(int32_t num, char* str, size_t capacity, uint32_t base) {
     }
 
     if (isNegative) {
-        if (i + 1 >= capacity) i--;  // No room for minus, reuse last digit slot
-        str[i++] = '-';
+        if (i + 1 >= capacity) {
+            // No room for minus sign; leave unsigned to avoid truncating digits
+        } else {
+            str[i++] = '-';
+        }
     }
 
     str[i] = '\0';

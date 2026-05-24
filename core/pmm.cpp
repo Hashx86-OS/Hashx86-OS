@@ -255,6 +255,14 @@ void pmm_free_block(void* p) {
     // Use Absolute Addressing
     int frame = addr / PMM_BLOCK_SIZE;
 
+    if (frame < 0 || (uint32_t)frame >= g_pmm_info.max_blocks) {
+        KDBG2("free_block invalid frame=%d addr=0x%x", frame, addr);
+        return;
+    }
+    if (!pmm_mmap_test(frame)) {
+        KDBG3("free_block already free frame=%d addr=0x%x", frame, addr);
+        return;
+    }
     pmm_mmap_unset(frame);
     g_pmm_info.used_blocks--;
 
@@ -288,16 +296,27 @@ void* pmm_alloc_blocks(uint32_t size) {
 }
 
 void pmm_free_blocks(void* p, uint32_t size) {
-    uint32_t i;
-
     PMM_PHYSICAL_ADDRESS addr = (PMM_PHYSICAL_ADDRESS)p;
 
     // Use Absolute Addressing
     int frame = addr / PMM_BLOCK_SIZE;
 
-    for (i = 0; i < size; i++) pmm_mmap_unset(frame + i);
+    if (frame < 0 || (uint32_t)frame >= g_pmm_info.max_blocks ||
+        frame + size > g_pmm_info.max_blocks) {
+        KDBG2("contiguous release invalid frame=%d size=%u addr=0x%x", frame, size, addr);
+        return;
+    }
 
-    g_pmm_info.used_blocks -= size;
+    uint32_t freed = 0;
+    for (uint32_t i = 0; i < size; i++) {
+        if (pmm_mmap_test(frame + i)) {
+            pmm_mmap_unset(frame + i);
+            freed++;
+        }
+    }
 
-    KDBG2("contiguous release size=%u addr=0x%x used=%u", size, addr, g_pmm_info.used_blocks);
+    g_pmm_info.used_blocks -= freed;
+
+    KDBG2("contiguous release size=%u addr=0x%x freed=%u used=%u", size, addr, freed,
+          g_pmm_info.used_blocks);
 }

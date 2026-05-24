@@ -248,14 +248,7 @@ void* kmalloc(int size) {
                 return NULL;
             }
 
-            if (!new_block->data) {
-                new_block->metadata.is_free = true;
-                return NULL;
-            }
-
-            new_block->metadata.is_free = false;
-            new_block->metadata.size = size;
-
+            // allocate_new_block already initializes metadata and data
             return new_block->data;
         } else {
             worst->metadata.is_free = false;
@@ -268,7 +261,7 @@ void* kmalloc(int size) {
 
 void* aligned_kmalloc(size_t size, size_t alignment) {
     InterruptGuard guard;
-    if (alignment == 0) return nullptr;
+    if (alignment == 0 || (alignment & (alignment - 1)) != 0) return nullptr;
     static_assert(sizeof(uintptr_t) == sizeof(void*), "uintptr_t must match pointer size");
     uintptr_t raw_addr = (uintptr_t)kmalloc(size + alignment + sizeof(void*));
     if (!raw_addr) return nullptr;

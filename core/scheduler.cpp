@@ -273,17 +273,29 @@ ThreadControlBlock* Scheduler::CloneCurrentThread(CPUState* parentContext, uint3
     constexpr uint32_t CLONE_CHILD_SETTID = 0x01000000;
     constexpr uint32_t USER_LOWER_BOUND = 0x10000000;
 
-    if ((clone_flags & CLONE_PARENT_SETTID) && parent_tid &&
-        (uint32_t)parent_tid >= USER_LOWER_BOUND) {
-        uint32_t tid_val = tcb->tid;
-        uint32_t phys = _pager->GetPhysicalAddress(parent->page_directory, (uint32_t)parent_tid);
-        if (phys) *(uint32_t*)phys = tid_val;
+    // Validate that the full 4-byte range is mapped and does not cross a page boundary
+    auto safeWriteTid = [&](void* addr, uint32_t tid_val, uint32_t* page_dir) -> bool {
+        uint32_t uaddr = (uint32_t)addr;
+        if (uaddr < USER_LOWER_BOUND) return false;
+        // Check that write stays within a single page
+        if ((uaddr & (PAGE_SIZE - 1)) > PAGE_SIZE - sizeof(uint32_t)) return false;
+        uint32_t end = uaddr + sizeof(uint32_t) - 1;
+        if (end < uaddr) return false;
+        // Verify both start and end pages are mapped
+        for (uint32_t page = uaddr & ~(PAGE_SIZE - 1); page <= end; page += PAGE_SIZE) {
+            if (!_pager->GetPhysicalAddress(page_dir, page)) return false;
+        }
+        uint32_t phys = _pager->GetPhysicalAddress(page_dir, uaddr);
+        if (!phys) return false;
+        *(uint32_t*)phys = tid_val;
+        return true;
+    };
+
+    if ((clone_flags & CLONE_PARENT_SETTID) && parent_tid) {
+        safeWriteTid(parent_tid, tcb->tid, parent->page_directory);
     }
-    if ((clone_flags & CLONE_CHILD_SETTID) && child_tid &&
-        (uint32_t)child_tid >= USER_LOWER_BOUND) {
-        uint32_t tid_val = tcb->tid;
-        uint32_t phys = _pager->GetPhysicalAddress(parent->page_directory, (uint32_t)child_tid);
-        if (phys) *(uint32_t*)phys = tid_val;
+    if ((clone_flags & CLONE_CHILD_SETTID) && child_tid) {
+        safeWriteTid(child_tid, tcb->tid, parent->page_directory);
     }
 
     // TLS install is architecture-ABI specific; keep ignored for now.
@@ -415,18 +427,27 @@ ThreadControlBlock* Scheduler::CloneCurrentProcess(CPUState* parentContext, uint
     constexpr uint32_t CLONE_CHILD_SETTID = 0x01000000;
     constexpr uint32_t USER_LOWER_BOUND = 0x10000000;
 
-    if ((clone_flags & CLONE_PARENT_SETTID) && parent_tid &&
-        (uint32_t)parent_tid >= USER_LOWER_BOUND) {
-        uint32_t tid_val = tcb->tid;
-        uint32_t phys = _pager->GetPhysicalAddress(parent->page_directory, (uint32_t)parent_tid);
-        if (phys) *(uint32_t*)phys = tid_val;
+    auto safeWriteTid = [&](void* addr, uint32_t tid_val, uint32_t* page_dir) -> bool {
+        uint32_t uaddr = (uint32_t)addr;
+        if (uaddr < USER_LOWER_BOUND) return false;
+        if ((uaddr & (PAGE_SIZE - 1)) > PAGE_SIZE - sizeof(uint32_t)) return false;
+        uint32_t end = uaddr + sizeof(uint32_t) - 1;
+        if (end < uaddr) return false;
+        for (uint32_t page = uaddr & ~(PAGE_SIZE - 1); page <= end; page += PAGE_SIZE) {
+            if (!_pager->GetPhysicalAddress(page_dir, page)) return false;
+        }
+        uint32_t phys = _pager->GetPhysicalAddress(page_dir, uaddr);
+        if (!phys) return false;
+        *(uint32_t*)phys = tid_val;
+        return true;
+    };
+
+    if ((clone_flags & CLONE_PARENT_SETTID) && parent_tid) {
+        safeWriteTid(parent_tid, tcb->tid, parent->page_directory);
     }
 
-    if ((clone_flags & CLONE_CHILD_SETTID) && child_tid &&
-        (uint32_t)child_tid >= USER_LOWER_BOUND) {
-        uint32_t tid_val = tcb->tid;
-        uint32_t phys = _pager->GetPhysicalAddress(childProc->page_directory, (uint32_t)child_tid);
-        if (phys) *(uint32_t*)phys = tid_val;
+    if ((clone_flags & CLONE_CHILD_SETTID) && child_tid) {
+        safeWriteTid(child_tid, tcb->tid, childProc->page_directory);
     }
 
     // TLS setup is deferred until TLS/GDT model support is wired.
@@ -499,11 +520,22 @@ bool Scheduler::KillProcess(uint32_t pid) {
         // Free User Page Tables (Indices 64 to 768)
         // Kernel tables (0-63) and High Mem (768-1023) are shared, CANNOT FREE
         for (int i = 64; i < 768; i++) {
-            if (target->page_directory[i] & PAGE_PRESENT) {
-                uint32_t tablePhys = target->page_directory[i] & 0xFFFFF000;
-                pmm_free_block((void*)tablePhys);
-                target->page_directory[i] = 0;
+            if (!(target->page_directory[i] & PAGE_PRESENT)) continue;
+
+            // First, free every individual page frame pointed to by this table's PTEs
+            uint32_t* pt = (uint32_t*)(target->page_directory[i] & 0xFFFFF000);
+            for (uint32_t j = 0; j < 1024; j++) {
+                if (!(pt[j] & PAGE_PRESENT)) continue;
+                uint32_t phys = pt[j] & 0xFFFFF000;
+                // Don't free the shared exit trampoline page
+                if (phys && phys != _trampolinePhys) {
+                    pmm_free_block((void*)phys);
+                }
+                pt[j] = 0;
             }
+            // Then free the page table itself
+            pmm_free_block((void*)(target->page_directory[i] & 0xFFFFF000));
+            target->page_directory[i] = 0;
         }
         // Free the Directory itself
         pmm_free_block(target->page_directory);

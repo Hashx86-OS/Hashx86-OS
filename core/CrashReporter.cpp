@@ -49,7 +49,7 @@ void CrashReporter::ShowUserCrashDialog(uint32_t pid, uint32_t tid, uint8_t exce
             HALT("CRITICAL: Failed to allocate crash info dialog!\n");
         }
 
-        g_crashDialog->SetPID(0);
+        g_crashDialog->SetPID(pid);
         g_crashDialog->SetID(desktop->getNewID());
         g_crashDialog->SetTitleText("Crash Diagnostics");
         g_crashDialog->SetIconBitmap("BITMAPS/ICON.BMP");

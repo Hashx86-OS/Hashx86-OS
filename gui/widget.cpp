@@ -22,7 +22,7 @@ Widget::Widget(Widget* parent, int32_t x, int32_t y, int32_t w, int32_t h) {
     if (w > 0 && h > 0) {
         cache = new uint32_t[w * h]();
         if (!cache) {
-            HALT("CRITICAL: Failed to allocate button cache!\n");
+            HALT("CRITICAL: Failed to allocate widget cache!\n");
         }
     }
 }

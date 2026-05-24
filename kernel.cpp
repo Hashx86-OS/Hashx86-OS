@@ -298,31 +298,16 @@ void init_memory(MultibootInfo* mbinfo) {
         actual_heap_start = (actual_heap_start & 0xFFFFF000) + 0x1000;
     }
 
-    // Define the Hard Ceiling (224 MB)
-    // Reserve 32MB (224-256MB) of identity-mapped space for PMM allocations
-    // (page tables, user stacks, process directories, ELF loading pages).
+    // Reserve the bulk of low memory for identity-mapped PMM allocations
+    // (page tables, user stacks, process directories, ELF loading pages, sys_brk).
     // These MUST stay below 256MB because the kernel accesses them via
     // identity-mapped physical addresses after paging is activated.
-    uint32_t paging_limit = 224 * 1024 * 1024;
-    // Define the Physical Ceiling
-    uint32_t physical_limit = g_kmap.available.end_addr;
-
-    // Determine the Safe Limit
-    uint32_t safe_limit = (paging_limit < physical_limit) ? paging_limit : physical_limit;
-
-    // Apply a Safety Buffer
-    safe_limit -= 4096;
-
-    // Calculate Exact Size Needed
-    if (safe_limit <= actual_heap_start) {
-        HALT("CRITICAL: No memory left for Heap! (Kernel + PMM > Limit)\n");
-    }
-
-    uint32_t heap_size_bytes = safe_limit - actual_heap_start;
+    // The kernel heap only needs a modest amount for kmalloc (PCBs, TCBs, buffers, etc.).
+    uint32_t heap_size_bytes = 128 * 1024 * 1024;  // 128 MB for kernel objects, GUI, font data, stacks
     uint32_t blocks_needed = heap_size_bytes / PMM_BLOCK_SIZE;
 
-    KDBG1("Maximizing PMM Heap: Start=0x%x Limit=0x%x Size=%d MB", actual_heap_start, safe_limit,
-          (int32_t)(heap_size_bytes / (1024 * 1024)));
+    KDBG1("Kernel Heap: Start=0x%x Size=%d MB (%d blocks)", actual_heap_start,
+          heap_size_bytes / (1024 * 1024), blocks_needed);
 
     // Allocate
     void* heap_start = pmm_alloc_blocks(blocks_needed);

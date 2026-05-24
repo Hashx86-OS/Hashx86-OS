@@ -377,6 +377,10 @@ void NINA::DrawCharacter(uint32_t* buffer, int32_t bufferWidth, int32_t bufferHe
 
     if (charWidth <= 0 || charHeight <= 0) return;
     if (charWidth > font->atlas_width || charHeight > font->atlas_height) return;
+    // Validate atlas region bounds before reading pixel data
+    if (gridX < 0 || gridY < 0 ||
+        gridX + charWidth > font->atlas_width ||
+        gridY + charHeight > font->atlas_height) return;
     const uint32_t maxGlyphPixels = 262144;  // 1024x256
     uint32_t glyphPixels = (uint32_t)(charWidth * charHeight);
     if (glyphPixels == 0 || glyphPixels > maxGlyphPixels) return;

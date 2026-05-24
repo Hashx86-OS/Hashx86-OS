@@ -46,10 +46,8 @@ InfoDialog::InfoDialog(CompositeWidget* parent, int32_t width, int32_t height)
 }
 
 InfoDialog::~InfoDialog() {
-    delete summaryLabel;
-    delete infoLabel;
-    delete detailsLabel;
-    delete okButton;
+    // Children added via AddChild() are owned and freed by CompositeWidget::~CompositeWidget.
+    // Only free resources not managed by the widget hierarchy.
     delete iconBitmap;
 }
 

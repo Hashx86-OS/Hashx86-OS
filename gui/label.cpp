@@ -27,14 +27,15 @@ Label::~Label() {
 }
 
 void Label::setText(const char* newText) {
-    if (this->text && strcmp(this->text, newText) == 0) return;
+    const char* safeText = newText ? newText : "";
+    if (this->text && strcmp(this->text, safeText) == 0) return;
 
     if (this->text) delete[] this->text;
-    this->text = new char[strlen(newText) + 1];
+    this->text = new char[strlen(safeText) + 1];
     if (!this->text) {
         HALT("CRITICAL: Failed to allocate label text!\n");
     }
-    strcpy(this->text, newText);
+    strcpy(this->text, safeText);
     MarkDirty();
 }
 
