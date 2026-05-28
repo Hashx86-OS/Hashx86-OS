@@ -59,6 +59,11 @@ void gdt_init() {
 
     // Set the Kernel Stack Segment (SS0) to Kernel Data (0x10)
     g_tss.ss0 = 0x10;
+    // Set a temporary esp0 to the current boot stack pointer.
+    // Scheduler::Schedule() will overwrite esp0 per-thread later, but
+    // without this any ring3->ring0 transition before the first schedule
+    // would use esp0=0 -> page fault -> triple fault.
+    asm volatile("mov %%esp, %0" : "=r"(g_tss.esp0));
     // Point iomap_base to size (disables bitmap)
     g_tss.iomap_base = sizeof(TaskStateSegment);
 

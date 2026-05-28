@@ -342,6 +342,11 @@ void* ModuleLoader::LoadDriver(File* file) {
                     }
                     // Address = Base of Section + Offset inside section
                     sym_val = sections[sec_idx].addr + symtab[sym_idx].value;
+                    if (sym_val == 0) {
+                        KDBG1("Module Link Error: Internal symbol has zero address");
+                        relocation_failed = true;
+                        break;
+                    }
                 }
 
                 // Apply Logic

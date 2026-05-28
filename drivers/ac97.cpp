@@ -11,6 +11,7 @@
 #include <core/drivers/driver_info.h>
 #include <core/interrupts.h>
 #include <core/memory.h>
+#include <core/pmm.h>
 #include <core/pci.h>
 #include <debug.h>
 #include <utils/string.h>
@@ -70,6 +71,9 @@ public:
 };
 
 /* ================= DRIVER ================= */
+/* Number of 4KB pages for the audio data buffer (64KB total) */
+#define AC97_BUF_PAGES (AC97_AUDIO_BUF_SIZE / 4096)
+
 class DynamicAC97Driver final : public Driver, public AudioDriver {
     friend class AC97IRQ;
 
@@ -78,15 +82,21 @@ private:
     uint16_t nabmBar;
     AC97IRQ* irqHandler;
 
-    // Dynamically allocated physical addresses for DMA buffers
-    uint32_t physBufAddr;  // Audio data buffer (AC97_AUDIO_BUF_SIZE bytes)
-    uint32_t physBdlAddr;  // Buffer descriptor list (AC97_BDL_BUF_SIZE bytes)
+    // Array of individually-allocated physical pages for the audio buffer.
+    // Each page is allocated separately via pmm_alloc_block_low to avoid
+    // relying on large contiguous PMM allocations (which can collide with
+    // single-page allocations like the Scheduler trampoline on some VMs).
+    uint32_t physPages[AC97_BUF_PAGES];  // AC97_AUDIO_BUF_SIZE bytes (64KB = 16 pages)
+    uint32_t physBdlAddr;               // Buffer descriptor list (AC97_BDL_BUF_SIZE bytes)
 
     // --- State ---
-    // sw_lvi: The index we are currently preparing to write to (Software Pointer)
+    // sw_lvi: The BDL index we are currently preparing to write to (Software Pointer)
     volatile uint8_t sw_lvi;
 
-    // buffersOccupied: How many buffers are queued but not yet finished by HW.
+    // activeHalf: Which ping-pong half (0 or 1) will be written next
+    volatile uint8_t activeHalf;
+
+    // buffersOccupied: How many half-buffers are queued but not yet finished by HW.
     // If 0, we can write. If 2, we are full (waiting for HW).
     volatile uint8_t buffersOccupied;
 
@@ -140,37 +150,51 @@ public:
         driverName = "Intel AC97";
         namBar = nabmBar = 0;
         irqHandler = nullptr;
-        physBufAddr = 0;
+        for (int i = 0; i < AC97_BUF_PAGES; i++) physPages[i] = 0;
         physBdlAddr = 0;
         sw_lvi = 0;
+        activeHalf = 0;
         buffersOccupied = 0;
     }
 
     ~DynamicAC97Driver() {
         if (irqHandler) delete irqHandler;
-        if (physBufAddr) pmm_free_block((void*)physBufAddr);
+        for (int i = 0; i < AC97_BUF_PAGES; i++) {
+            if (physPages[i]) pmm_free_block((void*)physPages[i]);
+        }
         if (physBdlAddr) pmm_free_block((void*)physBdlAddr);
     }
 
     void Activate() override {
         if (!FindHardware()) return;
 
-        // Allocate DMA buffer and BDL from physical memory (must be <256MB for identity mapping)
-        physBufAddr = (uint32_t)pmm_alloc_block_low(256 * 1024 * 1024);
-        if (!physBufAddr) {
-            printf("[AC97] Error: Failed to allocate DMA audio buffer\n");
-            return;
+        // Allocate DMA audio buffer as individual 4KB pages (<256MB for identity mapping).
+        // Using individual pages avoids PMM contiguous-allocation issues on VirtualBox
+        // where large pmm_alloc_blocks requests can overlap earlier single-page allocations.
+        for (int i = 0; i < AC97_BUF_PAGES; i++) {
+            physPages[i] = (uint32_t)pmm_alloc_block_low(256 * 1024 * 1024);
+            if (!physPages[i]) {
+                printf("[AC97] Error: Failed to allocate DMA audio page %d/%d\n", i + 1,
+                       AC97_BUF_PAGES);
+                for (int j = 0; j < i; j++) {
+                    pmm_free_block((void*)physPages[j]);
+                    physPages[j] = 0;
+                }
+                return;
+            }
         }
-        // Allocate 4KB for BDL (fits 32 entries)
+        // Allocate 4KB for BDL (fits 32 entries) - needs just 1 page
         physBdlAddr = (uint32_t)pmm_alloc_block_low(256 * 1024 * 1024);
         if (!physBdlAddr) {
             printf("[AC97] Error: Failed to allocate DMA BDL\n");
-            pmm_free_block((void*)physBufAddr);
-            physBufAddr = 0;
+            for (int i = 0; i < AC97_BUF_PAGES; i++) {
+                pmm_free_block((void*)physPages[i]);
+                physPages[i] = 0;
+            }
             return;
         }
 
-        printf("[AC97] DMA buffer @ 0x%x, BDL @ 0x%x\n", physBufAddr, physBdlAddr);
+        printf("[AC97] DMA buffer (%d pages), BDL @ 0x%x\n", AC97_BUF_PAGES, physBdlAddr);
 
         // 1. Reset
         outw(namBar + AC97_REG_RESET, 0);
@@ -193,12 +217,15 @@ public:
         // 4. Setup BDL Pointer (physical address)
         outl(nabmBar + AC97_PO_BDBAR, physBdlAddr);
 
-        // Clear DMA buffers
-        memset((void*)physBufAddr, 0, AC97_AUDIO_BUF_SIZE);
+        // Clear DMA buffers (each page individually)
+        for (int i = 0; i < AC97_BUF_PAGES; i++) {
+            memset((void*)physPages[i], 0, 4096);
+        }
         memset((void*)physBdlAddr, 0, sizeof(AC97_BDL_Entry) * AC97_BDL_ENTRIES);
 
         // 5. Initialize State
         sw_lvi = 0;
+        activeHalf = 0;
         buffersOccupied = 0;
 
         // Reset HW LVI to 0 to start
@@ -211,9 +238,11 @@ public:
     void Deactivate() override {
         Stop();
         // Free DMA buffers
-        if (physBufAddr) {
-            pmm_free_block((void*)physBufAddr);
-            physBufAddr = 0;
+        for (int i = 0; i < AC97_BUF_PAGES; i++) {
+            if (physPages[i]) {
+                pmm_free_block((void*)physPages[i]);
+                physPages[i] = 0;
+            }
         }
         if (physBdlAddr) {
             pmm_free_block((void*)physBdlAddr);
@@ -260,31 +289,42 @@ public:
             return 0;
         }
 
-        // 1. Determine which Physical RAM chunk to use (Ping-Pong)
-        // If sw_lvi is Even (0, 2, 4...) -> use Buffer 0
-        // If sw_lvi is Odd  (1, 3, 5...) -> use Buffer 1
-        uint32_t physAddr = (sw_lvi % 2 == 0) ? physBufAddr : (physBufAddr + AC97_HALF_SIZE);
+        // Calculate how many 4KB pages this write spans (1-8 pages)
+        uint32_t pagesUsed = (size + 4095) / 4096;
+        if (pagesUsed > AC97_BUF_PAGES / 2) pagesUsed = AC97_BUF_PAGES / 2;
 
-        // 2. Copy Data to RAM
-        memcpy((void*)physAddr, buffer, size);
-        asm volatile("wbinvd" ::: "memory");  // Flush cache
+        // Determine which half of the buffer to use (Ping-Pong: 0 or 1)
+        uint32_t pageBase = activeHalf * (AC97_BUF_PAGES / 2);
 
-        // 3. Setup the BDL Entry for this specific slot
+        // Copy data to individual pages and write BDL entries
         AC97_BDL_Entry* bdl = (AC97_BDL_Entry*)physBdlAddr;
+        uint32_t remaining = size;
+        uint32_t srcOff = 0;
 
-        bdl[sw_lvi].addr = physAddr;
-        bdl[sw_lvi].length = (uint16_t)(size / 2);  // Length in words
-        bdl[sw_lvi].flags = 0x8000;                 // IOC (Interrupt on Completion)
+        for (uint32_t p = 0; p < pagesUsed && remaining > 0; p++) {
+            uint32_t dstPhys = physPages[pageBase + p];
+            uint32_t chunk = (remaining < 4096) ? remaining : 4096;
+            memcpy((void*)dstPhys, buffer + srcOff, chunk);
+            srcOff += chunk;
+            remaining -= chunk;
 
-        // 4. "Push" the LVI (Last Valid Index)
-        // This tells hardware: "You can proceed up to this index"
-        outb(nabmBar + AC97_PO_LVI, sw_lvi);
-
-        // 5. Advance our software pointer (Circular 0-31)
-        sw_lvi++;
-        if (sw_lvi >= AC97_BDL_ENTRIES) {
-            sw_lvi = 0;
+            uint8_t bdlIdx = (sw_lvi + p) % AC97_BDL_ENTRIES;
+            bdl[bdlIdx].addr = dstPhys;
+            bdl[bdlIdx].length = (uint16_t)(chunk / 2);
+            // IOC on LAST entry only
+            bdl[bdlIdx].flags = (remaining == 0) ? 0x8000 : 0;
         }
+        asm volatile("wbinvd" ::: "memory");
+
+        // Push LVI to the LAST BDL entry we wrote
+        uint8_t lastIdx = (sw_lvi + pagesUsed - 1) % AC97_BDL_ENTRIES;
+        outb(nabmBar + AC97_PO_LVI, lastIdx);
+
+        // Advance sw_lvi past the entries we used
+        sw_lvi = (sw_lvi + pagesUsed) % AC97_BDL_ENTRIES;
+
+        // Flip to the other half for next WriteData call
+        activeHalf = 1 - activeHalf;
 
         buffersOccupied++;
         return size;

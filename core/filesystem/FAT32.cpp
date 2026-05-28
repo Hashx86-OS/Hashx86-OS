@@ -399,8 +399,14 @@ uint32_t FAT32::ReadStream(File* file, uint8_t* buffer, uint32_t length) {
     // Read Loop
     uint32_t bytesRead = 0;
     uint8_t secBuff[512];
+    uint32_t visited = 0;
+    uint32_t maxClusters = bpb.tableSize * 128;
 
     while (bytesRead < length && currentCluster < 0x0FFFFFF8) {
+        if (visited++ > maxClusters) {
+            KDBG1("FAT corruption: cyclic chain in ReadStream");
+            break;
+        }
         uint32_t sector = ClusterToSector(currentCluster);
 
         // Read all sectors in this cluster

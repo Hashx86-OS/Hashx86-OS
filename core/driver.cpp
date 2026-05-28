@@ -8,6 +8,7 @@
 
 #define KDBG_COMPONENT "DRIVER.MGR"
 #include <core/driver.h>
+#include <core/pmm.h>
 
 extern "C" void pci_enable_bus_master(uint16_t vendor, uint16_t device);
 extern "C" uint32_t pci_find_bar0(uint16_t vendor, uint16_t device);
@@ -67,6 +68,12 @@ DriverManager::DriverManager() {
 
     SymbolTable::Register("memcpy", (uint32_t)memcpy);
     SymbolTable::Register("memset", (uint32_t)memset);
+
+    // Export PMM functions for driver DMA allocations (mangled C++ names)
+    SymbolTable::Register("_Z19pmm_alloc_block_lowj", (uint32_t)(void*)pmm_alloc_block_low);
+    SymbolTable::Register("_Z14pmm_free_blockPv", (uint32_t)(void*)pmm_free_block);
+    SymbolTable::Register("_Z16pmm_alloc_blocksj", (uint32_t)(void*)pmm_alloc_blocks);
+    SymbolTable::Register("_Z15pmm_free_blocksPvj", (uint32_t)(void*)pmm_free_blocks);
 
     EXPORT_SYMBOL_ASM("_Z7kmalloci");
 

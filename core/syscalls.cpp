@@ -408,6 +408,7 @@ int32_t SyscallHandlers::Handle_sys_execve(const char* path, char* const argv[],
 }
 
 int32_t SyscallHandlers::Handle_sys_brk(uint32_t brk) {
+    InterruptGuard guard;
     ProcessControlBlock* process = Scheduler::activeInstance->GetCurrentProcess();
 
     uint32_t old_brk = process->heap.endAddress;

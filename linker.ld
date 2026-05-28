@@ -50,9 +50,16 @@ SECTIONS
         __kernel_bss_section_end = .;
     }
 
+    .fini_array : ALIGN(4)
+    {
+        __kernel_fini_array_start = .;
+        KEEP(*(.fini_array))
+        KEEP(*(SORT_BY_INIT_PRIORITY(.fini_array.*)))
+        __kernel_fini_array_end = .;
+    }
+
     /DISCARD/ :
     {
-        *(.fini_array*)
         *(.comment)
     }
 

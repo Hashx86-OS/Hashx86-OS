@@ -13,6 +13,11 @@ Paging::Paging() : is_paging_active(false) {}
 
 Paging::~Paging() {}
 
+// Recursion guard: increment before any PMM allocation in MapPage,
+// decrement after. Page-fault handlers check this to avoid
+// recursive fault when pmm_alloc_block_low touches the PMM bitmap.
+static int paging_map_depth = 0;
+
 void Paging::Activate() {
     // Allocate the Master Page Directory
     // Must be in identity-mapped range (<256MB) so kernel can access it after paging
@@ -131,8 +136,17 @@ bool Paging::MapPage(uint32_t* directory, uint32_t virtual_addr, uint32_t physic
 
     // Check if Page Table exists
     if (!(directory[pd_idx] & PAGE_PRESENT)) {
+        // Recursion guard: detect if PMM alloc causes a page fault
+        if (paging_map_depth > 0) {
+            KDBG1("MapPage: RECURSION DETECTED! paging_map_depth=%d", paging_map_depth);
+            return false;
+        }
+        paging_map_depth++;
+
         // Allocate new table via PMM (LOW MEMORY < 256MB)
         uint32_t* new_table = (uint32_t*)pmm_alloc_block_low(256 * 1024 * 1024);
+
+        paging_map_depth--;
 
         if (!new_table) {
             KDBG1("MapPage: Failed to allocate Page Table! Low Memory Exhausted?");

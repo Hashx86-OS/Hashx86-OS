@@ -526,9 +526,9 @@ bool Taskbar::StartMenuContains(int32_t screenX, int32_t screenY) const {
             screenY >= menuScreenY && screenY < menuScreenY + startMenu->h);
 }
 
-// Read a CMOS/RTC register
+// Read a CMOS/RTC register (NMI disabled during read cycle)
 static uint8_t rtc_read(uint8_t reg) {
-    outb(0x70, reg);
+    outb(0x70, reg | 0x80);  // bit 7 = disable NMI
     return inb(0x71);
 }
 
