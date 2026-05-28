@@ -85,7 +85,28 @@ void Font::setType(FontType type) {
 }
 
 void Font::update() {
-    if (!this->sourceFile || !this->sourceFile->font_data_list[this->fontSize][this->fontType]) {
+    if (!this->sourceFile) {
+        this->atlas_width = 0;
+        this->atlas_height = 0;
+        this->font_atlas = nullptr;
+        this->font_glyphs = nullptr;
+        this->font_kernings = nullptr;
+        this->font_kerning_count = 0;
+        return;
+    }
+
+    // Guard against out-of-bounds indexing: font_data_list[10][4]
+    if (this->fontSize > 9 || this->fontType > BOLD_ITALIC) {
+        this->atlas_width = 0;
+        this->atlas_height = 0;
+        this->font_atlas = nullptr;
+        this->font_glyphs = nullptr;
+        this->font_kernings = nullptr;
+        this->font_kerning_count = 0;
+        return;
+    }
+
+    if (!this->sourceFile->font_data_list[this->fontSize][this->fontType]) {
         this->atlas_width = 0;
         this->atlas_height = 0;
         this->font_atlas = nullptr;
@@ -107,6 +128,7 @@ void Font::update() {
 
 uint16_t Font::getLineHeight() {
     if (!this->sourceFile || !this->font_glyphs) return 0;
+    if (this->fontSize > 9 || this->fontType > BOLD_ITALIC) return 0;
     FontData* data = this->sourceFile->font_data_list[this->fontSize][this->fontType];
     if (!data) return 0;
     int maxH = 0;
@@ -364,7 +386,9 @@ Font* FontManager::getNewFont(FontSize size, FontType type) {
     if (font_list->IsEmpty()) return nullptr;
 
     FontFile* ff = font_list->GetFront();
-    if (!ff || !ff->font_data_list[size][type]) return nullptr;
+    if (!ff) return nullptr;
+    if ((uint32_t)size > 9 || (uint32_t)type > BOLD_ITALIC) return nullptr;
+    if (!ff->font_data_list[size][type]) return nullptr;
     Font* sysFont = new Font(ff, size, type);
     if (!sysFont) {
         HALT("CRITICAL: Failed to allocate Font object!\n");

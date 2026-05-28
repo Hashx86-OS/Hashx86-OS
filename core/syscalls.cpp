@@ -763,9 +763,11 @@ int32_t SyscallHandlers::Handle_sys_Hcall(uint32_t hcall_id, uint32_t arg1, uint
                 return -1;
             }
 
-            // GRANT ACCESS: Map the kernel backbuffer into this process's address space.
-            // Use MapPage which will COW/clone the page table if needed to avoid
-            // exposing kernel pages to other processes through shared PDEs.
+            // GRANT ACCESS: Grant user-mode access to the kernel backbuffer.
+            // The framebuffer resides in the kernel identity-mapped range (pd_idx < 64)
+            // whose PDEs are shared across all processes via CreateProcessDirectory.
+            // MapPage cannot be used here (our guard rejects kernel-range addresses);
+            // instead we set PAGE_USER directly on the existing shared PTEs.
             uint32_t size = width * height * 4;
 
             // Align start/end to page boundaries
@@ -773,14 +775,14 @@ int32_t SyscallHandlers::Handle_sys_Hcall(uint32_t hcall_id, uint32_t arg1, uint
             uint32_t endPage = (bufferAddr + size + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
 
             for (uint32_t addr = startPage; addr < endPage; addr += PAGE_SIZE) {
-                // Map the framebuffer physical address (identity: virt == phys)
-                // into this specific process's page tables with user access.
-                g_paging->MapPage(current_process->page_directory, addr, addr,
-                                  PAGE_PRESENT | PAGE_RW | PAGE_USER);
+                uint32_t pd_idx = addr >> 22;
+                uint32_t pt_idx = (addr >> 12) & 0x03FF;
+                uint32_t* table = (uint32_t*)(current_process->page_directory[pd_idx] & 0xFFFFF000);
+                table[pt_idx] |= PAGE_USER;
+                asm volatile("invlpg (%0)" ::"r"(addr) : "memory");
             }
 
-            // MapPage only sets the PTE's USER bit. The PDE (page directory entry)
-            // must also allow user access for the CPU to permit ring-3 reads/writes.
+            // The PDE must also allow user access for the CPU to permit ring-3 reads/writes.
             uint32_t startPDIdx = startPage >> 22;
             uint32_t endPDIdx = endPage >> 22;
             for (uint32_t i = startPDIdx; i <= endPDIdx; i++) {

@@ -128,10 +128,18 @@ public:
         }
 
         uint32_t start = this->physFramebufferAddr & ~(PAGE_SIZE - 1);
-        uint32_t end =
-            (this->physFramebufferAddr + (uint32_t)fb_size + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
 
-        for (uint32_t addr = start; addr < end; addr += PAGE_SIZE) {
+        // Compute end in 64-bit to avoid wrap on 32-bit truncation.
+        uint64_t end64 = (uint64_t)this->physFramebufferAddr + fb_size + PAGE_SIZE - 1;
+        // Also mask in 64-bit so the alignment is correct even if the sum exceeds 4GB.
+        uint64_t alignedEnd = end64 & ~((uint64_t)PAGE_SIZE - 1);
+        if (alignedEnd < (uint64_t)start || alignedEnd > 0xFFFFFFFFu) {
+            printf("[BGA] Error: Framebuffer region wraps or exceeds 4GB\n");
+            return;
+        }
+        uint32_t end = (uint32_t)alignedEnd;
+
+        for (uint64_t addr = start; addr < end; addr += PAGE_SIZE) {
             uint32_t existing = g_paging->GetPhysicalAddress(g_paging->KernelPageDirectory, addr);
             // Only map if not already mapped. If mapped to a different physical frame,
             // overwrite the mapping so videoMemory writes go to the correct framebuffer.

@@ -16,6 +16,7 @@ private:
     LinkedList<ThreadControlBlock*> readyQueue;       // Runnable threads
     LinkedList<ThreadControlBlock*> blockedQueue;     // Sleeping threads
     LinkedList<ThreadControlBlock*> terminatedQueue;  // Dead threads
+    LinkedList<ThreadControlBlock*> pendingReclaims;  // Threads whose stack must be freed after context switch
 
     uint32_t _pidCounter;
     uint32_t _tidCounter;
@@ -48,6 +49,10 @@ public:
 
     // CORE SCHEDULING (Called by Interrupt Handler)
     CPUState* Schedule(CPUState* context);
+
+    // Reclaims kernel stacks and TCBs for threads that were terminated
+    // while running (deferred to avoid freeing the current stack).
+    void DrainPendingReclaims();
 
     // Helpers
     ThreadControlBlock* GetCurrentThread() {

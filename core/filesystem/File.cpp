@@ -6,6 +6,7 @@
  * @version     1.0.0
  */
 
+#define KDBG_COMPONENT "FILE"
 #include <core/filesystem/FAT32.h>
 #include <core/filesystem/File.h>
 #include <core/process_types.h>
@@ -53,12 +54,13 @@ void File::Seek(uint32_t pos) {
 int File::Write(uint8_t* buffer, uint32_t length) {
     (void)buffer;
     (void)length;
-    // File::Write — no-op base: subclasses must override for actual writes.
+    KDBG1("Write called on base File object — no backend registered; failing");
     return -1;
 }
 
 void File::Close() {
-    // File::Close — subclasses should override for actual cleanup.
+    KDBG1("Close called on base File object - no backend registered; cleanup skipped");
+    this->filesystem = 0;  // Prevent double-call from destructor
 }
 
 int32_t AllocateFd(ProcessControlBlock* pcb, File* file) {

@@ -569,12 +569,6 @@ void Scheduler::TerminateThread(ThreadControlBlock* thread) {
 
     KDBG1("TerminateThread TID=%d", thread->tid);
 
-    // Null out currentThread BEFORE freeing/deleting.
-    // Otherwise Schedule() will dereference dangling pointer.
-    if (thread == currentThread) {
-        currentThread = nullptr;
-    }
-
     thread->state = THREAD_STATE_TERMINATED;
     readyQueue.Remove([thread](ThreadControlBlock* t) { return t == thread; });
     blockedQueue.Remove([thread](ThreadControlBlock* t) { return t == thread; });
@@ -585,11 +579,20 @@ void Scheduler::TerminateThread(ThreadControlBlock* thread) {
         thread->parent->threads.Remove([thread](ThreadControlBlock* t) { return t == thread; });
     }
 
-    if (thread->stack) {
-        kfree((void*)thread->stack);
-        thread->stack = nullptr;
+    if (thread == currentThread) {
+        // Defer cleanup: this thread is still running on its own kernel stack.
+        // Freeing it now would corrupt the stack we are executing on.
+        // Schedule() will drain pendingReclaims after switching away.
+        currentThread = nullptr;
+        pendingReclaims.PushBack(thread);
+    } else {
+        // Safe to clean up immediately — thread is not running.
+        if (thread->stack) {
+            kfree((void*)thread->stack);
+            thread->stack = nullptr;
+        }
+        delete thread;
     }
-    delete thread;
 }
 
 bool Scheduler::ExitCurrentThread() {
@@ -698,5 +701,19 @@ CPUState* Scheduler::Schedule(CPUState* context) {
         _pager->SwitchDirectory((_pager->KernelPageDirectory));
     }
 
+    // Now running on the new thread's stack — safe to reclaim deferred threads.
+    DrainPendingReclaims();
+
     return currentThread->context;
+}
+
+void Scheduler::DrainPendingReclaims() {
+    while (pendingReclaims.GetSize() > 0) {
+        ThreadControlBlock* thread = pendingReclaims.PopFront();
+        if (thread->stack) {
+            kfree((void*)thread->stack);
+            thread->stack = nullptr;
+        }
+        delete thread;
+    }
 }

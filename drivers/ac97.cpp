@@ -43,11 +43,11 @@
 #define AC97_SR_LVBCI 0x20
 
 /* ================= Memory ================= */
-#define AC97_PHYS_BUF 0x01000000
-#define AC97_PHYS_BDL 0x01010000
-#define AC97_TOTAL_SIZE 0x10000  // 64KB total RAM
-#define AC97_HALF_SIZE (AC97_TOTAL_SIZE / 2)
-#define AC97_BDL_ENTRIES 32  // Use full 32 entries
+/* Audio buffer and BDL sizes (in bytes) */
+#define AC97_AUDIO_BUF_SIZE 0x10000  // 64KB audio buffer
+#define AC97_BDL_BUF_SIZE  0x1000    // 4KB for BDL (fits 32 entries)
+#define AC97_HALF_SIZE     (AC97_AUDIO_BUF_SIZE / 2)
+#define AC97_BDL_ENTRIES   32
 
 struct AC97_BDL_Entry {
     uint32_t addr;
@@ -77,6 +77,10 @@ private:
     uint16_t namBar;
     uint16_t nabmBar;
     AC97IRQ* irqHandler;
+
+    // Dynamically allocated physical addresses for DMA buffers
+    uint32_t physBufAddr;  // Audio data buffer (AC97_AUDIO_BUF_SIZE bytes)
+    uint32_t physBdlAddr;  // Buffer descriptor list (AC97_BDL_BUF_SIZE bytes)
 
     // --- State ---
     // sw_lvi: The index we are currently preparing to write to (Software Pointer)
@@ -136,16 +140,37 @@ public:
         driverName = "Intel AC97";
         namBar = nabmBar = 0;
         irqHandler = nullptr;
+        physBufAddr = 0;
+        physBdlAddr = 0;
         sw_lvi = 0;
         buffersOccupied = 0;
     }
 
     ~DynamicAC97Driver() {
         if (irqHandler) delete irqHandler;
+        if (physBufAddr) pmm_free_block((void*)physBufAddr);
+        if (physBdlAddr) pmm_free_block((void*)physBdlAddr);
     }
 
     void Activate() override {
         if (!FindHardware()) return;
+
+        // Allocate DMA buffer and BDL from physical memory (must be <256MB for identity mapping)
+        physBufAddr = (uint32_t)pmm_alloc_block_low(256 * 1024 * 1024);
+        if (!physBufAddr) {
+            printf("[AC97] Error: Failed to allocate DMA audio buffer\n");
+            return;
+        }
+        // Allocate 4KB for BDL (fits 32 entries)
+        physBdlAddr = (uint32_t)pmm_alloc_block_low(256 * 1024 * 1024);
+        if (!physBdlAddr) {
+            printf("[AC97] Error: Failed to allocate DMA BDL\n");
+            pmm_free_block((void*)physBufAddr);
+            physBufAddr = 0;
+            return;
+        }
+
+        printf("[AC97] DMA buffer @ 0x%x, BDL @ 0x%x\n", physBufAddr, physBdlAddr);
 
         // 1. Reset
         outw(namBar + AC97_REG_RESET, 0);
@@ -165,16 +190,16 @@ public:
         Delay(10);
         outb(nabmBar + AC97_PO_CR, 0);
 
-        // 4. Setup BDL Pointer
-        outl(nabmBar + AC97_PO_BDBAR, AC97_PHYS_BDL);
+        // 4. Setup BDL Pointer (physical address)
+        outl(nabmBar + AC97_PO_BDBAR, physBdlAddr);
 
-        // Clear RAM
-        memset((void*)AC97_PHYS_BUF, 0, AC97_TOTAL_SIZE);
-        memset((void*)AC97_PHYS_BDL, 0, sizeof(AC97_BDL_Entry) * AC97_BDL_ENTRIES);
+        // Clear DMA buffers
+        memset((void*)physBufAddr, 0, AC97_AUDIO_BUF_SIZE);
+        memset((void*)physBdlAddr, 0, sizeof(AC97_BDL_Entry) * AC97_BDL_ENTRIES);
 
         // 5. Initialize State
-        sw_lvi = 0;           // Start at index 0
-        buffersOccupied = 0;  // Empty
+        sw_lvi = 0;
+        buffersOccupied = 0;
 
         // Reset HW LVI to 0 to start
         outb(nabmBar + AC97_PO_LVI, 0);
@@ -185,6 +210,15 @@ public:
 
     void Deactivate() override {
         Stop();
+        // Free DMA buffers
+        if (physBufAddr) {
+            pmm_free_block((void*)physBufAddr);
+            physBufAddr = 0;
+        }
+        if (physBdlAddr) {
+            pmm_free_block((void*)physBdlAddr);
+            physBdlAddr = 0;
+        }
     }
 
     uint32_t GetBufferSize() override {
@@ -229,14 +263,14 @@ public:
         // 1. Determine which Physical RAM chunk to use (Ping-Pong)
         // If sw_lvi is Even (0, 2, 4...) -> use Buffer 0
         // If sw_lvi is Odd  (1, 3, 5...) -> use Buffer 1
-        uint32_t physAddr = (sw_lvi % 2 == 0) ? AC97_PHYS_BUF : (AC97_PHYS_BUF + AC97_HALF_SIZE);
+        uint32_t physAddr = (sw_lvi % 2 == 0) ? physBufAddr : (physBufAddr + AC97_HALF_SIZE);
 
         // 2. Copy Data to RAM
         memcpy((void*)physAddr, buffer, size);
         asm volatile("wbinvd" ::: "memory");  // Flush cache
 
         // 3. Setup the BDL Entry for this specific slot
-        AC97_BDL_Entry* bdl = (AC97_BDL_Entry*)AC97_PHYS_BDL;
+        AC97_BDL_Entry* bdl = (AC97_BDL_Entry*)physBdlAddr;
 
         bdl[sw_lvi].addr = physAddr;
         bdl[sw_lvi].length = (uint16_t)(size / 2);  // Length in words

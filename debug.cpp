@@ -62,6 +62,11 @@ void writeSerial(char c) {
 }
 
 void SerialPrint(const char* str) {
+    if (str == nullptr) {
+        const char* nullStr = "(null)";
+        for (int i = 0; nullStr[i] != '\0'; i++) writeSerial(nullStr[i]);
+        return;
+    }
     for (size_t i = 0; str[i] != '\0'; i++) {
         writeSerial(str[i]);
     }
@@ -139,6 +144,7 @@ void vprintf(const char* format, va_list args) {
                 }
                 case 's': {
                     const char* str = va_arg(args, const char*);
+                    if (str == nullptr) str = "(null)";
                     for (int j = 0; str[j] != '\0'; j++) writeSerial(str[j]);
                     break;
                 }

@@ -59,7 +59,7 @@ MouseDriver::~MouseDriver() {}
  */
 void MouseDriver::Activate() {
     // Enable the mouse
-    commandPort.Write(0xAB);  // Enable the auxiliary device (mouse)
+    commandPort.Write(0xA8);  // Enable the auxiliary device (mouse) — 0xA8 = Enable second PS/2 port
 
     // Set mouse configuration
     commandPort.Write(0x20);               // Request current configuration byte

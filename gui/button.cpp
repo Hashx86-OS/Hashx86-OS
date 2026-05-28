@@ -13,6 +13,7 @@ Button::Button(Widget* parent, int32_t x, int32_t y, uint32_t w, uint32_t h, con
     : Widget(parent, x, y, w, h), isPressed(false) {
     this->font = FontManager::activeInstance->getNewFont();
 
+    if (label == nullptr) label = "";
     this->label = new char[strlen(label) + 1];
     if (!this->label) {
         HALT("CRITICAL: Failed to allocate button label!\n");
@@ -33,6 +34,7 @@ void Button::update() {
 }
 
 void Button::SetLabel(const char* newLabel) {
+    if (newLabel == nullptr) newLabel = "";
     if (this->label) delete[] this->label;
     this->label = new char[strlen(newLabel) + 1];
     if (!this->label) {
