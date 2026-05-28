@@ -85,7 +85,6 @@ EventHandler* Desktop::getHandler(uint32_t pid) {
 }
 
 void Desktop::Draw(GraphicsDriver* gc) {
-    InterruptGuard guard;
     uint32_t screenW = gc->GetWidth();
     uint32_t screenH = gc->GetHeight();
     uint32_t* vesaBuffer = gc->GetBackBuffer();
@@ -119,27 +118,30 @@ void Desktop::Draw(GraphicsDriver* gc) {
         taskbar->Draw(gc);
 
         // Save Background under Mouse (Fresh capture)
-        for (int y = 0; y < CURSOR_SIZE; y++) {
-            for (int x = 0; x < CURSOR_SIZE; x++) {
-                // Bounds Check!
-                int destX = MouseX + x;
-                int destY = MouseY + y;
+        {
+            InterruptGuard guard;
+            for (int y = 0; y < CURSOR_SIZE; y++) {
+                for (int x = 0; x < CURSOR_SIZE; x++) {
+                    // Bounds Check!
+                    int destX = MouseX + x;
+                    int destY = MouseY + y;
 
                 if (destX >= (int)screenW || destY >= (int)screenH) continue;
 
                 cursorBackBuffer[y * CURSOR_SIZE + x] = vesaBuffer[destY * screenW + destX];
+                }
             }
-        }
         hasBackBuffer = true;
 
-        // Draw Cursor
-        gc->DrawBitmap(MouseX, MouseY, (const uint32_t*)icon_cursor_20x20, CURSOR_SIZE,
-                       CURSOR_SIZE);
+            // Draw Cursor
+            gc->DrawBitmap(MouseX, MouseY, (const uint32_t*)icon_cursor_20x20, CURSOR_SIZE,
+                           CURSOR_SIZE);
 
-        // Reset State
-        this->isDirty = false;
-        oldMouseX = MouseX;
-        oldMouseY = MouseY;
+            // Reset State
+            this->isDirty = false;
+            oldMouseX = MouseX;
+            oldMouseY = MouseY;
+        }
         return;
     }
 
@@ -149,40 +151,46 @@ void Desktop::Draw(GraphicsDriver* gc) {
     // -----------------------------------------------------------------
     if (MouseX != oldMouseX || MouseY != oldMouseY) {
         // ERASE OLD CURSOR (Restore saved pixels)
-        if (hasBackBuffer) {
-            for (int y = 0; y < CURSOR_SIZE; y++) {
-                for (int x = 0; x < CURSOR_SIZE; x++) {
-                    int destX = oldMouseX + x;
-                    int destY = oldMouseY + y;
+        {
+            InterruptGuard guard;
+            if (hasBackBuffer) {
+                for (int y = 0; y < CURSOR_SIZE; y++) {
+                    for (int x = 0; x < CURSOR_SIZE; x++) {
+                        int destX = oldMouseX + x;
+                        int destY = oldMouseY + y;
 
                     if (destX >= (int)screenW || destY >= (int)screenH) continue;
 
-                    // Direct buffer write for speed
-                    vesaBuffer[destY * screenW + destX] = cursorBackBuffer[y * CURSOR_SIZE + x];
+                        // Direct buffer write for speed
+                        vesaBuffer[destY * screenW + destX] = cursorBackBuffer[y * CURSOR_SIZE + x];
+                    }
                 }
             }
         }
 
         // CAPTURE BACKGROUND AT NEW POSITION
-        for (int y = 0; y < CURSOR_SIZE; y++) {
-            for (int x = 0; x < CURSOR_SIZE; x++) {
-                int destX = MouseX + x;
-                int destY = MouseY + y;
+        {
+            InterruptGuard guard;
+            for (int y = 0; y < CURSOR_SIZE; y++) {
+                for (int x = 0; x < CURSOR_SIZE; x++) {
+                    int destX = MouseX + x;
+                    int destY = MouseY + y;
 
                 if (destX >= (int)screenW || destY >= (int)screenH) continue;
 
                 cursorBackBuffer[y * CURSOR_SIZE + x] = vesaBuffer[destY * screenW + destX];
+                }
             }
-        }
         hasBackBuffer = true;
 
-        // DRAW NEW CURSOR
-        gc->DrawBitmap(MouseX, MouseY, (const uint32_t*)icon_cursor_20x20, CURSOR_SIZE,
-                       CURSOR_SIZE);
+            // DRAW NEW CURSOR
+            gc->DrawBitmap(MouseX, MouseY, (const uint32_t*)icon_cursor_20x20, CURSOR_SIZE,
+                           CURSOR_SIZE);
 
-        // Update History
-        oldMouseX = MouseX;
-        oldMouseY = MouseY;
+            // Update History
+            oldMouseX = MouseX;
+            oldMouseY = MouseY;
+        }
     }
 }
 

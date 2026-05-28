@@ -51,6 +51,12 @@ void PeripheralComponentInterconnectController::Write(uint16_t bus, uint16_t dev
 }
 
 bool PeripheralComponentInterconnectController::DeviceHasFunctions(uint16_t bus, uint16_t device) {
+    // First check if any device exists at this bus/device location
+    uint16_t vendor = Read(bus, device, 0, 0x00);
+    if (vendor == 0x0000 || vendor == 0xFFFF) {
+        return false;  // No device present
+    }
+    // Now safely check the multifunction bit
     return Read(bus, device, 0, 0x0E) & (1 << 7);
 }
 
@@ -104,7 +110,16 @@ BaseAddressRegister PeripheralComponentInterconnectController::GetBaseAddressReg
 PeripheralComponentInterconnectDeviceDescriptor*
 PeripheralComponentInterconnectController::FindHardwareDevice(uint16_t vendorID,
                                                               uint16_t deviceID) {
+    // Scan bus 0 first (most devices are on bus 0 in QEMU/VirtualBox)
+    // Only scan higher buses if we don't find the device on bus 0
     for (int bus = 0; bus < 256; bus++) {
+        // Check if this bus exists by probing device 0, function 0
+        if (bus > 0) {
+            uint16_t probe = Read(bus, 0, 0, 0x00);
+            if (probe == 0x0000 || probe == 0xFFFF) {
+                continue;  // No devices on this bus, skip it
+            }
+        }
         for (int device = 0; device < 32; device++) {
             int numFunctions = DeviceHasFunctions(bus, device) ? 8 : 1;
             for (int function = 0; function < numFunctions; function++) {

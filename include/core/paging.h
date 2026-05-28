@@ -41,10 +41,6 @@ public:
     // The Master Directory (Template for all processes)
     uint32_t* KernelPageDirectory;  // Master Directory
 
-    // We store the tables for the Master Directory here
-    // (In a real OS, these are dynamically allocated, but for now this is fine)
-    uint32_t KernelPageTables[1024][1024];
-
 private:
     bool is_paging_active;
 };

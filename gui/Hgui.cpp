@@ -12,13 +12,14 @@
 
 namespace {
 constexpr uint32_t USER_LOWER_BOUND = 0x10000000;
+constexpr uint32_t USER_UPPER_BOUND = 0xC0000000;
 constexpr size_t MAX_USER_TEXT = 256;
 
 bool IsUserRange(ProcessControlBlock* proc, uint32_t addr, size_t size) {
     if (!proc || !g_paging || size == 0) return false;
     if (addr < USER_LOWER_BOUND) return false;
     uint32_t end = addr + (uint32_t)size - 1;
-    if (end < addr) return false;
+    if (end < addr || end >= USER_UPPER_BOUND) return false;
 
     uint32_t start_page = addr & ~(PAGE_SIZE - 1);
     uint32_t end_page = end & ~(PAGE_SIZE - 1);
@@ -71,7 +72,7 @@ bool CopyUserString(ProcessControlBlock* proc, const char* src_user, char* dst, 
     }
 
     uint32_t user_addr = (uint32_t)src_user;
-    if (user_addr < USER_LOWER_BOUND) {
+    if (user_addr < USER_LOWER_BOUND || user_addr >= USER_UPPER_BOUND) {
         dst[0] = '\0';
         return false;
     }
@@ -187,6 +188,10 @@ int32_t HguiHandler::HandleWidget(CPUState* cpu, const WidgetData* _data) {
     } else if ((uint32_t)cpu->ebx == DELETE) {
         Widget* target = this->FindWidgetByID(_data->param1);
         if (target) {
+            // Remove any taskbar tab referencing this widget before freeing it
+            if (Desktop::activeInstance && Desktop::activeInstance->GetTaskbar()) {
+                Desktop::activeInstance->GetTaskbar()->RemoveTabByPID(target->PID);
+            }
             // Detach from parent first
             if (target->parent) {
                 target->parent->RemoveChild(target);

@@ -111,7 +111,16 @@ ProcessControlBlock* Scheduler::CreateProcess(bool isKernel, void (*entrypoint)(
     }
 
     // Create the main thread (Stack setup)
-    CreateThread(pcb, entrypoint, arg);
+    ThreadControlBlock* mainThread = CreateThread(pcb, entrypoint, arg);
+    if (!mainThread) {
+        KDBG1("CreateProcess PID=%d Kernel=%d FAILED: CreateThread returned null", pcb->pid,
+              isKernel);
+        if (!isKernel && pcb->page_directory != _pager->KernelPageDirectory) {
+            pmm_free_block(pcb->page_directory);
+        }
+        delete pcb;
+        return nullptr;
+    }
 
     // Register
     globalProcessList.PushBack(pcb);
@@ -130,6 +139,11 @@ ThreadControlBlock* Scheduler::CreateThread(ProcessControlBlock* parent, void (*
 
     // Allocate 64KB kernel stack
     tcb->stack = (uint8_t*)kmalloc(KERNEL_STACK_SIZE);
+    if (!tcb->stack) {
+        KDBG1("CreateThread: failed to allocate kernel stack for TID=%d", tcb->tid);
+        delete tcb;
+        return nullptr;
+    }
 
     // Calculate the TOP of the stack
     uint32_t* stackTop = (uint32_t*)(tcb->stack + KERNEL_STACK_SIZE);
@@ -184,7 +198,16 @@ ThreadControlBlock* Scheduler::CreateThread(ProcessControlBlock* parent, void (*
                 for (uint32_t q = 0; q < p; q++) {
                     uint32_t va = user_stack_base + q * PAGE_SIZE;
                     uint32_t pf = _pager->GetPhysicalAddress(parent->page_directory, va);
-                    if (pf) pmm_free_block((void*)pf);
+                    if (pf) {
+                        // Unmap before freeing to leave clean page tables
+                        uint32_t pd_idx = va >> 22;
+                        uint32_t pt_idx = (va >> 12) & 0x3FF;
+                        uint32_t* pt =
+                            (uint32_t*)(parent->page_directory[pd_idx] & 0xFFFFF000);
+                        pt[pt_idx] = 0;
+                        asm volatile("invlpg %0" : : "m"(*(uint8_t*)va) : "memory");
+                        pmm_free_block((void*)pf);
+                    }
                 }
                 kfree(tcb->stack);
                 delete tcb;
@@ -198,7 +221,16 @@ ThreadControlBlock* Scheduler::CreateThread(ProcessControlBlock* parent, void (*
                 for (uint32_t q = 0; q < p; q++) {
                     uint32_t va = user_stack_base + q * PAGE_SIZE;
                     uint32_t pf = _pager->GetPhysicalAddress(parent->page_directory, va);
-                    if (pf) pmm_free_block((void*)pf);
+                    if (pf) {
+                        // Unmap before freeing to leave clean page tables
+                        uint32_t pd_idx = va >> 22;
+                        uint32_t pt_idx = (va >> 12) & 0x3FF;
+                        uint32_t* pt =
+                            (uint32_t*)(parent->page_directory[pd_idx] & 0xFFFFF000);
+                        pt[pt_idx] = 0;
+                        asm volatile("invlpg %0" : : "m"(*(uint8_t*)va) : "memory");
+                        pmm_free_block((void*)pf);
+                    }
                 }
                 kfree(tcb->stack);
                 delete tcb;
@@ -466,6 +498,7 @@ ThreadControlBlock* Scheduler::CloneCurrentProcess(CPUState* parentContext, uint
 }
 
 bool Scheduler::KillProcess(uint32_t pid) {
+    InterruptGuard guard;
     ProcessControlBlock* target = nullptr;
     int pCount = globalProcessList.GetSize();
     for (int i = 0; i < pCount; i++) {
@@ -484,38 +517,16 @@ bool Scheduler::KillProcess(uint32_t pid) {
         _pager->SwitchDirectory(_pager->KernelPageDirectory);
     }
 
-    // Free User Stacks (USER_STACK_PAGES pages per thread)
+    // Terminate all threads (removes from scheduler queues, frees kernel stacks)
     int tCount = target->threads.GetSize();
     for (int i = 0; i < tCount; i++) {
         ThreadControlBlock* t = target->threads.PopFront();
-
-        // Calculate user stack base addr (matches CreateThread layout)
-        uint32_t user_stack_size = USER_STACK_PAGES * PAGE_SIZE;
-        uint32_t user_stack_base =
-            USER_STACK_VIRT_TOP - (t->tid * user_stack_size) - user_stack_size;
-        for (uint32_t p = 0; p < USER_STACK_PAGES; p++) {
-            uint32_t vaddr = user_stack_base + p * PAGE_SIZE;
-            uint32_t phys = _pager->GetPhysicalAddress(target->page_directory, vaddr);
-            if (phys > 0) {
-                pmm_free_block((void*)phys);
-            }
-        }
-
         TerminateThread(t);
     }
 
-    // Free Heap Pages
-    if (target->heap.startAddress > 0 && target->heap.endAddress > target->heap.startAddress) {
-        for (uint32_t addr = target->heap.startAddress; addr < target->heap.endAddress;
-             addr += PAGE_SIZE) {
-            uint32_t phys = _pager->GetPhysicalAddress(target->page_directory, addr);
-            if (phys > 0) {
-                pmm_free_block((void*)phys);
-            }
-        }
-    }
-
     // Free Page Tables and Page Directory (if not Kernel)
+    // This also reclaims all user-space page frames (stacks, heap, etc.)
+    // via the PTE sweep below — no need to free them separately.
     if (!target->isKernelProcess) {
         // Free User Page Tables (Indices 64 to 768)
         // Kernel tables (0-63) and High Mem (768-1023) are shared, CANNOT FREE

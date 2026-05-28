@@ -1,5 +1,10 @@
 reviews:
+  profile: assertive
   path_filters:
-    - "!include/**"
-    - "!user_prog/libhx86/include/**"
+    - "**/*.cpp"
+    - "**/*.asm"
+    - "**/*.c"
+    - "Makefile"
+    - "!**/*.h"
     - "!bin/**"
+    - "!user_prog/libhx86/include/**"

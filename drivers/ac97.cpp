@@ -96,7 +96,8 @@ private:
         if (!dev || dev->vendor_id == 0) return false;
 
         uint32_t cmd = pci.Read(dev->bus, dev->device, dev->function, 0x04);
-        pci.Write(dev->bus, dev->device, dev->function, 0x04, cmd | 0x07);
+        pci.Write(dev->bus, dev->device, dev->function, 0x04,
+                  (cmd & 0xFFFF0000) | ((cmd & 0xFFFF) | 0x07));
 
         namBar =
             (uint16_t)((uint32_t)pci.GetBaseAddressRegister(dev->bus, dev->device, dev->function, 0)

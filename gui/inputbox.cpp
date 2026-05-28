@@ -25,9 +25,9 @@ static int isprint_local(char c) {
 // ----------------------------------------------------------------
 
 InputBox::InputBox(Widget* parent, int32_t x, int32_t y, int32_t w, int32_t h, uint32_t capacity)
-    : Widget(parent, x, y, w, h), capacity(capacity), length(0), cursorPos(0) {
+    : Widget(parent, x, y, w, h), capacity(capacity > 0 ? capacity : 1), length(0), cursorPos(0) {
     this->font = FontManager::activeInstance->getNewFont();
-    text = new char[capacity];
+    text = new char[this->capacity];
     if (!text) {
         HALT("CRITICAL: Failed to allocate inputbox text buffer!\n");
     }
@@ -44,14 +44,16 @@ void InputBox::update() {
 }
 
 void InputBox::setText(const char* newText) {
-    uint32_t newLen = strlen(newText);
-    if (newLen >= capacity) newLen = capacity - 1;
+    if (!newText) return;
+
+    uint32_t srcLen = strlen(newText);
+    uint32_t newLen = (srcLen < capacity) ? srcLen : (capacity - 1);
 
     for (uint32_t i = 0; i < newLen; i++) text[i] = newText[i];
 
     text[newLen] = '\0';
     length = newLen;
-    cursorPos = length;
+    if (cursorPos > length) cursorPos = length;
     update();
 }
 
@@ -74,7 +76,7 @@ void InputBox::RedrawToCache() {
     NINA::activeInstance->DrawRoundedRectangle(
         cache, w, h, 0, 0, w, h, 3,
         isFocused ? INPUT_BORDER_COLOR_ACTIVE : INPUT_BORDER_COLOR_NORMAL);
-    NINA::activeInstance->DrawString(cache, w, h + 2, 2, 2, text, font,
+    NINA::activeInstance->DrawString(cache, w, h, 2, 2, text, font,
                                      isFocused ? INPUT_TEXT_COLOR_ACTIVE : INPUT_TEXT_COLOR_NORMAL);
 
     // Draw cursor at cursorPos
@@ -103,7 +105,7 @@ void InputBox::OnKeyDown(const char* key) {
     }
 
     // Normal printable characters
-    if (length < capacity - 1 && isprint_local(key[0])) {
+    if (length < capacity - 1 && key[1] == '\0' && isprint_local(key[0])) {
         memmove_local(&text[cursorPos + 1], &text[cursorPos], length - cursorPos + 1);
         text[cursorPos] = key[0];
         cursorPos++;

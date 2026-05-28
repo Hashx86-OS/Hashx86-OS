@@ -21,11 +21,14 @@ ACButton::~ACButton() {}
 
 void ACButton::OnClick(void (*callback)()) {
     onClickPtr = callback;
+    onClickMemberPtr = nullptr;
+    callbackInstance = nullptr;
 }
 
 void ACButton::OnClick(void* instance, void (*callback)(void*)) {
     callbackInstance = instance;
     onClickMemberPtr = callback;
+    onClickPtr = nullptr;
 }
 
 void ACButton::OnMouseUp(int32_t x, int32_t y, uint8_t button) {
