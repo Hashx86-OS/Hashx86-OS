@@ -420,7 +420,7 @@ bool ModuleLoader::Probe(File* file, DriverManifest* info) {
     // Read ELF Header
     struct elf_header header;
     file->Seek(0);
-    file->Read((uint8_t*)&header, sizeof(header));
+    if (file->Read((uint8_t*)&header, sizeof(header)) != (int32_t)sizeof(header)) return false;
 
     if (header.magic != ELF_MAGIC) return false;
 

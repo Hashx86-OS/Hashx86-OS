@@ -39,6 +39,7 @@ InputBox::~InputBox() {
 }
 
 void InputBox::update() {
+    if (!cache) return;
     for (uint32_t i = 0; i < w * h; i++) cache[i] = 0;  // clear
     isDirty = true;
 }

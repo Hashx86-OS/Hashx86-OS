@@ -219,10 +219,12 @@ void ListView::RedrawToCache() {
     // Empty state
     if (itemCount == 0) {
         Font* msgFont = FontManager::activeInstance->getNewFont();
-        msgFont->setSize(SMALL);
-        NINA::activeInstance->DrawString(cache, w, h, w / 2 - 40, h / 2 - 8, "No items", msgFont,
-                                         0xFF6C7086);
-        delete msgFont;
+        if (msgFont) {
+            msgFont->setSize(SMALL);
+            NINA::activeInstance->DrawString(cache, w, h, w / 2 - 40, h / 2 - 8, "No items", msgFont,
+                                             0xFF6C7086);
+            delete msgFont;
+        }
     }
 
     isDirty = false;

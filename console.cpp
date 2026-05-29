@@ -266,6 +266,22 @@ void printf(TextColor color, const char* format, ...) {
                     break;
                 }
 
+                case 'c': {  // Character
+                    int ch = va_arg(args, int);
+                    int position = cursorRow * SCREEN_WIDTH + cursorCol;
+                    VideoMemory[position] = (color << 8) | (char)ch;
+                    cursorCol++;
+                    if (cursorCol >= SCREEN_WIDTH) {
+                        cursorCol = 0;
+                        cursorRow++;
+                    }
+                    if (cursorRow >= SCREEN_HEIGHT) {
+                        scrollScreen();
+                        cursorRow = SCREEN_HEIGHT - 1;
+                    }
+                    break;
+                }
+
                 case 's': {  // String
                     const char* str = va_arg(args, const char*);
                     for (int j = 0; str[j] != '\0'; j++) {

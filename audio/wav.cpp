@@ -150,6 +150,12 @@ void Wav::Load(File* file) {
     this->bitsPerSample = fmt.bitsPerSample;
     this->length = dataSize;
 
+    // Sanity cap on allocation size
+    if (this->length == 0 || this->length > 64 * 1024 * 1024) {
+        KDBG1("Error: Invalid data size %d (max %d)", this->length, 64 * 1024 * 1024);
+        return;
+    }
+
     // Allocate Memory
     this->buffer = (uint8_t*)kmalloc(this->length);
     if (!this->buffer) {

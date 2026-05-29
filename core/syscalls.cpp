@@ -773,28 +773,39 @@ int32_t SyscallHandlers::Handle_sys_Hcall(uint32_t hcall_id, uint32_t arg1, uint
 
             // GRANT ACCESS: Grant user-mode access to the kernel backbuffer.
             // The framebuffer resides in the kernel identity-mapped range (pd_idx < 64)
-            // whose PDEs are shared across all processes via CreateProcessDirectory.
-            // MapPage cannot be used here (our guard rejects kernel-range addresses);
-            // instead we set PAGE_USER directly on the existing shared PTEs.
+            // whose PDEs and page tables are shared across all processes via
+            // CreateProcessDirectory(). We must not modify the shared tables; instead
+            // create per-process private copies that include PAGE_USER.
             uint32_t size = width * height * 4;
 
             // Align start/end to page boundaries
             uint32_t startPage = bufferAddr & ~(PAGE_SIZE - 1);
             uint32_t endPage = (bufferAddr + size + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
 
+            uint32_t startPDIdx = startPage >> 22;
+            uint32_t endPDIdx = endPage >> 22;
+
+            // First pass: un-share any kernel page tables covering the framebuffer
+            // by creating per-process copies so we can safely add PAGE_USER.
+            for (uint32_t i = startPDIdx; i <= endPDIdx; i++) {
+                if (current_process->page_directory[i] == g_paging->KernelPageDirectory[i]) {
+                    uint32_t* new_pt = (uint32_t*)pmm_alloc_block_low(256 * 1024 * 1024);
+                    if (!new_pt) return -1;
+                    uint32_t* old_pt = (uint32_t*)(g_paging->KernelPageDirectory[i] & 0xFFFFF000);
+                    for (uint32_t j = 0; j < 1024; j++) new_pt[j] = old_pt[j];
+                    current_process->page_directory[i] = ((uint32_t)new_pt & 0xFFFFF000)
+                                                         | PAGE_PRESENT | PAGE_RW;
+                }
+            }
+
+            // Second pass: grant user access to the specific PTEs and their PDEs
             for (uint32_t addr = startPage; addr < endPage; addr += PAGE_SIZE) {
                 uint32_t pd_idx = addr >> 22;
                 uint32_t pt_idx = (addr >> 12) & 0x03FF;
                 uint32_t* table = (uint32_t*)(current_process->page_directory[pd_idx] & 0xFFFFF000);
                 table[pt_idx] |= PAGE_USER;
+                current_process->page_directory[pd_idx] |= PAGE_USER;
                 asm volatile("invlpg (%0)" ::"r"(addr) : "memory");
-            }
-
-            // The PDE must also allow user access for the CPU to permit ring-3 reads/writes.
-            uint32_t startPDIdx = startPage >> 22;
-            uint32_t endPDIdx = endPage >> 22;
-            for (uint32_t i = startPDIdx; i <= endPDIdx; i++) {
-                current_process->page_directory[i] |= PAGE_USER;
             }
 
             // Flush TLB to ensure new permissions take effect immediately
