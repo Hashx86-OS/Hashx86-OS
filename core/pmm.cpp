@@ -8,6 +8,7 @@
 
 #define KDBG_COMPONENT "PMM"
 #include <core/pmm.h>
+#include <core/paging.h>
 
 PMM_INFO g_pmm_info;
 
@@ -265,6 +266,46 @@ void pmm_free_block(void* p) {
         return;
     }
     PMM_PHYSICAL_ADDRESS addr = (PMM_PHYSICAL_ADDRESS)p;
+
+    // Guard: Refuse to free kernel identity-map page table frames
+    extern Paging* g_paging;
+    if (g_paging && g_paging->KernelPageDirectory) {
+        uint32_t frame_addr = addr & 0xFFFFF000;
+        // Grab caller return addresses via EBP chain
+        uint32_t caller1 = 0, caller2 = 0, caller3 = 0;
+        uint32_t ebp;
+        asm volatile("mov %%ebp, %0" : "=r"(ebp));
+        if (ebp > 0x1000 && ebp < 256 * 1024 * 1024) {
+            caller1 = ((uint32_t*)ebp)[1];
+            uint32_t next = ((uint32_t*)ebp)[0];
+            if (next > 0x1000 && next < 256 * 1024 * 1024) {
+                caller2 = ((uint32_t*)next)[1];
+                uint32_t next2 = ((uint32_t*)next)[0];
+                if (next2 > 0x1000 && next2 < 256 * 1024 * 1024) {
+                    caller3 = ((uint32_t*)next2)[1];
+                }
+            }
+        }
+        for (int i = 0; i < 64; i++) {
+            if ((g_paging->KernelPageDirectory[i] & 0xFFFFF000) == frame_addr) {
+                KDBG1("BLOCKED free of kernel PT frame=0x%x pd_idx=%d callers=0x%x,0x%x,0x%x",
+                      frame_addr, i, caller1, caller2, caller3);
+                return;
+            }
+        }
+        for (int i = 768; i < 1024; i++) {
+            if ((g_paging->KernelPageDirectory[i] & 0xFFFFF000) == frame_addr) {
+                KDBG1("BLOCKED free of kernel PT frame=0x%x pd_idx=%d callers=0x%x,0x%x,0x%x",
+                      frame_addr, i, caller1, caller2, caller3);
+                return;
+            }
+        }
+        if (frame_addr == ((uint32_t)g_paging->KernelPageDirectory & 0xFFFFF000)) {
+            KDBG1("BLOCKED free of kernel page directory frame=0x%x callers=0x%x,0x%x,0x%x",
+                  frame_addr, caller1, caller2, caller3);
+            return;
+        }
+    }
 
     // Use Absolute Addressing
     int frame = addr / PMM_BLOCK_SIZE;

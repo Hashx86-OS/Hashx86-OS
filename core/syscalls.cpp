@@ -333,15 +333,6 @@ int32_t SyscallHandlers::Handle_sys_execve(const char* path, char* const argv[],
             if (argv && proc) {
                 const int MAX_ARGS = 5;
                 const int MAX_ARG_LEN = 512;
-                // Cleanup helper for partial argv allocations
-                auto cleanupArgs = [](ProgramArguments* a) {
-                    if (a->str1) { kfree((void*)a->str1); a->str1 = nullptr; }
-                    if (a->str2) { kfree((void*)a->str2); a->str2 = nullptr; }
-                    if (a->str3) { kfree((void*)a->str3); a->str3 = nullptr; }
-                    if (a->str4) { kfree((void*)a->str4); a->str4 = nullptr; }
-                    if (a->str5) { kfree((void*)a->str5); a->str5 = nullptr; }
-                    delete a;
-                };
                 for (int i = 0; i < MAX_ARGS; i++) {
                     // Read pointer from user argv array
                     char* userPtr = nullptr;
@@ -384,7 +375,7 @@ int32_t SyscallHandlers::Handle_sys_execve(const char* path, char* const argv[],
                     }
                 }
                 if (argvFailed) {
-                    cleanupArgs(args);
+                    FreeProgramArguments(args);
                     args = nullptr;
                     f->Close();
                     delete f;
@@ -396,9 +387,10 @@ int32_t SyscallHandlers::Handle_sys_execve(const char* path, char* const argv[],
             f->Close();
             delete f;
             if (child) {
-                // Return child PID
+                child->programArgs = args;
                 return child->pid;
             }
+            FreeProgramArguments(args);
         } else if (f) {
             f->Close();
             delete f;

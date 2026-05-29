@@ -283,22 +283,26 @@ void Desktop::OnMouseUp(uint8_t button) {
 }
 
 void Desktop::OnMouseMove(int32_t dx, int32_t dy) {
-    MouseX += dx;
-    MouseY += dy;
+    // Use signed arithmetic to prevent unsigned wrap when dx/dy are negative
+    int32_t newX = (int32_t)MouseX + dx;
+    int32_t newY = (int32_t)MouseY + dy;
 
-    // Clamp mouse position to screen bounds
-    if (MouseX < 0) MouseX = 0;
-    if (MouseY < 0) MouseY = 0;
-    if (MouseX >= (int32_t)w) MouseX = w - 1;
-    if (MouseY >= (int32_t)h) MouseY = h - 1;
+    // Clamp to screen bounds
+    if (newX < 0) newX = 0;
+    if (newY < 0) newY = 0;
+    if (newX >= w) newX = w - 1;
+    if (newY >= h) newY = h - 1;
 
-    // Compute old mouse position (clamped to avoid underflow from large dx/dy)
-    int32_t oldX = MouseX - dx;
-    int32_t oldY = MouseY - dy;
+    // Compute old mouse position from clamped new position
+    int32_t oldX = newX - dx;
+    int32_t oldY = newY - dy;
     if (oldX < 0) oldX = 0;
     if (oldY < 0) oldY = 0;
-    if (oldX >= (int32_t)w) oldX = w - 1;
-    if (oldY >= (int32_t)h) oldY = h - 1;
+    if (oldX >= w) oldX = w - 1;
+    if (oldY >= h) oldY = h - 1;
+
+    MouseX = (uint32_t)newX;
+    MouseY = (uint32_t)newY;
 
     // Pass delta to UI
     CompositeWidget::OnMouseMove(oldX, oldY, MouseX, MouseY);

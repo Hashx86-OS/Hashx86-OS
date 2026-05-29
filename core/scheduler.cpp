@@ -7,6 +7,7 @@
  */
 
 #define KDBG_COMPONENT "SCHEDULER"
+#include <core/elf.h>
 #include <core/scheduler.h>
 
 extern TaskStateSegment g_tss;
@@ -260,6 +261,16 @@ ThreadControlBlock* Scheduler::CreateThread(ProcessControlBlock* parent, void (*
 
         // Write arg and return address to the TOP of the stack (highest page, last 8 bytes)
         uint32_t* user_stack_top_phys = (uint32_t*)(top_page_phys + PAGE_SIZE);
+        {
+            uint32_t pd_idx = top_page_phys >> 22;
+            uint32_t pt_idx = (top_page_phys >> 12) & 0x3FF;
+            uint32_t* pt = (uint32_t*)(parent->page_directory[pd_idx] & 0xFFFFF000);
+            KDBG1("CreateThread: top_page_phys=0x%x pd[%u]=0x%x kernel_pd[%u]=0x%x "
+                  "pte[%u]=0x%x pt_virt=0x%x",
+                  top_page_phys, pd_idx, parent->page_directory[pd_idx],
+                  pd_idx, _pager->KernelPageDirectory[pd_idx],
+                  pt_idx, pt[pt_idx], top_page_phys);
+        }
         user_stack_top_phys[-1] = (uint32_t)arg;              // Argument
         user_stack_top_phys[-2] = USER_EXIT_TRAMPOLINE_VIRT;  // Return to exit trampoline
 
@@ -386,7 +397,7 @@ ThreadControlBlock* Scheduler::CloneCurrentProcess(CPUState* parentContext, uint
     childProc->page_directory = _pager->CreateProcessDirectory();
     childProc->heap = parent->heap;
     for (uint32_t fd = FD_MIN; fd < FD_MAX; fd++) {
-        childProc->fdTable[fd] = parent->fdTable[fd];
+        childProc->fdTable[fd] = nullptr;
     }
 
     if (!childProc->page_directory) {
@@ -567,11 +578,33 @@ bool Scheduler::KillProcess(uint32_t pid) {
             pmm_free_block((void*)(target->page_directory[i] & 0xFFFFF000));
             target->page_directory[i] = 0;
         }
+
+        // Free privately-copied kernel-range page tables (indices 0-63 and 768-1023).
+        // These were created (e.g., by Hsys_getFramebuffer) as per-process copies of
+        // shared kernel PDEs.  Their PTEs still point to shared kernel frames, so we
+        // free only the page table frame, not the individual frames.
+        for (int i = 0; i < 64; i++) {
+            if (!(target->page_directory[i] & PAGE_PRESENT)) continue;
+            if (target->page_directory[i] == _pager->KernelPageDirectory[i]) continue;
+            pmm_free_block((void*)(target->page_directory[i] & 0xFFFFF000));
+            target->page_directory[i] = 0;
+        }
+        for (int i = 768; i < 1024; i++) {
+            if (!(target->page_directory[i] & PAGE_PRESENT)) continue;
+            if (target->page_directory[i] == _pager->KernelPageDirectory[i]) continue;
+            pmm_free_block((void*)(target->page_directory[i] & 0xFFFFF000));
+            target->page_directory[i] = 0;
+        }
+
         // Free the Directory itself
         pmm_free_block(target->page_directory);
     }
 
     // RESOURCE CLEANUP END
+
+    // Free program arguments (kmalloc'd strings + struct)
+    FreeProgramArguments(target->programArgs);
+    target->programArgs = nullptr;
 
     // Remove from Global List
     globalProcessList.Remove([target](ProcessControlBlock* p) { return p == target; });

@@ -88,6 +88,16 @@ struct ProgramArguments {
     const char* str5;
 };
 
+inline void FreeProgramArguments(ProgramArguments* a) {
+    if (!a) return;
+    if (a->str1) { kfree((void*)a->str1); }
+    if (a->str2) { kfree((void*)a->str2); }
+    if (a->str3) { kfree((void*)a->str3); }
+    if (a->str4) { kfree((void*)a->str4); }
+    if (a->str5) { kfree((void*)a->str5); }
+    delete a;
+}
+
 class ELFLoader {
 private:
     Paging* pager;
