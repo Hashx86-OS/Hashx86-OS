@@ -226,8 +226,9 @@ void* ModuleLoader::LoadDriver(File* file) {
     bool relocation_failed = false;
     for (int i = 0; i < header.sh_entry_count; i++) {
         if (sections[i].type == 9) {  // SHT_REL (Relocation without Addend)
-            if (sections[i].ent_size == 0) {
-                KDBG1("Module Link Error: Relocation entry size is 0");
+            if (sections[i].ent_size != sizeof(elf32_rel)) {
+                KDBG1("Module Link Error: Relocation ent_size=%u (expected %u)",
+                      sections[i].ent_size, (uint32_t)sizeof(elf32_rel));
                 relocation_failed = true;
                 break;
             }
@@ -324,7 +325,19 @@ void* ModuleLoader::LoadDriver(File* file) {
                         relocation_failed = true;
                         break;
                     }
+                    // Verify NUL terminator exists within the string table bounds
                     const char* name = strtab_sym + name_off;
+                    size_t max_len = strtab_sym_size - name_off;
+                    bool found_nul = false;
+                    for (size_t k = 0; k < max_len; k++) {
+                        if (name[k] == '\0') { found_nul = true; break; }
+                    }
+                    if (!found_nul) {
+                        KDBG1("Module Link Error: Symbol name at offset %u not NUL-terminated "
+                              "within %u-byte strtab", name_off, strtab_sym_size);
+                        relocation_failed = true;
+                        break;
+                    }
                     sym_val = SymbolTable::Lookup(name);
 
                     if (sym_val == 0) {

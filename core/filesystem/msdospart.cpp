@@ -35,9 +35,16 @@ void MSDOSPartitionTable::Initialize() {
         return;
     }
 
+    // Need at least 2 sectors available so both partitions have non-zero size
+    uint32_t available = totalSectors - 63;
+    if (available < 2) {
+        KDBG1("Error: Disk too small (available=%u). Need >= 2 for two non-empty partitions.",
+              available);
+        return;
+    }
+
     // Calculate Partitions (Split in 2)
     // Reserve 63 sectors for MBR and alignment
-    uint32_t available = totalSectors - 63;
     uint32_t p1_size = available / 2;
     uint32_t p2_size = available - p1_size;  // Remainder
 
@@ -83,8 +90,13 @@ void MSDOSPartitionTable::Initialize() {
 
 void MSDOSPartitionTable::ReadPartitions() {
     // Reset partition state so repeated calls don't append into old data
+    for (int i = 0; i < 4; i++) {
+        if (partitions[i]) {
+            delete partitions[i];
+            partitions[i] = nullptr;
+        }
+    }
     partitionsCounter = 0;
-    for (int i = 0; i < 4; i++) partitions[i] = nullptr;
 
     // Get Drive Size from ATA
     uint32_t totalSectors = ata->GetSizeInSectors();
@@ -119,6 +131,15 @@ void MSDOSPartitionTable::ReadPartitions() {
         if (partitionsCounter >= 4) {
             KDBG1("Warning: Too many partitions; max 4 supported.");
             break;
+        }
+
+        // Validate partition extent fits within the device
+        uint32_t start = mbr.primaryPartition[i].start_lba;
+        uint32_t length = mbr.primaryPartition[i].length;
+        if (length == 0 || start >= totalSectors || start + length > totalSectors) {
+            KDBG1("Warning: Partition %d extent [%u, %u+%u) outside device (totalSectors=%u); skipping",
+                  i, start, start, length, totalSectors);
+            continue;
         }
 
         // Mount FAT32

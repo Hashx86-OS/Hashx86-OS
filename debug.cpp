@@ -85,6 +85,10 @@ void printf(const char* format, ...) {
 void vprintf(const char* format, va_list args) {
     for (int i = 0; format[i] != '\0'; i++) {
         if (format[i] == '%') {
+            if (format[i + 1] == '\0') {
+                writeSerial('%');
+                break;
+            }
             i++;
             switch (format[i]) {
                 case 'd': {

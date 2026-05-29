@@ -130,15 +130,16 @@ uint32_t MouseDriver::HandleInterrupt(uint32_t esp) {
             eventHandler->OnMouseMove(dx, dy);
         }
 
+        uint8_t btn_state = buffer[0] & 0x7;
         for (uint8_t i = 0; i < 3; i++) {
-            if ((buffer[0] & (0x1 << i)) != (buttons & (0x1 << i))) {
+            if ((btn_state & (0x1 << i)) != (buttons & (0x1 << i))) {
                 if (buttons & (0x1 << i))
                     eventHandler->OnMouseUp(i + 1);
                 else
                     eventHandler->OnMouseDown(i + 1);
             }
         }
-        buttons = buffer[0];
+        buttons = btn_state;
     }
 
     return esp;

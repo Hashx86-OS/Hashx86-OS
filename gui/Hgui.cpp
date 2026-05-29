@@ -246,7 +246,6 @@ int32_t HguiHandler::HandleWindow(CPUState* cpu, const WidgetData* _data) {
         Widget* w = this->FindWidgetByID(_data->param0);
         if (!w || !w->IsWindow()) return -1;
         Window* widget = static_cast<Window*>(w);
-        if (!ValidateUserPointer(proc, _data->param5, MAX_USER_TEXT)) return -1;
         if (!CopyUserString(proc, _data->param5, titleBuf, sizeof(titleBuf))) {
             return -1;
         }
@@ -271,7 +270,6 @@ int32_t HguiHandler::HandleButton(CPUState* cpu, const WidgetData* _data) {
         CompositeWidget* parentWidget = static_cast<CompositeWidget*>(parentBase);
         if (parentWidget->ID == 0) return -1;
 
-        if (!ValidateUserPointer(proc, _data->param5, MAX_USER_TEXT)) return -1;
         if (!CopyUserString(proc, _data->param5, labelBuf, sizeof(labelBuf))) {
             return -1;
         }
@@ -303,7 +301,6 @@ int32_t HguiHandler::HandleLabel(CPUState* cpu, const WidgetData* _data) {
         CompositeWidget* parentWidget = static_cast<CompositeWidget*>(parentBase);
         if (parentWidget->ID == 0) return -1;
 
-        if (!ValidateUserPointer(proc, _data->param5, MAX_USER_TEXT)) return -1;
         if (!CopyUserString(proc, _data->param5, textBuf, sizeof(textBuf))) {
             return -1;
         }
@@ -322,7 +319,6 @@ int32_t HguiHandler::HandleLabel(CPUState* cpu, const WidgetData* _data) {
         Widget* w = this->FindWidgetByID(_data->param0);
         if (!w || !w->IsLabel()) return -1;
         Label* widget = static_cast<Label*>(w);
-        if (!ValidateUserPointer(proc, _data->param5, MAX_USER_TEXT)) return -1;
         if (!CopyUserString(proc, _data->param5, textBuf, sizeof(textBuf))) {
             return -1;
         }
@@ -409,7 +405,6 @@ int32_t HguiHandler::HandleListView(CPUState* cpu, const WidgetData* _data) {
         Widget* w = this->FindWidgetByID(_data->param0);
         if (!w || !w->IsListView()) return -1;
         ListView* widget = static_cast<ListView*>(w);
-        if (!ValidateUserPointer(proc, _data->param5, MAX_USER_TEXT)) return -1;
         if (!CopyUserString(proc, _data->param5, headerBuf, sizeof(headerBuf))) {
             return -1;
         }
@@ -432,7 +427,6 @@ int32_t HguiHandler::HandleTerminalView(CPUState* cpu, const WidgetData* _data) 
         CompositeWidget* parentWidget = static_cast<CompositeWidget*>(parentBase);
         if (parentWidget->ID == 0) return -1;
 
-        if (!ValidateUserPointer(proc, _data->param5, MAX_USER_TEXT)) return -1;
         if (!CopyUserString(proc, _data->param5, textBuf, sizeof(textBuf))) {
             return -1;
         }
@@ -452,7 +446,6 @@ int32_t HguiHandler::HandleTerminalView(CPUState* cpu, const WidgetData* _data) 
         Widget* w = this->FindWidgetByID(_data->param0);
         if (!w || !w->IsTerminalView()) return -1;
         TerminalView* widget = static_cast<TerminalView*>(w);
-        if (!ValidateUserPointer(proc, _data->param5, MAX_USER_TEXT)) return -1;
         if (!CopyUserString(proc, _data->param5, textBuf, sizeof(textBuf))) {
             return -1;
         }
@@ -533,6 +526,10 @@ void HguiHandler::RemoveAppByPID(uint32_t PID) {
             if (c->PID == PID) found = c;
         });
         if (found) {
+            // Detach from parent tree first to avoid dangling parent references
+            if (found->parent) {
+                found->parent->RemoveChild(found);
+            }
             HguiWidgets.Remove([&](Widget* c) { return c == found; });
             delete found;
             removed = true;

@@ -2,6 +2,7 @@ section .text
 
 global load_gdt
 load_gdt:
+    cli             ; clear interrupts (must be done before lgdt)
     mov eax, [esp + 4]  ; get gdt pointer
     lgdt [eax]          ; load gdt
 
@@ -11,8 +12,6 @@ load_gdt:
     mov fs, ax
     mov gs, ax
     mov ss, ax
-
-    cli             ; clear interrupts
     mov	eax, cr0    ; set bit 0 in cr0 to enter protected mode
     or eax, 1
     mov	cr0, eax

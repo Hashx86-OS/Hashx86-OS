@@ -234,8 +234,8 @@ int32_t SyscallHandlers::Handle_sys_exit(uint32_t status) {
 
     // Clean up GUI resources only if the entire process was terminated
     if (processKilled && pid) {
-        Desktop::activeInstance->RemoveAppByPID(pid);
-        HguiHandler::activeInstance->RemoveAppByPID(pid);
+        if (Desktop::activeInstance) Desktop::activeInstance->RemoveAppByPID(pid);
+        if (HguiHandler::activeInstance) HguiHandler::activeInstance->RemoveAppByPID(pid);
 
         // Restore Desktop rendering if the owner exits
         if (g_stop_gui_rendering && g_gui_owner_pid == (int)pid) {
@@ -439,6 +439,10 @@ int32_t SyscallHandlers::Handle_sys_brk(uint32_t brk) {
                 uint32_t phys;
             };
             BrkFrame* brkFrames = (BrkFrame*)kmalloc(totalPages * sizeof(BrkFrame));
+            if (!brkFrames) {
+                KDBG1("sys_brk: Failed to allocate BrkFrame array");
+                return -1;
+            }
             int brkCount = 0;
 
             for (uint32_t addr = page_start; addr < page_end; addr += PAGE_SIZE) {
@@ -618,6 +622,7 @@ int32_t SyscallHandlers::Handle_sys_getdents(uint32_t fd, struct linux_dirent* d
             dirFile->position -= (bytesRead - (i * 32));
             return offsetWritten;
         }
+        memset(direntBuffer, 0, reclen);
         struct linux_dirent* k_dirent = (struct linux_dirent*)direntBuffer;
         k_dirent->d_ino = ((uint32_t)e->firstClusterHi << 16) | e->firstClusterLow;
         k_dirent->d_off = dirFile->position;

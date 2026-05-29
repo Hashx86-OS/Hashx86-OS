@@ -293,13 +293,9 @@ void Desktop::OnMouseMove(int32_t dx, int32_t dy) {
     if (newX >= w) newX = w - 1;
     if (newY >= h) newY = h - 1;
 
-    // Compute old mouse position from clamped new position
-    int32_t oldX = newX - dx;
-    int32_t oldY = newY - dy;
-    if (oldX < 0) oldX = 0;
-    if (oldY < 0) oldY = 0;
-    if (oldX >= w) oldX = w - 1;
-    if (oldY >= h) oldY = h - 1;
+    // Capture pre-update cursor position before clamping
+    int32_t oldX = (int32_t)MouseX;
+    int32_t oldY = (int32_t)MouseY;
 
     MouseX = (uint32_t)newX;
     MouseY = (uint32_t)newY;
