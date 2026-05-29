@@ -40,7 +40,7 @@ int kheap_init(void* start_addr, void* end_addr);
 /**
  * increase the heap memory by size & get its address
  */
-void* kbrk(int size);
+void* kbrk(size_t size);
 
 /**
  * print list of allocated blocks
@@ -52,7 +52,7 @@ void kheap_print_blocks();
  * otherwise try some memory allocation algorithm like best fit etc
  * to find best block to allocate
  */
-void* kmalloc(int size);
+void* kmalloc(size_t size);
 
 void* aligned_kmalloc(size_t size, size_t alignment);
 void aligned_kfree(void* ptr);
@@ -66,7 +66,7 @@ void* kcalloc(int n, int size);
  * allocate a new block of memory
  * copy previous block data & set free the previous block
  */
-void* krealloc(void* ptr, int size);
+void* krealloc(void* ptr, size_t size);
 
 /**
  * set free the block

@@ -151,6 +151,11 @@ void printf(TextColor color, const char* format, ...) {
     for (int i = 0; format[i] != '\0'; i++) {
         if (format[i] == '%') {
             i++;
+            if (format[i] == '\0') {
+                int position = cursorRow * SCREEN_WIDTH + cursorCol;
+                VideoMemory[position] = (color << 8) | '%';
+                break;
+            }
             switch (format[i]) {
                 case 'd': {  // Signed Integer
                     int num = va_arg(args, int);

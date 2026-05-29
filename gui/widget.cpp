@@ -289,11 +289,11 @@ void CompositeWidget::OnMouseMove(int32_t oldx, int32_t oldy, int32_t newx, int3
     int32_t localNewY = newy - this->y;
 
     childrenList.ForEach([&](Widget* child) {
-        // Notify if mouse inside or entering/exiting
+        // Notify if mouse inside, entering/exiting, or child has captured input
         bool inOld = child->ContainsCoordinate(localOldX, localOldY);
         bool inNew = child->ContainsCoordinate(localNewX, localNewY);
 
-        if (inOld || inNew) {
+        if (inOld || inNew || child->IsMouseCaptured() || child->IsPressed()) {
             child->OnMouseMove(localOldX, localOldY, localNewX, localNewY);
         }
     });

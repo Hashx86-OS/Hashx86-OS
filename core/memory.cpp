@@ -152,12 +152,13 @@ int kheap_init(void* start_addr, void* end_addr) {
 /**
  * increase the heap memory by size & get its address
  */
-void* kbrk(int size) {
+void* kbrk(size_t size) {
     void* addr = NULL;
-    if (size <= 0) return NULL;
+    if (size == 0) return NULL;
     // check memory is available or not
-    if ((int)(g_total_size - g_total_used_size) <= size) {
-        KDBG1("HeapExhausted req=%d available=%d", size, (g_total_size - g_total_used_size));
+    size_t available = g_total_size - g_total_used_size;
+    if (available < size) {
+        KDBG1("HeapExhausted req=%u available=%u", (uint32_t)size, (uint32_t)available);
         return NULL;
     }
     // add start addr with total previously used memory
@@ -188,11 +189,11 @@ bool is_block_free(KHEAP_BLOCK* block) {
 /**
  * this just check freed memory is greater than the required one
  */
-KHEAP_BLOCK* worst_fit(int size) {
+KHEAP_BLOCK* worst_fit(size_t size) {
     KHEAP_BLOCK* temp = g_head;
     while (temp != NULL) {
         if (is_block_free(temp)) {
-            if ((int)temp->metadata.size >= size) return temp;
+            if ((size_t)temp->metadata.size >= size) return temp;
         }
         temp = temp->next;
     }
@@ -200,7 +201,7 @@ KHEAP_BLOCK* worst_fit(int size) {
 }
 
 // allocate a new heap block
-KHEAP_BLOCK* allocate_new_block(int size) {
+KHEAP_BLOCK* allocate_new_block(size_t size) {
     if (!g_head) return NULL;
     KHEAP_BLOCK* temp = g_head;
     while (temp->next != NULL) {
@@ -228,10 +229,10 @@ KHEAP_BLOCK* allocate_new_block(int size) {
  * otherwise try some memory allocation algorithm like best fit etc
  * to find best block to allocate
  */
-void* kmalloc(int size) {
+void* kmalloc(size_t size) {
     InterruptGuard guard;
-    if (size <= 0) {
-        KDBG2("AllocInvalid invalid_size=%d", size);
+    if (size == 0 || size > 0x7FFFFFFF) {
+        KDBG2("AllocInvalid invalid_size=%u", (uint32_t)size);
         return NULL;
     }
     if (g_head == NULL) {
@@ -309,7 +310,11 @@ void* kcalloc(int n, int size) {
         KDBG1("Calloc overflow n=%d size=%d", n, size);
         return NULL;
     }
-    void* mem = kmalloc((int)total);
+    if (total > 0x7FFFFFFF) {
+        KDBG1("Calloc overflow n=%d size=%d total=%u", n, size, (uint32_t)total);
+        return NULL;
+    }
+    void* mem = kmalloc(total);
     if (mem) memset(mem, 0, total);
     KDBG3("Calloc n=%d size=%d addr=0x%x", n, size, mem);
     return mem;
@@ -319,10 +324,10 @@ void* kcalloc(int n, int size) {
  * allocate a new block of memory
  * copy previous block data & set free the previous block
  */
-void* krealloc(void* ptr, int size) {
+void* krealloc(void* ptr, size_t size) {
     InterruptGuard guard;
     if (!ptr) return kmalloc(size);
-    if (size <= 0) {
+    if (size == 0) {
         kfree(ptr);
         return NULL;
     }

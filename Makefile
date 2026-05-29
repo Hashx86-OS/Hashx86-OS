@@ -206,6 +206,8 @@ prog:
 	make runq
 
 
+.PHONY: clean build hdd check runq run prog runvb iso check-style check-bugs check-headers check-eof fix-style
+
 # -----------------------------------
 # CODE QUALITY TOOLS
 # Check style (Report Only)

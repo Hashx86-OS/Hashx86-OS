@@ -85,20 +85,20 @@ void KeyboardDriver::Activate() {
     // Clear the keyboard buffer
     while (commandPort.Read() & 0x1) dataPort.Read();
 
-    // Enable the keyboard
+    // Enable the keyboard (controller command — no ACK expected)
     commandPort.Write(0xAE);
-    if (!WaitForKBACK(dataPort, commandPort, 3)) { this->is_Active = false; return; }
 
-    // Configure keyboard settings
+    // Read controller command byte
     commandPort.Write(0x20);
+    int bufReady = 0;
     for (int wait = 0; wait < 10000; wait++) {
-        if (commandPort.Read() & 0x1) break;
+        if (commandPort.Read() & 0x1) { bufReady = 1; break; }
     }
+    if (!bufReady) { this->is_Active = false; return; }
     uint8_t status = (dataPort.Read() | 1) & ~0x10;  // Enable IRQ1, disable key lock
+    // Write back the modified command byte (controller command — no ACK expected)
     commandPort.Write(0x60);
-    if (!WaitForKBACK(dataPort, commandPort, 3)) { this->is_Active = false; return; }
     dataPort.Write(status);
-    if (!WaitForKBACK(dataPort, commandPort, 3)) { this->is_Active = false; return; }
 
     // Activate the keyboard
     dataPort.Write(0xF4);
@@ -314,10 +314,15 @@ uint32_t KeyboardDriver::HandleInterrupt(uint32_t esp) {
             default:
                 if (key < 128) {  // Valid keycode range
                     char character = normalKeyMap[key];
-                    if (((leftShiftPressed || rightShiftPressed) && !capsLockActive) ||
-                        (!(leftShiftPressed || rightShiftPressed) && capsLockActive &&
-                         character >= 'a' && character <= 'z')) {
-                        character = shiftKeyMap[key];  // Use shifted map
+                    bool shiftPressed = leftShiftPressed || rightShiftPressed;
+                    if (character >= 'a' && character <= 'z') {
+                        // Letters: XOR shift and caps
+                        if (shiftPressed ^ capsLockActive)
+                            character = shiftKeyMap[key];
+                    } else {
+                        // Non-letters: shift always applies
+                        if (shiftPressed)
+                            character = shiftKeyMap[key];
                     }
 
                     if (character != 0) {  // Valid character

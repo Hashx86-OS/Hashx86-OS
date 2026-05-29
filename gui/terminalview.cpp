@@ -239,6 +239,7 @@ void TerminalView::DrawScrollBar() {
 }
 
 void TerminalView::RedrawToCache() {
+    if (!cache || w <= 0 || h <= 0) return;
     memset(cache, 0, sizeof(uint32_t) * w * h);
 
     NINA::activeInstance->FillRectangle(cache, w, h, 0, 0, w, h, LISTVIEW_BG_COLOR);

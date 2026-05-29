@@ -9,6 +9,16 @@
 #define KDBG_COMPONENT "FAT32"
 #include <core/filesystem/FAT32.h>
 
+// Returns max valid cluster index from the BPB
+static inline uint32_t fat_max_cluster(const BiosParameterBlock32& bpb) {
+    return bpb.tableSize * 128;
+}
+
+// Returns true if cluster is a valid data cluster (2 .. maxCluster)
+static inline bool fat_valid_cluster(uint32_t cluster, const BiosParameterBlock32& bpb) {
+    return cluster >= 2 && cluster < fat_max_cluster(bpb);
+}
+
 FAT32::FAT32(AdvancedTechnologyAttachment* hd, uint32_t partitionOffset) {
     this->hd = hd;
     this->partitionOffset = partitionOffset;
@@ -21,6 +31,29 @@ FAT32::FAT32(AdvancedTechnologyAttachment* hd, uint32_t partitionOffset) {
 
     if (bpb.bootSignature != 0x28 && bpb.bootSignature != 0x29) {
         KDBG1("Error: Invalid Boot Signature");
+        return;
+    }
+
+    // Validate BPB geometry before using any fields
+    if (bpb.sectorsPerCluster == 0 ||
+        (bpb.sectorsPerCluster & (bpb.sectorsPerCluster - 1)) != 0) {
+        KDBG1("Error: Invalid sectorsPerCluster=%u", bpb.sectorsPerCluster);
+        return;
+    }
+    if (bpb.fatCopies == 0) {
+        KDBG1("Error: fatCopies=0");
+        return;
+    }
+    if (bpb.tableSize == 0) {
+        KDBG1("Error: tableSize=0");
+        return;
+    }
+    uint32_t dataSectors = (bpb.totalSectorCount > bpb.reservedSectors + bpb.tableSize * bpb.fatCopies)
+        ? bpb.totalSectorCount - bpb.reservedSectors - bpb.tableSize * bpb.fatCopies
+        : 0;
+    uint32_t maxCluster = 2 + (dataSectors / bpb.sectorsPerCluster);
+    if (bpb.rootCluster < 2 || bpb.rootCluster >= maxCluster) {
+        KDBG1("Error: rootCluster=%u out of range [2, %u)", bpb.rootCluster, maxCluster);
         return;
     }
 
@@ -254,8 +287,8 @@ bool FAT32::FindEntryInCluster(uint32_t cluster, char* name, uint32_t& sectorOut
             }
         }
         currentCluster = GetFATEntry(currentCluster);
-        if (currentCluster == 0) {
-            KDBG1("FAT corruption: unexpected free cluster in FindEntryInCluster chain");
+        if (!fat_valid_cluster(currentCluster, this->bpb)) {
+            KDBG1("FAT corruption: invalid cluster %u in FindEntryInCluster chain", currentCluster);
             return false;
         }
     }
@@ -268,7 +301,7 @@ bool FAT32::FindFreeEntryInCluster(uint32_t dirCluster, uint32_t& sectorOut, uin
     uint32_t visited = 0;
     uint32_t maxClusters = bpb.tableSize * 128;
 
-    if (currentCluster < 2 || currentCluster >= 0x0FFFFFF8) {
+    if (!fat_valid_cluster(currentCluster, this->bpb)) {
         KDBG1("FAT corruption: invalid initial cluster %u in FindFreeEntryInCluster", currentCluster);
         return false;
     }
@@ -292,10 +325,6 @@ bool FAT32::FindFreeEntryInCluster(uint32_t dirCluster, uint32_t& sectorOut, uin
             }
         }
         uint32_t next = GetFATEntry(currentCluster);
-        if (next == 0) {
-            KDBG1("FAT corruption: unexpected free cluster in FindFreeEntryInCluster chain");
-            return false;
-        }
         if (next >= 0x0FFFFFF8) {
             uint32_t newCluster = AllocateCluster();
             if (newCluster == 0) return false;
@@ -304,6 +333,10 @@ bool FAT32::FindFreeEntryInCluster(uint32_t dirCluster, uint32_t& sectorOut, uin
             sectorOut = ClusterToSector(newCluster);
             offsetOut = 0;
             return true;
+        }
+        if (!fat_valid_cluster(next, this->bpb)) {
+            KDBG1("FAT corruption: invalid cluster %u in FindFreeEntryInCluster chain", next);
+            return false;
         }
         currentCluster = next;
     }
@@ -315,7 +348,7 @@ bool FAT32::IsDirectoryEmpty(uint32_t dirCluster) {
     uint32_t visited = 0;
     uint32_t maxClusters = bpb.tableSize * 128;
 
-    if (currentCluster < 2) {
+    if (!fat_valid_cluster(currentCluster, this->bpb)) {
         KDBG1("FAT corruption: invalid initial cluster %u in IsDirectoryEmpty", currentCluster);
         return true;
     }
@@ -338,8 +371,9 @@ bool FAT32::IsDirectoryEmpty(uint32_t dirCluster) {
             }
         }
         currentCluster = GetFATEntry(currentCluster);
-        if (currentCluster == 0) {
-            KDBG1("FAT corruption: unexpected free cluster in IsDirectoryEmpty chain");
+        if (currentCluster >= 0x0FFFFFF8) break;
+        if (!fat_valid_cluster(currentCluster, this->bpb)) {
+            KDBG1("FAT corruption: invalid cluster %u in IsDirectoryEmpty chain", currentCluster);
             return true;
         }
     }
@@ -420,6 +454,10 @@ uint32_t FAT32::ReadStream(File* file, uint8_t* buffer, uint32_t length) {
     for (uint32_t i = 0; i < clustersToSkip; i++) {
         if (currentCluster >= 0x0FFFFFF8) return 0;  // End reached before offset
         currentCluster = GetFATEntry(currentCluster);
+        if (!fat_valid_cluster(currentCluster, this->bpb)) {
+            KDBG1("FAT corruption: invalid cluster %u in ReadStream skip", currentCluster);
+            return 0;
+        }
     }
 
     // Read Loop
@@ -454,8 +492,9 @@ uint32_t FAT32::ReadStream(File* file, uint8_t* buffer, uint32_t length) {
             }
         }
         currentCluster = GetFATEntry(currentCluster);
-        if (currentCluster == 0) {
-            KDBG1("FAT corruption: unexpected free cluster in ReadStream chain");
+        if (currentCluster >= 0x0FFFFFF8) break;
+        if (!fat_valid_cluster(currentCluster, this->bpb)) {
+            KDBG1("FAT corruption: invalid cluster %u in ReadStream chain", currentCluster);
             break;
         }
     }
@@ -467,6 +506,7 @@ void FAT32::ListRoot() {
     ListDir((char*)"/");
 }
 
+// Simple directory listing (kernel debug) - iterates all entries in root dir
 void FAT32::ListDir(char* path) {
     uint32_t dirCluster = ResolvePath(path);
     if (dirCluster == 0) {
@@ -474,12 +514,12 @@ void FAT32::ListDir(char* path) {
         return;
     }
 
-    uint8_t buffer[512];
     uint32_t currentCluster = dirCluster;
+    uint8_t buffer[512];
     uint32_t visited = 0;
     uint32_t maxClusters = bpb.tableSize * 128;
 
-    if (currentCluster < 2) {
+    if (!fat_valid_cluster(currentCluster, this->bpb)) {
         KDBG1("FAT corruption: invalid initial cluster %u in ListDir", currentCluster);
         return;
     }
@@ -521,8 +561,9 @@ void FAT32::ListDir(char* path) {
             }
         }
         currentCluster = GetFATEntry(currentCluster);
-        if (currentCluster == 0) {
-            KDBG1("FAT corruption: unexpected free cluster in ListDir chain");
+        if (currentCluster >= 0x0FFFFFF8) return;
+        if (!fat_valid_cluster(currentCluster, this->bpb)) {
+            KDBG1("FAT corruption: invalid cluster %u in ListDir chain", currentCluster);
             return;
         }
     }
@@ -785,8 +826,9 @@ void FAT32::ReadFile(char* path, uint8_t* buffer, uint32_t length) {
             if (bytesRead >= length) break;
         }
         currentCluster = GetFATEntry(currentCluster);
-        if (currentCluster == 0) {
-            KDBG1("FAT corruption: unexpected free cluster in ReadFile chain");
+        if (currentCluster >= 0x0FFFFFF8) break;
+        if (!fat_valid_cluster(currentCluster, this->bpb)) {
+            KDBG1("FAT corruption: invalid cluster %u in ReadFile chain", currentCluster);
             break;
         }
     }
@@ -853,14 +895,13 @@ void FAT32::WriteFile(char* path, uint8_t* buffer, uint32_t length) {
         if (bytesWritten >= length) break;
 
         uint32_t next = GetFATEntry(currentCluster);
-        if (next == 0) {
-            KDBG1("FAT corruption: unexpected free cluster in WriteFile chain");
-            break;
-        }
         if (next >= 0x0FFFFFF8) {
             next = AllocateCluster();
             if (next == 0) break;
             SetFATEntry(currentCluster, next);
+        } else if (!fat_valid_cluster(next, this->bpb)) {
+            KDBG1("FAT corruption: invalid cluster %u in WriteFile chain", next);
+            break;
         }
         currentCluster = next;
     }

@@ -48,12 +48,9 @@ void Button::SetWidth(int32_t reqW) {
     int32_t minW = this->font->getStringLength(label) + 4;
     this->w = (reqW < minW) ? minW : reqW;
 
-    if (cache) delete[] cache;
-    if (w > 0 && h > 0) {
+    cache = nullptr;
+    if (w > 0 && h > 0 && (size_t)this->w * (size_t)this->h / (size_t)this->w == (size_t)this->h) {
         cache = new uint32_t[this->w * this->h]();
-        if (!cache) {
-            HALT("CRITICAL: Failed to allocate button cache!\n");
-        }
     }
     MarkDirty();
 }
@@ -62,12 +59,9 @@ void Button::SetHeight(int32_t reqH) {
     int32_t minH = this->font->getLineHeight() + 4;
     this->h = (reqH < minH) ? minH : reqH;
 
-    if (cache) delete[] cache;
-    if (w > 0 && h > 0) {
+    cache = nullptr;
+    if (w > 0 && h > 0 && (size_t)this->w * (size_t)this->h / (size_t)this->w == (size_t)this->h) {
         cache = new uint32_t[this->w * this->h]();
-        if (!cache) {
-            HALT("CRITICAL: Failed to allocate button cache!\n");
-        }
     }
     MarkDirty();
 }

@@ -75,7 +75,7 @@ DriverManager::DriverManager() {
     SymbolTable::Register("_Z16pmm_alloc_blocksj", (uint32_t)(void*)pmm_alloc_blocks);
     SymbolTable::Register("_Z15pmm_free_blocksPvj", (uint32_t)(void*)pmm_free_blocks);
 
-    EXPORT_SYMBOL_ASM("_Z7kmalloci");
+    EXPORT_SYMBOL_ASM("_Z7kmallocj");
 
     // Export InterruptManager
     EXPORT_SYMBOL_ASM("_ZN16InterruptHandlerD2Ev");

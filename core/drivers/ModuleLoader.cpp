@@ -353,13 +353,18 @@ void* ModuleLoader::LoadDriver(File* file) {
                         relocation_failed = true;
                         break;
                     }
-                    // Address = Base of Section + Offset inside section
-                    sym_val = sections[sec_idx].addr + symtab[sym_idx].value;
-                    if (sym_val == 0) {
-                        KDBG1("Module Link Error: Internal symbol has zero address");
+                    if (!(sections[sec_idx].flags & 0x2)) {
+                        KDBG1("Module Link Error: Symbol section not SHF_ALLOC");
                         relocation_failed = true;
                         break;
                     }
+                    if (symtab[sym_idx].value >= sections[sec_idx].size) {
+                        KDBG1("Module Link Error: Symbol value outside section bounds");
+                        relocation_failed = true;
+                        break;
+                    }
+                    // Address = Base of Section + Offset inside section
+                    sym_val = sections[sec_idx].addr + symtab[sym_idx].value;
                 }
 
                 // Apply Logic
@@ -411,7 +416,9 @@ void* ModuleLoader::LoadDriver(File* file) {
 
             if (match) {
                 uint32_t sec_idx = symtab[i].shndx;
-                if (sec_idx != 0 && sec_idx < header.sh_entry_count) {
+                if (sec_idx != 0 && sec_idx < header.sh_entry_count &&
+                    (sections[sec_idx].flags & 0x2) &&
+                    symtab[i].value < sections[sec_idx].size) {
                     entry_point = (void*)(sections[sec_idx].addr + symtab[i].value);
                     break;
                 }

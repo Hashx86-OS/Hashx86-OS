@@ -214,11 +214,15 @@ int32_t SyscallHandlers::Handle_sys_restart_syscall() {
     KDBG1("sys_restart\n");
 
     // Use a triple fault to restart the system (Not the best way, but for now this is good :) )
+    struct {
+        uint16_t limit;
+        uint32_t base;
+    } __attribute__((packed)) nullIdtr = {0, 0};
     asm volatile(
         "cli;"
-        "lidt (%0);"  // Load an invalid IDT
-        "int3;"       // Trigger an interrupt
-        ::"r"(0));
+        "lidt %0;"    // Load null IDT (limit=0, base=0)
+        "int3;"       // Trigger an interrupt -> triple fault -> CPU reset
+        ::"m"(nullIdtr));
     return 0;
 }
 
