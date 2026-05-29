@@ -268,7 +268,9 @@ void StartButton::OnMouseUp(int32_t x, int32_t y, uint8_t button) {
         MarkDirty();
 
         // Tell the parent Taskbar to toggle the menu
-        Taskbar* tb = (Taskbar*)this->parent;
+        Taskbar* tb = (this->parent && this->parent->IsTaskbar())
+                          ? static_cast<Taskbar*>(this->parent)
+                          : nullptr;
         if (tb) tb->ToggleStartMenu();
     }
 }

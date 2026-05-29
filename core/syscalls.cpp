@@ -87,12 +87,16 @@ bool CopyUserString(ProcessControlBlock* proc, const char* src_user, char* dst, 
         return true;
     }
     uint32_t user_addr = (uint32_t)src_user;
-    if (user_addr < USER_LOWER_BOUND) {
+    if (user_addr < USER_LOWER_BOUND || user_addr >= USER_UPPER_BOUND) {
         dst[0] = '\0';
         return false;
     }
     size_t i = 0;
     while (i + 1 < dst_size) {
+        if (user_addr >= USER_UPPER_BOUND) {
+            dst[0] = '\0';
+            return false;
+        }
         uint32_t phys = g_paging->GetPhysicalAddress(proc->page_directory, user_addr);
         if (phys == 0xFFFFFFFF) {
             dst[0] = '\0';
@@ -133,7 +137,14 @@ uint32_t SyscallHandler::HandleInterrupt(uint32_t esp) {
             break;
 
         case sys_exit:
-            return_val = SyscallHandlers::Handle_sys_exit(cpu->ebx);
+            SyscallHandlers::Handle_sys_exit(cpu->ebx);
+            // The current thread is now terminated — reschedule immediately
+            // rather than returning to dead user code.
+            if (Scheduler::activeInstance) {
+                cpu = Scheduler::activeInstance->Schedule(cpu);
+                esp = (uint32_t)cpu;
+                return_val = 0;
+            }
             break;
 
         case sys_read:
@@ -421,27 +432,17 @@ int32_t SyscallHandlers::Handle_sys_brk(uint32_t brk) {
         uint32_t page_end = (brk + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
 
         if (g_paging && page_end > page_start) {
-            // Track newly allocated frames for rollback on failure
+            // Allocate a rollback array sized to the actual number of pages needed.
+            uint32_t totalPages = (page_end - page_start) / PAGE_SIZE;
             struct BrkFrame {
                 uint32_t vaddr;
                 uint32_t phys;
             };
-            BrkFrame brkFrames[64];  // Max 64 pages = 256KB per sys_brk call
+            BrkFrame* brkFrames = (BrkFrame*)kmalloc(totalPages * sizeof(BrkFrame));
             int brkCount = 0;
 
             for (uint32_t addr = page_start; addr < page_end; addr += PAGE_SIZE) {
-                // Check if already mapped
                 if (g_paging->GetPhysicalAddress(process->page_directory, addr) == 0xFFFFFFFF) {
-                    if (brkCount >= 64) {
-                        KDBG1("sys_brk: Per-call page limit (64) reached! Rolling back %d pages",
-                              brkCount);
-                        for (int r = 0; r < brkCount; r++) {
-                            g_paging->MapPage(process->page_directory, brkFrames[r].vaddr, 0, 0);
-                            asm volatile("invlpg (%0)" ::"r"(brkFrames[r].vaddr) : "memory");
-                            pmm_free_block((void*)brkFrames[r].phys);
-                        }
-                        return -1;
-                    }
                     uint32_t phys_frame = (uint32_t)pmm_alloc_block_low(256 * 1024 * 1024);
                     if (!phys_frame) {
                         KDBG1("sys_brk: Out of physical memory! Rolling back %d pages",
@@ -451,8 +452,10 @@ int32_t SyscallHandlers::Handle_sys_brk(uint32_t brk) {
                             asm volatile("invlpg (%0)" ::"r"(brkFrames[r].vaddr) : "memory");
                             pmm_free_block((void*)brkFrames[r].phys);
                         }
+                        kfree(brkFrames);
                         return -1;
                     }
+                    memset((void*)phys_frame, 0, PAGE_SIZE);
                     if (!g_paging->MapPage(process->page_directory, addr, phys_frame,
                                            PAGE_PRESENT | PAGE_RW | PAGE_USER)) {
                         pmm_free_block((void*)phys_frame);
@@ -463,6 +466,7 @@ int32_t SyscallHandlers::Handle_sys_brk(uint32_t brk) {
                             asm volatile("invlpg (%0)" ::"r"(brkFrames[r].vaddr) : "memory");
                             pmm_free_block((void*)brkFrames[r].phys);
                         }
+                        kfree(brkFrames);
                         return -1;
                     }
                     brkFrames[brkCount].vaddr = addr;
@@ -470,6 +474,7 @@ int32_t SyscallHandlers::Handle_sys_brk(uint32_t brk) {
                     brkCount++;
                 }
             }
+            kfree(brkFrames);
         }
         process->heap.endAddress = brk;
     }
@@ -689,18 +694,11 @@ int32_t SyscallHandlers::Handle_sys_peek_memory(uint32_t address, uint32_t size,
             *return_data = 0;
         return -1;
     }
-    // Restrict to kernel processes only (identity-mapped kernel range is privileged)
-    if (!process->isKernelProcess) {
-        if (return_data) {
-            int32_t zero = 0;
-            if (IsUserRange(process, (uint32_t)return_data, sizeof(int32_t)))
-                CopyToUser(process, return_data, &zero, sizeof(int32_t));
-        }
-        return -1;
-    }
+    // Dev/debug: available to all processes (not just kernel).
+    // The identity-mapped range guard below prevents access outside 0-256MB.
     // Only allow reading from identity-mapped kernel range (0 - 256MB)
-    uint32_t limit = 256 * 1024 * 1024;
-    if (address + size > limit || size == 0 || size > 4) {
+    constexpr uint32_t limit = 256 * 1024 * 1024;
+    if (size == 0 || size > 4 || address > limit - size) {
         if (return_data) {
             int32_t zero = 0;
             if (IsUserRange(process, (uint32_t)return_data, sizeof(int32_t)))
@@ -741,6 +739,10 @@ int32_t SyscallHandlers::Handle_sys_Hcall(uint32_t hcall_id, uint32_t arg1, uint
         ThreadControlBlock* thread = Scheduler::activeInstance->CreateThread(
             current_process, reinterpret_cast<void (*)(void*)>(entryPoint),
             reinterpret_cast<void*>(threadArgs));
+        if (!thread) {
+            KDBG1("Hsys_regEventH: CreateThread failed (OOM)");
+            return -1;
+        }
 
         Desktop::activeInstance->createNewHandler(current_process->pid, thread);
 

@@ -275,13 +275,14 @@ void pmm_free_block(void* p) {
         uint32_t caller1 = 0, caller2 = 0, caller3 = 0;
         uint32_t ebp;
         asm volatile("mov %%ebp, %0" : "=r"(ebp));
-        if (ebp > 0x1000 && ebp < 256 * 1024 * 1024) {
+        uint32_t mem_bound = g_pmm_info.memory_size;
+        if (ebp > 0x1000 && ebp < mem_bound) {
             caller1 = ((uint32_t*)ebp)[1];
             uint32_t next = ((uint32_t*)ebp)[0];
-            if (next > 0x1000 && next < 256 * 1024 * 1024) {
+            if (next > 0x1000 && next < mem_bound) {
                 caller2 = ((uint32_t*)next)[1];
                 uint32_t next2 = ((uint32_t*)next)[0];
-                if (next2 > 0x1000 && next2 < 256 * 1024 * 1024) {
+                if (next2 > 0x1000 && next2 < mem_bound) {
                     caller3 = ((uint32_t*)next2)[1];
                 }
             }

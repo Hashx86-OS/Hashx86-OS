@@ -84,6 +84,10 @@ bool CopyUserString(ProcessControlBlock* proc, const char* src_user, char* dst, 
 
     size_t i = 0;
     while (i + 1 < dst_size) {
+        if (user_addr >= USER_UPPER_BOUND) {
+            dst[0] = '\0';
+            return false;
+        }
         uint32_t phys = g_paging->GetPhysicalAddress(proc->page_directory, user_addr);
         if (phys == 0xFFFFFFFF) {
             dst[0] = '\0';
@@ -522,14 +526,20 @@ Widget* HguiHandler::FindWidgetByID(uint32_t searchID) {
 }
 
 void HguiHandler::RemoveAppByPID(uint32_t PID) {
-    Widget* found = nullptr;
-    HguiWidgets.ForEach([&](Widget* c) {
-        if (c->PID == PID) found = c;
-    });
-    if (found) {
-        HguiWidgets.Remove([&](Widget* c) { return c == found; });
-        delete found;
-    }
+    bool removed = false;
+    do {
+        Widget* found = nullptr;
+        HguiWidgets.ForEach([&](Widget* c) {
+            if (c->PID == PID) found = c;
+        });
+        if (found) {
+            HguiWidgets.Remove([&](Widget* c) { return c == found; });
+            delete found;
+            removed = true;
+        } else {
+            removed = false;
+        }
+    } while (removed);
 
     if (Desktop::activeInstance) {
         Desktop::activeInstance->deleteEventHandler(PID);

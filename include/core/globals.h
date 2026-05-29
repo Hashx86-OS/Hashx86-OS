@@ -24,6 +24,7 @@ extern uint64_t timerTicks;
 
 // Config
 extern bool g_sse_active;
+extern bool g_scheduler_preserves_fpu;
 extern bool g_stop_gui_rendering;
 extern int g_gui_owner_pid;
 

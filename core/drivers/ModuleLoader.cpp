@@ -497,10 +497,13 @@ bool ModuleLoader::Probe(File* file, DriverManifest* info) {
             // definition.
             if (sections[i].size >= sizeof(DriverManifest)) {
                 file->Seek(sections[i].offset);
-                file->Read((uint8_t*)info, sizeof(DriverManifest));
-
-                if (info->magic == DRIVER_INFO_MAGIC) {
+                int bytesRead = file->Read((uint8_t*)info, sizeof(DriverManifest));
+                if (bytesRead == sizeof(DriverManifest) && info->magic == DRIVER_INFO_MAGIC) {
                     found = true;
+                } else if (bytesRead != sizeof(DriverManifest)) {
+                    KDBG1("Probe: short read of .driver_info at section %d "
+                          "(offset=0x%x, size=%u, got=%d)",
+                          i, sections[i].offset, sizeof(DriverManifest), bytesRead);
                 }
             } else {
                 KDBG1("Warning: '.driver_info' section too small (Old driver version?)");

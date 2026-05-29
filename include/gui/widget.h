@@ -86,6 +86,7 @@ public:
     virtual bool IsLabel() const { return false; }
     virtual bool IsListView() const { return false; }
     virtual bool IsTerminalView() const { return false; }
+    virtual bool IsTaskbar() const { return false; }
 };
 
 /**

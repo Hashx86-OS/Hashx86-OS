@@ -35,7 +35,11 @@ void EnableSSE_ASM() {
 }
 
 void init_memory_optimizations() {
-    if (CheckSSE()) {
+    // FPU/SSE state is not preserved across context switches, so SSE
+    // memcpy cannot be used safely until the scheduler saves/restores
+    // XMM registers.
+    extern bool g_scheduler_preserves_fpu;
+    if (CheckSSE() && g_scheduler_preserves_fpu) {
         EnableSSE_ASM();
         g_sse_active = true;
         KDBG1("SSE Enabled");
@@ -208,7 +212,11 @@ KHEAP_BLOCK* allocate_new_block(int size) {
     new_block->metadata.is_free = false;
     new_block->metadata.size = size;
     new_block->data = kbrk(size);
-    if (!new_block->data) return NULL;
+    if (!new_block->data) {
+        // Undo the metadata allocation so the heap break is consistent.
+        g_total_used_size -= sizeof(KHEAP_BLOCK);
+        return NULL;
+    }
 
     new_block->next = NULL;
     temp->next = new_block;

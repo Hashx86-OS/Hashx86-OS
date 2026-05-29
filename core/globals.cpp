@@ -11,6 +11,7 @@
 char Buffer[32];
 uint64_t timerTicks = 0;
 bool g_sse_active = false;
+bool g_scheduler_preserves_fpu = false;
 bool g_stop_gui_rendering = false;
 int g_gui_owner_pid = -1;
 

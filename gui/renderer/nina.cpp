@@ -181,6 +181,8 @@ void NINA::DrawRectangle(uint32_t* buffer, int32_t bufferWidth, int32_t bufferHe
 void NINA::FillRoundedRectangle(uint32_t* buffer, int32_t bufferWidth, int32_t bufferHeight,
                                 int32_t x, int32_t y, uint32_t w, uint32_t h, uint32_t radius,
                                 uint32_t colorIndex) {
+    if (radius > w / 2) radius = w / 2;
+    if (radius > h / 2) radius = h / 2;
     FillRectangle(buffer, bufferWidth, bufferHeight, x + radius, y, w - 2 * radius, h, colorIndex);
     FillRectangle(buffer, bufferWidth, bufferHeight, x, y + radius, w, h - 2 * radius, colorIndex);
 
@@ -208,6 +210,8 @@ void NINA::FillRoundedRectangle(uint32_t* buffer, int32_t bufferWidth, int32_t b
 void NINA::DrawRoundedRectangle(uint32_t* buffer, int32_t bufferWidth, int32_t bufferHeight,
                                 int32_t x, int32_t y, uint32_t w, uint32_t h, uint32_t radius,
                                 uint32_t colorIndex) {
+    if (radius > w / 2) radius = w / 2;
+    if (radius > h / 2) radius = h / 2;
     for (int32_t i = x + radius; i < x + w - radius; ++i) {
         if (i >= 0 && i < bufferWidth) {
             if (y >= 0 && y < bufferHeight) buffer[y * bufferWidth + i] = colorIndex;
@@ -442,7 +446,7 @@ void NINA::DrawString(uint32_t* buffer, int32_t bufferWidth, int32_t bufferHeigh
 
         // Kerning lookup
         int kernAdjust = 0;
-        if (next >= 32) {
+        if (next >= 32 && font->font_kernings) {
             for (int k = 0; k < font->font_kerning_count; k++) {
                 int16_t* kdata = &font->font_kernings[k * 3];
                 if (kdata[0] == (uint8_t)c && kdata[1] == (uint8_t)next) {

@@ -219,6 +219,14 @@ void AdvancedTechnologyAttachment::Write28(uint32_t sectorNum, uint8_t* data, ui
         }
 
         // Write merged sector back
+        // Re-select device and restore LBA registers; the preceding READ may
+        // have left the controller in a different state.
+        devicePort.Write((master ? 0xE0 : 0xF0) | ((sectorNum & 0x0F000000) >> 24));
+        errorPort.Write(0);
+        sectorCountPort.Write(1);
+        lbaLowPort.Write(sectorNum & 0x000000FF);
+        lbaMidPort.Write((sectorNum & 0x0000FF00) >> 8);
+        lbaHiPort.Write((sectorNum & 0x00FF0000) >> 16);
         commandPort.Write(0x30);  // WRITE SECTOR
         if (!ata_wait_drq(commandPort, "WRITE")) return;
         outsw(dataPort.getPortNumber(), sectorBuffer, 256);

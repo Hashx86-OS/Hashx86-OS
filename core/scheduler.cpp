@@ -14,6 +14,7 @@ extern TaskStateSegment g_tss;
 
 // Virtual address for user-mode stacks (just below the 3GB hardware boundary)
 #define USER_STACK_VIRT_TOP 0xC0000000
+#define USER_STACK_VIRT_BOTTOM 0x10000000
 
 // Virtual address for the user-mode thread exit trampoline (1GB mark, in user space)
 #define USER_EXIT_TRAMPOLINE_VIRT 0x40000000
@@ -84,6 +85,9 @@ Scheduler::Scheduler(Paging* pager) {
     code[8] = 0xFE;
 
     idleThread = CreateThread(nullptr, IdleTask, nullptr);
+    if (!idleThread) {
+        HALT("CRITICAL: Failed to create idle thread!\n");
+    }
     KDBG1("Scheduler initialized. Trampoline=0x%x", _trampolinePhys);
 }
 
@@ -147,6 +151,7 @@ ThreadControlBlock* Scheduler::CreateThread(ProcessControlBlock* parent, void (*
                                             void* arg) {
     InterruptGuard guard;
     ThreadControlBlock* tcb = new ThreadControlBlock();
+    if (!tcb) return nullptr;
 
     tcb->tid = _tidCounter++;
     tcb->parent = parent;
@@ -207,6 +212,11 @@ ThreadControlBlock* Scheduler::CreateThread(ProcessControlBlock* parent, void (*
             return nullptr;
         }
         uint32_t user_stack_base = USER_STACK_VIRT_TOP - (uint32_t)stack_offset64 - user_stack_size;
+        if (user_stack_base < USER_STACK_VIRT_BOTTOM) {
+            kfree(tcb->stack);
+            delete tcb;
+            return nullptr;
+        }
         uint32_t top_page_phys = 0;
 
         for (uint32_t p = 0; p < USER_STACK_PAGES; p++) {
@@ -233,6 +243,7 @@ ThreadControlBlock* Scheduler::CreateThread(ProcessControlBlock* parent, void (*
                 delete tcb;
                 return nullptr;
             }
+            memset((void*)phys, 0, PAGE_SIZE);
             uint32_t vaddr = user_stack_base + p * PAGE_SIZE;
             if (!_pager->MapPage(parent->page_directory, vaddr, phys,
                                  PAGE_PRESENT | PAGE_RW | PAGE_USER)) {

@@ -12,6 +12,7 @@
 KernelSymbol SymbolTable::symbols[1024];
 int SymbolTable::count = 0;
 
+// name must outlive the table — callers MUST pass string literals only.
 void SymbolTable::Register(const char* name, uint32_t addr) {
     if (count >= 1024) {
         KDBG1("Error: Kernel Symbol Table Full!\n");
