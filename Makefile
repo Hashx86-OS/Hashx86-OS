@@ -4,101 +4,99 @@ KDBG_LEVEL ?= 1
 GPP_PARAMS = -m32 -g -ffreestanding -Iinclude -fno-use-cxa-atexit -nostdlib -fno-builtin -fno-rtti -fno-exceptions -fno-common -fno-omit-frame-pointer -DKDBG_ENABLE=$(KDBG_ENABLE) -DKDBG_LEVEL=$(KDBG_LEVEL)
 ASM_PARAMS = --32 -g
 ASM_NASM_PARAMS = -f elf32
-objects = asm/common_handler.o \
-          asm/load_gdt.o \
-          asm/load_tss.o \
-          asm/loader.o \
-          audio/wav.o \
-          core/driver.o \
-          core/drivers/ata.o \
-          core/drivers/AudioMixer.o \
-          core/drivers/GraphicsDriver.o \
-          core/drivers/keyboard.o \
-          core/drivers/ModuleLoader.o \
-          core/drivers/mouse.o \
-          core/drivers/SymbolTable.o \
-          core/drivers/vbe.o \
-          core/elf.o \
-          core/filesystem/FAT32.o \
-          core/filesystem/File.o \
-          core/filesystem/msdospart.o \
-		  core/CrashReporter.o \
-		  core/constructors.o \
-          core/gdt.o \
-          core/globals.o \
-          core/interrupts.o \
-          core/KernelSymbolResolver.o \
-          core/memory.o \
-          core/paging.o \
-          core/pci.o \
-          core/pmm.o \
-          core/ports.o \
-          core/scheduler.o \
-          core/syscalls.o \
-          debug.o \
-          gui/bmp.o \
-          gui/button.o \
-          gui/desktop.o \
-          gui/elements/window_action_button.o \
-          gui/elements/window_action_button_round.o \
-          gui/fonts/font.o \
-          gui/Hgui.o \
-		  gui/infodialog.o \
-          gui/label.o \
-          gui/listview.o \
-          gui/progressbar.o \
-          gui/renderer/nina.o \
-		  gui/terminalview.o \
-          gui/taskbar.o \
-          gui/widget.o \
-          gui/window.o \
-          kernel.o \
-          stdlib.o \
-          stdlib/math.o \
-          utils/string.o
+BUILD_DIR = build
 
-LD_PARAMS = -melf_i386 -Map kernel.map
+# Source-relative .o paths under build/obj/
+objects = \
+	$(BUILD_DIR)/obj/asm/common_handler.o \
+	$(BUILD_DIR)/obj/asm/load_gdt.o \
+	$(BUILD_DIR)/obj/asm/load_tss.o \
+	$(BUILD_DIR)/obj/asm/loader.o \
+	$(BUILD_DIR)/obj/audio/wav.o \
+	$(BUILD_DIR)/obj/core/driver.o \
+	$(BUILD_DIR)/obj/core/drivers/ata.o \
+	$(BUILD_DIR)/obj/core/drivers/AudioMixer.o \
+	$(BUILD_DIR)/obj/core/drivers/GraphicsDriver.o \
+	$(BUILD_DIR)/obj/core/drivers/keyboard.o \
+	$(BUILD_DIR)/obj/core/drivers/ModuleLoader.o \
+	$(BUILD_DIR)/obj/core/drivers/mouse.o \
+	$(BUILD_DIR)/obj/core/drivers/SymbolTable.o \
+	$(BUILD_DIR)/obj/core/drivers/vbe.o \
+	$(BUILD_DIR)/obj/core/elf.o \
+	$(BUILD_DIR)/obj/core/filesystem/FAT32.o \
+	$(BUILD_DIR)/obj/core/filesystem/File.o \
+	$(BUILD_DIR)/obj/core/filesystem/msdospart.o \
+	$(BUILD_DIR)/obj/core/CrashReporter.o \
+	$(BUILD_DIR)/obj/core/constructors.o \
+	$(BUILD_DIR)/obj/core/gdt.o \
+	$(BUILD_DIR)/obj/core/globals.o \
+	$(BUILD_DIR)/obj/core/interrupts.o \
+	$(BUILD_DIR)/obj/core/KernelSymbolResolver.o \
+	$(BUILD_DIR)/obj/core/memory.o \
+	$(BUILD_DIR)/obj/core/paging.o \
+	$(BUILD_DIR)/obj/core/pci.o \
+	$(BUILD_DIR)/obj/core/pmm.o \
+	$(BUILD_DIR)/obj/core/ports.o \
+	$(BUILD_DIR)/obj/core/scheduler.o \
+	$(BUILD_DIR)/obj/core/syscalls.o \
+	$(BUILD_DIR)/obj/debug.o \
+	$(BUILD_DIR)/obj/gui/bmp.o \
+	$(BUILD_DIR)/obj/gui/button.o \
+	$(BUILD_DIR)/obj/gui/desktop.o \
+	$(BUILD_DIR)/obj/gui/elements/window_action_button.o \
+	$(BUILD_DIR)/obj/gui/elements/window_action_button_round.o \
+	$(BUILD_DIR)/obj/gui/fonts/font.o \
+	$(BUILD_DIR)/obj/gui/Hgui.o \
+	$(BUILD_DIR)/obj/gui/infodialog.o \
+	$(BUILD_DIR)/obj/gui/label.o \
+	$(BUILD_DIR)/obj/gui/listview.o \
+	$(BUILD_DIR)/obj/gui/progressbar.o \
+	$(BUILD_DIR)/obj/gui/renderer/nina.o \
+	$(BUILD_DIR)/obj/gui/terminalview.o \
+	$(BUILD_DIR)/obj/gui/taskbar.o \
+	$(BUILD_DIR)/obj/gui/widget.o \
+	$(BUILD_DIR)/obj/gui/window.o \
+	$(BUILD_DIR)/obj/kernel.o \
+	$(BUILD_DIR)/obj/stdlib.o \
+	$(BUILD_DIR)/obj/stdlib/math.o \
+	$(BUILD_DIR)/obj/utils/string.o
+
+LD_PARAMS = -melf_i386
+KERNEL_BIN = $(BUILD_DIR)/kernel.bin
+KERNEL_MAP = $(BUILD_DIR)/kernel.map
+KERNEL_ISO = $(BUILD_DIR)/kernel.iso
 QEMU_DISK = HDD.vdi
 RUNQ_DELAY ?= 1
 
-# Compiling C++ files inside the main directory
-%.o: %.cpp
+# Generic pattern rules: any file under build/obj/ maps to source tree
+$(BUILD_DIR)/obj/%.o: %.cpp
+	mkdir -p $(dir $@)
 	g++ $(GPP_PARAMS) -o $@ -c $<
 
-# Compiling C++ files inside the core directory
-core/%.o: core/%.cpp
-	g++ $(GPP_PARAMS) -o $@ -c $<
-
-core/%.o: core/%.c
+$(BUILD_DIR)/obj/%.o: %.c
+	mkdir -p $(dir $@)
 	gcc $(GPP_PARAMS) -x c -o $@ -c $<
 
-# Compiling C++ files inside the gui directory
-gui/%.o: gui/%.cpp
-	g++ $(GPP_PARAMS) -o $@ -c $<
-
-# Compiling C++ files inside the stdlib directory
-stdlib/%.o: stdlib/%.cpp
-	g++ $(GPP_PARAMS) -o $@ -c $<
-
-# Compiling assembly files
-asm/%.o: asm/%.s
+$(BUILD_DIR)/obj/%.o: %.s
+	mkdir -p $(dir $@)
 	as $(ASM_PARAMS) -o $@ $<
 
-# Compiling NASM assembly files
-asm/%.o: asm/%.asm
+$(BUILD_DIR)/obj/%.o: %.asm
+	mkdir -p $(dir $@)
 	nasm $(ASM_NASM_PARAMS) -o $@ $<
 
 # Linking the kernel binary
-kernel.bin: linker.ld $(objects)
-	ld $(LD_PARAMS) -T $< -o $@ $(objects)
+$(KERNEL_BIN): linker.ld $(objects)
+	mkdir -p $(BUILD_DIR)
+	ld $(LD_PARAMS) -Map $(KERNEL_MAP) -T $< -o $@ $(objects)
 
-# Install the kernel binary
-install: kernel.bin
-	sudo cp kernel.bin /boot/kernel.bin
+# Install the kernel binary (updated path)
+install: $(KERNEL_BIN)
+	sudo cp $(KERNEL_BIN) /boot/kernel.bin
 
-# Clean rule: removes object files and the final binary
+# Clean rule
 clean:
-	rm -f $(objects) kernel.bin
+	rm -rf $(BUILD_DIR)
 
 build:
 	make clean
@@ -114,8 +112,8 @@ build:
 	make runq
 
 runq:
-	qemu-system-i386 -cdrom kernel.iso -boot d -vga std -serial stdio -m 1G \
-    -drive file=$(QEMU_DISK),format=vdi
+	qemu-system-i386 -cdrom $(KERNEL_ISO) -boot d -vga std -serial stdio -m 1G \
+	-drive file=$(QEMU_DISK),format=vdi
 
 run:
 	make clean
@@ -144,7 +142,7 @@ hdd:
 	-sudo mkdir -p /mnt/vdi_p1/SYS32
 	-sudo mkdir -p /mnt/vdi_p1/ProgFile/Game3D
 
-	-sudo cp kernel.map /mnt/vdi_p1/kernel.map
+	-sudo cp $(KERNEL_MAP) /mnt/vdi_p1/kernel.map
 
 	-sudo cp bin/audio/boot.wav /mnt/vdi_p1/audio/boot.wav
 	-sudo cp bin/bitmaps/boot.bmp /mnt/vdi_p1/bitmaps/boot.bmp
@@ -161,43 +159,43 @@ hdd:
 #	-sudo cp bin/sound.wav /mnt/vdi_p1/sound.wav
 #	-sudo rm -f /mnt/vdi_p1/drivers/ac97.sys
 
-	-sudo cp drivers/bga.sys /mnt/vdi_p1/drivers/bga.sys
-	-sudo cp drivers/ac97.sys /mnt/vdi_p1/drivers/ac97.sys
+	-sudo cp $(BUILD_DIR)/drivers/bga.sys /mnt/vdi_p1/drivers/bga.sys
+	-sudo cp $(BUILD_DIR)/drivers/ac97.sys /mnt/vdi_p1/drivers/ac97.sys
 
 	-sudo cp bin/fonts/segoeui.bin /mnt/vdi_p1/fonts/segoeui.bin
 
-	-sudo cp user_prog/MeMView/prog.bin /mnt/vdi_p1/SYS32/MeMView.bin
-	-sudo cp user_prog/test/prog.bin /mnt/vdi_p1/SYS32/test.bin
-	-sudo cp user_prog/Explorer/prog.bin /mnt/vdi_p1/SYS32/Explorer.bin
-	-sudo cp user_prog/Terminal/prog.bin /mnt/vdi_p1/SYS32/TERMINAL.BIN
-	-sudo cp user_prog/Game3D/prog.bin /mnt/vdi_p1/ProgFile/Game3D/Game3D.bin
+	-sudo cp $(BUILD_DIR)/user/MeMView.bin /mnt/vdi_p1/SYS32/MeMView.bin
+	-sudo cp $(BUILD_DIR)/user/test.bin /mnt/vdi_p1/SYS32/test.bin
+	-sudo cp $(BUILD_DIR)/user/Explorer.bin /mnt/vdi_p1/SYS32/Explorer.bin
+	-sudo cp $(BUILD_DIR)/user/Terminal.bin /mnt/vdi_p1/SYS32/TERMINAL.BIN
+	-sudo cp $(BUILD_DIR)/user/Game3D.bin /mnt/vdi_p1/ProgFile/Game3D/Game3D.bin
 
 # 	5. Cleanup
 	sudo umount /mnt/vdi_p1
 	sudo qemu-nbd --disconnect /dev/nbd0
 
-runvb: kernel.iso
+runvb: $(KERNEL_ISO)
 	(killall VirtualBox && sleep 1) || true
 	VirtualBox --startvm 'My Operating System' &
 
-iso: kernel.bin
-	mkdir -p iso/boot/grub
-	mkdir -p iso/boot/fonts
-	cp kernel.bin iso/boot/kernel.bin
-#	cp bin/fonts/segoeui.bin iso/boot/fonts/segoeui.bin
-	echo 'set timeout=0'                      				> iso/boot/grub/grub.cfg
-	echo 'set default=0'                     				>> iso/boot/grub/grub.cfg
-#	echo 'set gfxmode=1152x864x32'         					>> iso/boot/grub/grub.cfg
-#	echo 'set gfxpayload=keep'         						>> iso/boot/grub/grub.cfg
-	echo 'terminal_output gfxterm'         					>> iso/boot/grub/grub.cfg
-	echo ''               >> iso/boot/grub/grub.cfg
-	echo 'menuentry "My Operating System" {' 				>> iso/boot/grub/grub.cfg
-	echo '  multiboot /boot/kernel.bin'      				>> iso/boot/grub/grub.cfg
-#	echo '  module /boot/fonts/segoeui.bin'      			>> iso/boot/grub/grub.cfg
-	echo '  boot'      										>> iso/boot/grub/grub.cfg
-	echo '}'                                 				>> iso/boot/grub/grub.cfg
-	grub-mkrescue --output=kernel.iso --modules="video gfxterm video_bochs video_cirrus" iso
-	rm -rf iso
+iso: $(KERNEL_BIN)
+	mkdir -p $(BUILD_DIR)/iso/boot/grub
+	mkdir -p $(BUILD_DIR)/iso/boot/fonts
+	cp $(KERNEL_BIN) $(BUILD_DIR)/iso/boot/kernel.bin
+#	cp bin/fonts/segoeui.bin $(BUILD_DIR)/iso/boot/fonts/segoeui.bin
+	echo 'set timeout=0' > $(BUILD_DIR)/iso/boot/grub/grub.cfg
+	echo 'set default=0' >> $(BUILD_DIR)/iso/boot/grub/grub.cfg
+#	echo 'set gfxmode=1152x864x32' >> $(BUILD_DIR)/iso/boot/grub/grub.cfg
+#	echo 'set gfxpayload=keep' >> $(BUILD_DIR)/iso/boot/grub/grub.cfg
+	echo 'terminal_output gfxterm' >> $(BUILD_DIR)/iso/boot/grub/grub.cfg
+	echo '' >> $(BUILD_DIR)/iso/boot/grub/grub.cfg
+	echo 'menuentry "My Operating System" {' >> $(BUILD_DIR)/iso/boot/grub/grub.cfg
+	echo '  multiboot /boot/kernel.bin' >> $(BUILD_DIR)/iso/boot/grub/grub.cfg
+#	echo '  module /boot/fonts/segoeui.bin' >> $(BUILD_DIR)/iso/boot/grub/grub.cfg
+	echo '  boot' >> $(BUILD_DIR)/iso/boot/grub/grub.cfg
+	echo '}' >> $(BUILD_DIR)/iso/boot/grub/grub.cfg
+	grub-mkrescue --output=$(KERNEL_ISO) --modules="video gfxterm video_bochs video_cirrus" $(BUILD_DIR)/iso
+	rm -rf $(BUILD_DIR)/iso
 
 prog:
 	make hdd
@@ -205,8 +203,7 @@ prog:
 	@sleep $(RUNQ_DELAY)
 	make runq
 
-
-.PHONY: clean build hdd check runq run prog runvb iso check-style check-bugs check-headers check-eof fix-style
+.PHONY: clean build hdd check runq run prog runvb iso check-style check-bugs check-headers check-eof fix-style install
 
 # -----------------------------------
 # CODE QUALITY TOOLS
