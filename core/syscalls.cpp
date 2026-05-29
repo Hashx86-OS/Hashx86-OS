@@ -29,7 +29,7 @@ bool IsUserRange(ProcessControlBlock* proc, uint32_t addr, size_t size) {
     uint32_t start_page = addr & ~(PAGE_SIZE - 1);
     uint32_t end_page = end & ~(PAGE_SIZE - 1);
     for (uint32_t page = start_page; page <= end_page; page += PAGE_SIZE) {
-        if (g_paging->GetPhysicalAddress(proc->page_directory, page) == 0) {
+        if (g_paging->GetPhysicalAddress(proc->page_directory, page) == 0xFFFFFFFF) {
             return false;
         }
     }
@@ -45,7 +45,7 @@ bool CopyToUser(ProcessControlBlock* proc, void* dst_user, const void* src, size
     size_t remaining = size;
     while (remaining > 0) {
         uint32_t phys = g_paging->GetPhysicalAddress(proc->page_directory, user_addr);
-        if (!phys) return false;
+        if (phys == 0xFFFFFFFF) return false;
         uint32_t offset = user_addr & (PAGE_SIZE - 1);
         uint32_t chunk = PAGE_SIZE - offset;
         if (chunk > remaining) chunk = (uint32_t)remaining;
@@ -66,7 +66,7 @@ bool CopyFromUser(ProcessControlBlock* proc, void* dst, const void* src_user, si
     size_t remaining = size;
     while (remaining > 0) {
         uint32_t phys = g_paging->GetPhysicalAddress(proc->page_directory, user_addr);
-        if (!phys) return false;
+        if (phys == 0xFFFFFFFF) return false;
         uint32_t offset = user_addr & (PAGE_SIZE - 1);
         uint32_t chunk = PAGE_SIZE - offset;
         if (chunk > remaining) chunk = (uint32_t)remaining;
@@ -94,7 +94,7 @@ bool CopyUserString(ProcessControlBlock* proc, const char* src_user, char* dst, 
     size_t i = 0;
     while (i + 1 < dst_size) {
         uint32_t phys = g_paging->GetPhysicalAddress(proc->page_directory, user_addr);
-        if (!phys) {
+        if (phys == 0xFFFFFFFF) {
             dst[0] = '\0';
             return false;
         }
@@ -439,7 +439,7 @@ int32_t SyscallHandlers::Handle_sys_brk(uint32_t brk) {
 
             for (uint32_t addr = page_start; addr < page_end; addr += PAGE_SIZE) {
                 // Check if already mapped
-                if (g_paging->GetPhysicalAddress(process->page_directory, addr) == 0) {
+                if (g_paging->GetPhysicalAddress(process->page_directory, addr) == 0xFFFFFFFF) {
                     if (brkCount >= 64) {
                         KDBG1("sys_brk: Per-call page limit (64) reached! Rolling back %d pages",
                               brkCount);
@@ -697,9 +697,15 @@ int32_t SyscallHandlers::Handle_sys_peek_memory(uint32_t address, uint32_t size,
             *return_data = 0;
         return -1;
     }
-    // [DEV-ONLY] Peek memory allows reading the identity-mapped kernel range (0-256MB).
-    // This is exposed to all processes for debugging/development purposes and MUST be
-    // restricted to kernel processes or removed entirely for the final OS release.
+    // Restrict to kernel processes only (identity-mapped kernel range is privileged)
+    if (!process->isKernelProcess) {
+        if (return_data) {
+            int32_t zero = 0;
+            if (IsUserRange(process, (uint32_t)return_data, sizeof(int32_t)))
+                CopyToUser(process, return_data, &zero, sizeof(int32_t));
+        }
+        return -1;
+    }
     // Only allow reading from identity-mapped kernel range (0 - 256MB)
     uint32_t limit = 256 * 1024 * 1024;
     if (address + size > limit || size == 0 || size > 4) {

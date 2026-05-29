@@ -15,6 +15,10 @@ static uint32_t symbolCount = 0;
 
 void KernelSymbolTable::Load(FAT32* fs, const char* path) {
     if (!fs) return;
+    // Free previous data before loading new
+    if (fileBuffer) { kfree(fileBuffer); fileBuffer = nullptr; }
+    if (symbolIndex) { kfree(symbolIndex); symbolIndex = nullptr; }
+    symbolCount = 0;
     KDBG1("Loading map file: %s", path);
     File* file = fs->Open((char*)path);
     if (!file) {
@@ -150,6 +154,10 @@ void KernelSymbolTable::PrintStackTrace(unsigned int maxFrames) {
 
     KDBG1("[ Stack Trace ]");
 
+    // Cycle detection: track the lowest valid EBP we've seen; if EBP ever
+    // goes up (closer to 0), we've entered a cycle.
+    uint32_t prev_ebp = 0xFFFFFFFF;
+
     for (unsigned int i = 0; i < maxFrames; ++i) {
         // If the stack pointer is null or invalid, stop
         if (!stack) break;
@@ -158,6 +166,10 @@ void KernelSymbolTable::PrintStackTrace(unsigned int maxFrames) {
         // Following user-mode EBP pointers after switching to KernelPageDirectory
         // would cause a page fault and infinite loop since activeInstance=0.
         if ((uint32_t)stack < 0x1000 || (uint32_t)stack >= 0x10000000) break;
+
+        // Cycle detection: EBP should strictly decrease as we walk up the stack
+        if ((uint32_t)stack >= prev_ebp) break;
+        prev_ebp = (uint32_t)stack;
 
         /*
         [K.SYMBOL] [ Stack Trace ]

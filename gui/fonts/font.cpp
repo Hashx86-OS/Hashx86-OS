@@ -288,11 +288,17 @@ void FontManager::LoadFile(uint32_t mod_start, uint32_t mod_end) {
         // Overflow checks
         if (atlas_elems > (uint64_t)(0xFFFFFFFFu / sizeof(uint32_t))) {
             KDBG1("Warning: Skipping font entry %d — atlas overflow", i);
+            if (has_bytes(entry_total)) {
+                ptr += entry_total;
+            }
             continue;
         }
         if (glyph_elems > (uint64_t)(0xFFFFFFFFu / sizeof(int16_t)) ||
             kerning_elems > (uint64_t)(0xFFFFFFFFu / sizeof(int16_t))) {
             KDBG1("Warning: Skipping font entry %d — glyph/kerning overflow", i);
+            if (has_bytes(entry_total)) {
+                ptr += entry_total;
+            }
             continue;
         }
 

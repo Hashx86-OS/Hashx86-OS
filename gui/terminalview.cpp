@@ -439,8 +439,11 @@ TerminalView::KeyEvent TerminalView::consumeKeyEvent() {
     return none;
 }
 
+static const size_t MAX_KEYEVENT_QUEUE = 256;
+
 void TerminalView::OnKeyDown(const char* key) {
     if (key && key[0] != '\0') {
+        if (keyEventQueue.GetSize() >= MAX_KEYEVENT_QUEUE) return;
         KeyEvent ev;
         ev.type = KEY_EVENT_NORMAL;
         ev.key = key[0];
@@ -450,6 +453,7 @@ void TerminalView::OnKeyDown(const char* key) {
 }
 
 void TerminalView::OnSpecialKeyDown(uint8_t key) {
+    if (keyEventQueue.GetSize() >= MAX_KEYEVENT_QUEUE) return;
     KeyEvent ev;
     ev.type = KEY_EVENT_SPECIAL;
     ev.key = 0;

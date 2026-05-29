@@ -15,6 +15,11 @@ constexpr uint32_t USER_LOWER_BOUND = 0x10000000;
 constexpr uint32_t USER_UPPER_BOUND = 0xC0000000;
 constexpr size_t MAX_USER_TEXT = 256;
 
+static ProcessControlBlock* GetCurrentProcSafe() {
+    if (!Scheduler::activeInstance) return nullptr;
+    return Scheduler::activeInstance->GetCurrentProcess();
+}
+
 bool IsUserRange(ProcessControlBlock* proc, uint32_t addr, size_t size) {
     if (!proc || !g_paging || size == 0) return false;
     if (addr < USER_LOWER_BOUND) return false;
@@ -24,7 +29,7 @@ bool IsUserRange(ProcessControlBlock* proc, uint32_t addr, size_t size) {
     uint32_t start_page = addr & ~(PAGE_SIZE - 1);
     uint32_t end_page = end & ~(PAGE_SIZE - 1);
     for (uint32_t page = start_page; page <= end_page; page += PAGE_SIZE) {
-        if (g_paging->GetPhysicalAddress(proc->page_directory, page) == 0) {
+        if (g_paging->GetPhysicalAddress(proc->page_directory, page) == 0xFFFFFFFF) {
             return false;
         }
     }
@@ -40,7 +45,7 @@ bool CopyFromUser(ProcessControlBlock* proc, void* dst, const void* src_user, si
     size_t remaining = size;
     while (remaining > 0) {
         uint32_t phys = g_paging->GetPhysicalAddress(proc->page_directory, user_addr);
-        if (!phys) return false;
+        if (phys == 0xFFFFFFFF) return false;
         uint32_t offset = user_addr & (PAGE_SIZE - 1);
         uint32_t chunk = PAGE_SIZE - offset;
         if (chunk > remaining) chunk = (uint32_t)remaining;
@@ -80,7 +85,7 @@ bool CopyUserString(ProcessControlBlock* proc, const char* src_user, char* dst, 
     size_t i = 0;
     while (i + 1 < dst_size) {
         uint32_t phys = g_paging->GetPhysicalAddress(proc->page_directory, user_addr);
-        if (!phys) {
+        if (phys == 0xFFFFFFFF) {
             dst[0] = '\0';
             return false;
         }
@@ -213,7 +218,8 @@ int32_t HguiHandler::HandleWidget(CPUState* cpu, const WidgetData* _data) {
 
 int32_t HguiHandler::HandleWindow(CPUState* cpu, const WidgetData* _data) {
     if (!cpu || !_data) return -1;
-    ProcessControlBlock* proc = Scheduler::activeInstance->GetCurrentProcess();
+    ProcessControlBlock* proc = GetCurrentProcSafe();
+    if (!proc) return -1;
     char titleBuf[MAX_USER_TEXT];
 
     if ((uint32_t)cpu->ebx == CREATE) {
@@ -250,7 +256,8 @@ int32_t HguiHandler::HandleWindow(CPUState* cpu, const WidgetData* _data) {
 
 int32_t HguiHandler::HandleButton(CPUState* cpu, const WidgetData* _data) {
     if (!cpu || !_data) return -1;
-    ProcessControlBlock* proc = Scheduler::activeInstance->GetCurrentProcess();
+    ProcessControlBlock* proc = GetCurrentProcSafe();
+    if (!proc) return -1;
     char labelBuf[MAX_USER_TEXT];
 
     if ((uint32_t)cpu->ebx == CREATE) {
@@ -282,7 +289,8 @@ int32_t HguiHandler::HandleButton(CPUState* cpu, const WidgetData* _data) {
 
 int32_t HguiHandler::HandleLabel(CPUState* cpu, const WidgetData* _data) {
     if (!cpu || !_data) return -1;
-    ProcessControlBlock* proc = Scheduler::activeInstance->GetCurrentProcess();
+    ProcessControlBlock* proc = GetCurrentProcSafe();
+    if (!proc) return -1;
     char textBuf[MAX_USER_TEXT];
 
     if ((uint32_t)cpu->ebx == CREATE) {
@@ -332,7 +340,8 @@ int32_t HguiHandler::HandleLabel(CPUState* cpu, const WidgetData* _data) {
 
 int32_t HguiHandler::HandleListView(CPUState* cpu, const WidgetData* _data) {
     if (!cpu || !_data) return -1;
-    ProcessControlBlock* proc = Scheduler::activeInstance->GetCurrentProcess();
+    ProcessControlBlock* proc = GetCurrentProcSafe();
+    if (!proc) return -1;
     char headerBuf[MAX_USER_TEXT];
 
     if ((uint32_t)cpu->ebx == CREATE) {
@@ -409,7 +418,8 @@ int32_t HguiHandler::HandleListView(CPUState* cpu, const WidgetData* _data) {
 
 int32_t HguiHandler::HandleTerminalView(CPUState* cpu, const WidgetData* _data) {
     if (!cpu || !_data) return -1;
-    ProcessControlBlock* proc = Scheduler::activeInstance->GetCurrentProcess();
+    ProcessControlBlock* proc = GetCurrentProcSafe();
+    if (!proc) return -1;
     char textBuf[MAX_USER_TEXT];
 
     if ((uint32_t)cpu->ebx == CREATE) {
@@ -512,7 +522,14 @@ Widget* HguiHandler::FindWidgetByID(uint32_t searchID) {
 }
 
 void HguiHandler::RemoveAppByPID(uint32_t PID) {
-    HguiWidgets.Remove([&](Widget* c) { return c->PID == PID; });
+    Widget* found = nullptr;
+    HguiWidgets.ForEach([&](Widget* c) {
+        if (c->PID == PID) found = c;
+    });
+    if (found) {
+        HguiWidgets.Remove([&](Widget* c) { return c == found; });
+        delete found;
+    }
 
     if (Desktop::activeInstance) {
         Desktop::activeInstance->deleteEventHandler(PID);

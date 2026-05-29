@@ -185,7 +185,7 @@ iso: kernel.bin
 	mkdir -p iso/boot/fonts
 	cp kernel.bin iso/boot/kernel.bin
 #	cp bin/fonts/segoeui.bin iso/boot/fonts/segoeui.bin
-	echo 'set timeout=0'                      				>> iso/boot/grub/grub.cfg
+	echo 'set timeout=0'                      				> iso/boot/grub/grub.cfg
 	echo 'set default=0'                     				>> iso/boot/grub/grub.cfg
 #	echo 'set gfxmode=1152x864x32'         					>> iso/boot/grub/grub.cfg
 #	echo 'set gfxpayload=keep'         						>> iso/boot/grub/grub.cfg

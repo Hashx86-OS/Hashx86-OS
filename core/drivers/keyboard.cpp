@@ -67,21 +67,42 @@ KeyboardDriver::~KeyboardDriver() {}
 /**
  * Activates the keyboard driver and initializes the hardware
  */
+static bool WaitForKBACK(Port8Bit& dataPort, Port8Bit& commandPort, int retries) {
+    for (int i = 0; i < retries; i++) {
+        for (int wait = 0; wait < 10000; wait++) {
+            if (commandPort.Read() & 0x1) {
+                uint8_t ack = dataPort.Read();
+                if (ack == 0xFA) return true;
+                if (ack == 0xFE) break;
+                return false;
+            }
+        }
+    }
+    return false;
+}
+
 void KeyboardDriver::Activate() {
     // Clear the keyboard buffer
     while (commandPort.Read() & 0x1) dataPort.Read();
 
     // Enable the keyboard
     commandPort.Write(0xAE);
+    if (!WaitForKBACK(dataPort, commandPort, 3)) { this->is_Active = false; return; }
 
     // Configure keyboard settings
     commandPort.Write(0x20);
+    for (int wait = 0; wait < 10000; wait++) {
+        if (commandPort.Read() & 0x1) break;
+    }
     uint8_t status = (dataPort.Read() | 1) & ~0x10;  // Enable IRQ1, disable key lock
     commandPort.Write(0x60);
+    if (!WaitForKBACK(dataPort, commandPort, 3)) { this->is_Active = false; return; }
     dataPort.Write(status);
+    if (!WaitForKBACK(dataPort, commandPort, 3)) { this->is_Active = false; return; }
 
     // Activate the keyboard
     dataPort.Write(0xF4);
+    if (!WaitForKBACK(dataPort, commandPort, 3)) { this->is_Active = false; return; }
     this->is_Active = true;
 }
 
@@ -105,7 +126,7 @@ uint32_t KeyboardDriver::HandleInterrupt(uint32_t esp) {
     }
 
     // Key mappings
-    const char normalKeyMap[128] = {
+    static const char normalKeyMap[128] = {
         0,   0,   '1', '2', '3', '4', '5', '6', '7', '8', '9',  '0', '-', '=',  0,  // 0x00 - 0x0E
         0,   'q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p',  '[', ']', '\n', 0,  // 0x0F - 0x1D
         'a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l', ';', '\'', '`', 0,   '\\',     // 0x1E - 0x2C
@@ -114,7 +135,7 @@ uint32_t KeyboardDriver::HandleInterrupt(uint32_t esp) {
         0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,    0,   0,   0         // 0x49 - 0x58
     };
 
-    const char shiftKeyMap[128] = {
+    static const char shiftKeyMap[128] = {
         0,   0,   '!', '@', '#', '$', '%', '^', '&', '*', '(', ')', '_', '+',  0,  // 0x00 - 0x0E
         0,   'Q', 'W', 'E', 'R', 'T', 'Y', 'U', 'I', 'O', 'P', '{', '}', '\n', 0,  // 0x0F - 0x1D
         'A', 'S', 'D', 'F', 'G', 'H', 'J', 'K', 'L', ':', '"', '~', 0,   '|',      // 0x1E - 0x2C

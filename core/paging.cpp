@@ -174,10 +174,10 @@ uint32_t Paging::GetPhysicalAddress(uint32_t* directory, uint32_t virtual_addr) 
     uint32_t pd_idx = virtual_addr >> 22;
     uint32_t pt_idx = (virtual_addr >> 12) & 0x03FF;
 
-    if (!(directory[pd_idx] & PAGE_PRESENT)) return 0;
+    if (!(directory[pd_idx] & PAGE_PRESENT)) return 0xFFFFFFFF;
 
     uint32_t* table = (uint32_t*)(directory[pd_idx] & 0xFFFFF000);
-    if (!(table[pt_idx] & PAGE_PRESENT)) return 0;
+    if (!(table[pt_idx] & PAGE_PRESENT)) return 0xFFFFFFFF;
 
     return (table[pt_idx] & 0xFFFFF000) + (virtual_addr & 0xFFF);
 }

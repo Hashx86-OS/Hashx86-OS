@@ -199,8 +199,13 @@ ThreadControlBlock* Scheduler::CreateThread(ProcessControlBlock* parent, void (*
         // Allocate USER-MODE stack (USER_STACK_PAGES pages)
         // Must be in identity-mapped range (<256MB) because kernel writes arg/retaddr to it
         uint32_t user_stack_size = USER_STACK_PAGES * PAGE_SIZE;
-        uint32_t user_stack_base =
-            USER_STACK_VIRT_TOP - (tcb->tid * user_stack_size) - user_stack_size;
+        uint64_t stack_offset64 = (uint64_t)tcb->tid * (uint64_t)user_stack_size;
+        if (stack_offset64 > (uint64_t)USER_STACK_VIRT_TOP - user_stack_size) {
+            kfree(tcb->stack);
+            delete tcb;
+            return nullptr;
+        }
+        uint32_t user_stack_base = USER_STACK_VIRT_TOP - (uint32_t)stack_offset64 - user_stack_size;
         uint32_t top_page_phys = 0;
 
         for (uint32_t p = 0; p < USER_STACK_PAGES; p++) {
@@ -212,7 +217,7 @@ ThreadControlBlock* Scheduler::CreateThread(ProcessControlBlock* parent, void (*
                 for (uint32_t q = 0; q < p; q++) {
                     uint32_t va = user_stack_base + q * PAGE_SIZE;
                     uint32_t pf = _pager->GetPhysicalAddress(parent->page_directory, va);
-                    if (pf) {
+                    if (pf != 0xFFFFFFFF) {
                         // Unmap before freeing to leave clean page tables
                         uint32_t pd_idx = va >> 22;
                         uint32_t pt_idx = (va >> 12) & 0x3FF;
@@ -235,7 +240,7 @@ ThreadControlBlock* Scheduler::CreateThread(ProcessControlBlock* parent, void (*
                 for (uint32_t q = 0; q < p; q++) {
                     uint32_t va = user_stack_base + q * PAGE_SIZE;
                     uint32_t pf = _pager->GetPhysicalAddress(parent->page_directory, va);
-                    if (pf) {
+                    if (pf != 0xFFFFFFFF) {
                         // Unmap before freeing to leave clean page tables
                         uint32_t pd_idx = va >> 22;
                         uint32_t pt_idx = (va >> 12) & 0x3FF;
@@ -329,10 +334,10 @@ ThreadControlBlock* Scheduler::CloneCurrentThread(CPUState* parentContext, uint3
         if (end < uaddr) return false;
         // Verify both start and end pages are mapped
         for (uint32_t page = uaddr & ~(PAGE_SIZE - 1); page <= end; page += PAGE_SIZE) {
-            if (!_pager->GetPhysicalAddress(page_dir, page)) return false;
+            if (_pager->GetPhysicalAddress(page_dir, page) == 0xFFFFFFFF) return false;
         }
         uint32_t phys = _pager->GetPhysicalAddress(page_dir, uaddr);
-        if (!phys) return false;
+        if (phys == 0xFFFFFFFF) return false;
         *(uint32_t*)phys = tid_val;
         return true;
     };
@@ -480,10 +485,10 @@ ThreadControlBlock* Scheduler::CloneCurrentProcess(CPUState* parentContext, uint
         uint32_t end = uaddr + sizeof(uint32_t) - 1;
         if (end < uaddr) return false;
         for (uint32_t page = uaddr & ~(PAGE_SIZE - 1); page <= end; page += PAGE_SIZE) {
-            if (!_pager->GetPhysicalAddress(page_dir, page)) return false;
+            if (_pager->GetPhysicalAddress(page_dir, page) == 0xFFFFFFFF) return false;
         }
         uint32_t phys = _pager->GetPhysicalAddress(page_dir, uaddr);
-        if (!phys) return false;
+        if (phys == 0xFFFFFFFF) return false;
         *(uint32_t*)phys = tid_val;
         return true;
     };

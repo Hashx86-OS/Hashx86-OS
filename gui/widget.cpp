@@ -20,7 +20,11 @@ Widget::Widget(Widget* parent, int32_t x, int32_t y, int32_t w, int32_t h) {
 
     // Allocate and zero-init cache buffer
     if (w > 0 && h > 0) {
-        cache = new uint32_t[w * h]();
+        size_t count = (size_t)w * (size_t)h;
+        if (count / (size_t)w != (size_t)h || count > (0xFFFFFFFFu / sizeof(uint32_t))) {
+            HALT("CRITICAL: Widget dimensions overflow!\n");
+        }
+        cache = new uint32_t[count]();
         if (!cache) {
             HALT("CRITICAL: Failed to allocate widget cache!\n");
         }

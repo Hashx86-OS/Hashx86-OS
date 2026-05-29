@@ -82,6 +82,7 @@ void CrashReporter::ShowUserCrashDialog(uint32_t pid, uint32_t tid, uint8_t exce
     append_safe(line1, sizeof(line1), num);
     append_safe(line1, sizeof(line1), "  TID: ");
     itoa((int)tid, num, 10, sizeof(num));
+    append_safe(line1, sizeof(line1), num);
 
     line2[0] = '\0';
     append_safe(line2, sizeof(line2), "Exception: 0x");
@@ -91,6 +92,7 @@ void CrashReporter::ShowUserCrashDialog(uint32_t pid, uint32_t tid, uint8_t exce
     append_safe(line2, sizeof(line2), GetExceptionName(exceptionNumber));
     append_safe(line2, sizeof(line2), ")  ERR: 0x");
     itoa((int)errorCode, num, 16, sizeof(num));
+    append_safe(line2, sizeof(line2), num);
 
     line3[0] = '\0';
     append_safe(line3, sizeof(line3), "EIP: 0x");

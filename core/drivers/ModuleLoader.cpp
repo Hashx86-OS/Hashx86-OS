@@ -386,13 +386,15 @@ void* ModuleLoader::LoadDriver(File* file) {
             const char* name = strtab_sym + name_off;
 
             // Check for the magic function name
-            // Simple manual strcmp that rejects prefixes
             const char* target = "CreateDriverInstance";
-            bool match = true;
-            for (int c = 0; target[c]; c++)
-                if (target[c] != name[c]) match = false;
-            // Ensure the names are the same length (null terminator check)
-            if (match && name[20] != 0) match = false;
+            uint32_t target_len = 20;
+            bool match = false;
+            if (name_off + target_len + 1 <= strtab_sym_size) {
+                match = true;
+                for (uint32_t c = 0; c < target_len; c++)
+                    if ((uint8_t)target[c] != (uint8_t)name[c]) { match = false; break; }
+                if (name[target_len] != 0) match = false;
+            }
 
             if (match) {
                 uint32_t sec_idx = symtab[i].shndx;

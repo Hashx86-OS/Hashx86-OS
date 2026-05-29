@@ -26,9 +26,10 @@ private:
     uint8_t* mixBuffer;
     uint32_t bufferSize;
 
-    // IRQ-safe deferred free: ProcessAudio sets this, Update performs the actual kfree
-    uint8_t* pendingFreeBuffer;
-    uint32_t pendingFreeLength;
+    // Per-slot IRQ-safe deferred free: ProcessAudio moves st.data into
+    // pendingFreeBuffers[slot], Update performs the actual kfree in task context
+    uint8_t* pendingFreeBuffers[8];
+    uint32_t pendingFreeLengths[8];
 
     // Disable interrupts, return previous EFLAGS (bit 9 = IF)
     static inline uint32_t lock() {

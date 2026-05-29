@@ -316,11 +316,17 @@ uint32_t InterruptManager::DohandleException(uint8_t interruptNumber, uint32_t e
             // Validate both words [EBP+0] and [EBP+4] are mapped before reading
             uint32_t physAddr0 = pager->GetPhysicalAddress(userPD, userEBP);
             uint32_t physAddr4 = pager->GetPhysicalAddress(userPD, userEBP + 4);
-            if (!physAddr0 || !physAddr4) {
+            if (physAddr0 == 0xFFFFFFFF || physAddr4 == 0xFFFFFFFF) {
                 KDBG1(" (EBP 0x%x not fully mapped)", userEBP);
                 break;
             }
 
+            // Defensive: kernel identity-maps only the first 256MB; reject
+            // addresses outside that range to avoid accidental wild derefs.
+            if (physAddr0 >= 0x10000000 || physAddr4 >= 0x10000000) {
+                KDBG1(" (EBP 0x%x outside identity-mapped range)", userEBP);
+                break;
+            }
             uint32_t* frame = (uint32_t*)physAddr0;
             uint32_t nextEBP = frame[0];  // saved EBP at [EBP+0]
             uint32_t retAddr = frame[1];  // return address at [EBP+4]

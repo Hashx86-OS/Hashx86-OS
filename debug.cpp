@@ -36,6 +36,7 @@ bool IsSerialReady() {
 }
 
 void FlushSerial() {
+    InterruptGuard guard;
     // Keep flushing as long as hardware is ready AND we have data
     while (readHead != writeHead && IsSerialReady()) {
         char c = serialBuffer[readHead];
@@ -45,6 +46,7 @@ void FlushSerial() {
 }
 
 void SerialPush(char c) {
+    InterruptGuard guard;
     // Push to buffer first
     uint32_t nextHead = (writeHead + 1) % SERIAL_BUFFER_SIZE;
     if (nextHead != readHead) {

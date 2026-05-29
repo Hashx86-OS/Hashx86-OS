@@ -121,6 +121,10 @@ int pmm_mmap_first_free_by_size(uint32_t size) {
                     start_index = -1;
                 }
             }
+        } else {
+            // Fully-used word: reset run so it cannot span across a used chunk
+            free = 0;
+            start_index = -1;
         }
     }
     KDBG2("contiguous search result=none size=%u", size);

@@ -722,6 +722,7 @@ void FAT32::ReadFile(char* path, uint8_t* buffer, uint32_t length) {
     if (length > entry.size) length = entry.size;
 
     uint32_t currentCluster = ((uint32_t)entry.firstClusterHi << 16) | entry.firstClusterLow;
+    if (entry.size == 0 || currentCluster == 0) return;
     uint32_t bytesRead = 0;
     uint8_t secBuff[512];
     uint32_t visited = 0;

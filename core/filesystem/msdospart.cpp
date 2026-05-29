@@ -82,6 +82,10 @@ void MSDOSPartitionTable::Initialize() {
 }
 
 void MSDOSPartitionTable::ReadPartitions() {
+    // Reset partition state so repeated calls don't append into old data
+    partitionsCounter = 0;
+    for (int i = 0; i < 4; i++) partitions[i] = nullptr;
+
     // Get Drive Size from ATA
     uint32_t totalSectors = ata->GetSizeInSectors();
     if (totalSectors == 0) {

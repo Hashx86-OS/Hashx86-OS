@@ -108,11 +108,10 @@ void StartMenuButton::LaunchProgram() {
     File* file = g_bootPartition->Open((char*)binPath);
     if (file && file->size > 0) {
         ProgramArguments* args = new ProgramArguments{"ARG1", "ARG2", "ARG3", "ARG4", "ARG5"};
-        if (args) {
-            ProcessControlBlock* prog = g_elfLoader->loadELF(file, args);
-            if (!prog) {
-                KDBG1("StartMenu: Failed to load ELF: %s\n", binPath);
-            }
+        ProcessControlBlock* prog = g_elfLoader->loadELF(file, args);
+        if (!prog) {
+            KDBG1("StartMenu: Failed to load ELF: %s\n", binPath);
+            delete args;
         }
         file->Close();
         delete file;
@@ -140,8 +139,9 @@ void StartMenu::AddApp(const char* name, const char* description, const char* bi
     int32_t itemY =
         START_MENU_HEADER_HEIGHT + START_MENU_PADDING + itemCount * (START_MENU_ITEM_HEIGHT + 2);
 
-    StartMenuButton* btn = new StartMenuButton(this, 0, itemY, this->w, START_MENU_ITEM_HEIGHT,
+        StartMenuButton* btn = new StartMenuButton(this, 0, itemY, this->w, START_MENU_ITEM_HEIGHT,
                                                name, description, binPath);
+    if (!btn) return;
 
     this->AddChild(btn);
     itemCount++;

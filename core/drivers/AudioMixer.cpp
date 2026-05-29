@@ -8,9 +8,10 @@
 
 #include <core/drivers/AudioMixer.h>
 
-AudioMixer::AudioMixer(AudioDriver* drv) : driver(drv), mixBuffer(nullptr), bufferSize(0),
-    pendingFreeBuffer(nullptr), pendingFreeLength(0) {
+AudioMixer::AudioMixer(AudioDriver* drv) : driver(drv), mixBuffer(nullptr), bufferSize(0) {
     memset(streams, 0, sizeof(streams));
+    memset(pendingFreeBuffers, 0, sizeof(pendingFreeBuffers));
+    memset(pendingFreeLengths, 0, sizeof(pendingFreeLengths));
 
     // Ensure ownsData is cleared for safety on older binaries
     for (int i = 0; i < 8; i++) streams[i].ownsData = false;
@@ -68,12 +69,14 @@ void AudioMixer::PlayBuffer(uint8_t* data, uint32_t length, bool loop) {
 void AudioMixer::Update() {
     if (!driver || !mixBuffer) return;
 
-    // Perform deferred free from IRQ context (ProcessAudio) under lock
+    // Perform deferred frees from IRQ context (ProcessAudio) under lock
     uint32_t flags = lock();
-    if (pendingFreeBuffer) {
-        kfree(pendingFreeBuffer);
-        pendingFreeBuffer = nullptr;
-        pendingFreeLength = 0;
+    for (int i = 0; i < 8; i++) {
+        if (pendingFreeBuffers[i]) {
+            kfree(pendingFreeBuffers[i]);
+            pendingFreeBuffers[i] = nullptr;
+            pendingFreeLengths[i] = 0;
+        }
     }
     unlock(flags);
 
@@ -124,13 +127,8 @@ void AudioMixer::ProcessAudio() {
         // If the stream was deactivated and we own the buffer, defer the free
         // to task context (Update) since we are in IRQ context here
         if (!st.active && st.ownsData && st.data) {
-            // Chain deferred frees: if a previous buffer is still pending, free it now
-            // (only one buffer should deactivate between Update calls)
-            if (pendingFreeBuffer) {
-                kfree(pendingFreeBuffer);
-            }
-            pendingFreeBuffer = st.data;
-            pendingFreeLength = st.length;
+            pendingFreeBuffers[s] = st.data;
+            pendingFreeLengths[s] = st.length;
             st.data = nullptr;
             st.length = 0;
             st.position = 0;

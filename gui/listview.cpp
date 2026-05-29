@@ -19,7 +19,13 @@ ListView::ListView(Widget* parent, int32_t x, int32_t y, int32_t w, int32_t h)
       hoveredIndex(-1) {
     this->font = FontManager::activeInstance->getNewFont();
     this->font->setSize(TINY);
-    strcpy(headerText, "Name");
+    const char* defaultHeader = "Name";
+    int i = 0;
+    while (defaultHeader[i] && i < 31) {
+        headerText[i] = defaultHeader[i];
+        i++;
+    }
+    headerText[i] = 0;
 
     // cache is allocated by Widget constructor; do not reallocate here
 }

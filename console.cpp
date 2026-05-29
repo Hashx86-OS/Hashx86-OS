@@ -58,7 +58,8 @@ void MSGPrintf(TextColor cTag, const char* tag, const char* format, ...) {
                 }
                 case 's': {  // String
                     const char* str = va_arg(args, const char*);
-                    printf(LIGHT_GRAY, str);
+                    if (!str) str = "(null)";
+                    printf(LIGHT_GRAY, "%s", str);
                     break;
                 }
                 case 'd': {  // Decimal integer
@@ -284,6 +285,7 @@ void printf(TextColor color, const char* format, ...) {
 
                 case 's': {  // String
                     const char* str = va_arg(args, const char*);
+                    if (!str) str = "(null)";
                     for (int j = 0; str[j] != '\0'; j++) {
                         int position = cursorRow * SCREEN_WIDTH + cursorCol;
                         VideoMemory[position] = (color << 8) | str[j];

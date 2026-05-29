@@ -133,7 +133,7 @@ ProcessControlBlock* ELFLoader::loadELF(File* elf, void* args) {
 
         while (bytes_to_read > 0) {
             uint32_t phys_ptr = pager->GetPhysicalAddress(pELF->page_directory, virtual_addr);
-            if (!phys_ptr) {
+            if (phys_ptr == 0xFFFFFFFF) {
                 KDBG1("ELF Load Error: Failed to resolve physical address");
                 delete[] ph_table;
                 cleanup_process();
@@ -159,7 +159,7 @@ ProcessControlBlock* ELFLoader::loadELF(File* elf, void* args) {
         uint32_t bytes_to_zero = ph->mem_size - ph->file_size;
         while (bytes_to_zero > 0) {
             uint32_t phys_ptr = pager->GetPhysicalAddress(pELF->page_directory, virtual_addr);
-            if (!phys_ptr) {
+            if (phys_ptr == 0xFFFFFFFF) {
                 KDBG1("ELF Load Error: Failed to resolve physical address for BSS");
                 delete[] ph_table;
                 cleanup_process();
@@ -186,7 +186,11 @@ ProcessControlBlock* ELFLoader::loadELF(File* elf, void* args) {
 
     pELF->heap.startAddress = max_virt_end;
     pELF->heap.endAddress = max_virt_end;  // Zero-size initially, grown by brk
-    pELF->heap.maxAddress = max_virt_end + (1024 * 1024 * 256);  // Allow growing up to 256MB
+    {   // Prevent overflow when max_virt_end is near top of address space
+        uint64_t maxAddr = (uint64_t)max_virt_end + (1024ULL * 1024ULL * 256ULL);
+        if (maxAddr > 0xFFFFFFFFULL) maxAddr = 0xFFFFFFFFULL;
+        pELF->heap.maxAddress = (uint32_t)maxAddr;
+    }
 
     KDBG1("ELF Loaded. Entry: 0x%x Heap start: 0x%x", header.entry, max_virt_end);
 

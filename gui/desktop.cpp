@@ -73,7 +73,14 @@ void Desktop::createNewHandler(uint32_t pid, ThreadControlBlock* thread) {
 }
 
 void Desktop::deleteEventHandler(uint32_t pid) {
-    HguiEventHandlers.Remove([&](EventHandler* e) { return e->pid == pid; });
+    EventHandler* found = nullptr;
+    HguiEventHandlers.ForEach([&](EventHandler* e) {
+        if (e->pid == pid) found = e;
+    });
+    if (found) {
+        HguiEventHandlers.Remove([&](EventHandler* e) { return e == found; });
+        delete found;
+    }
 }
 
 EventHandler* Desktop::getHandler(uint32_t pid) {
@@ -282,15 +289,23 @@ void Desktop::OnMouseMove(int32_t dx, int32_t dy) {
     // Clamp mouse position to screen bounds
     if (MouseX < 0) MouseX = 0;
     if (MouseY < 0) MouseY = 0;
-    if (MouseX >= (uint32_t)w) MouseX = w - 1;
-    if (MouseY >= (uint32_t)h) MouseY = h - 1;
+    if (MouseX >= (int32_t)w) MouseX = w - 1;
+    if (MouseY >= (int32_t)h) MouseY = h - 1;
+
+    // Compute old mouse position (clamped to avoid underflow from large dx/dy)
+    int32_t oldX = MouseX - dx;
+    int32_t oldY = MouseY - dy;
+    if (oldX < 0) oldX = 0;
+    if (oldY < 0) oldY = 0;
+    if (oldX >= (int32_t)w) oldX = w - 1;
+    if (oldY >= (int32_t)h) oldY = h - 1;
 
     // Pass delta to UI
-    CompositeWidget::OnMouseMove(MouseX - dx, MouseY - dy, MouseX, MouseY);
+    CompositeWidget::OnMouseMove(oldX, oldY, MouseX, MouseY);
 
     // Also route mouse moves to taskbar/start menu for hover effects
     if (taskbar) {
-        taskbar->OnMouseMove(MouseX - dx, MouseY - dy, MouseX, MouseY);
+        taskbar->OnMouseMove(oldX, oldY, MouseX, MouseY);
     }
 }
 

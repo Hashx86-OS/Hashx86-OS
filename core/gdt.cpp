@@ -10,6 +10,7 @@
 #include <core/gdt.h>
 #include <core/tss.h>
 #include <debug.h>
+#include <utils/string.h>
 
 extern "C" void tss_flush();
 
@@ -55,7 +56,7 @@ void gdt_init() {
     gdt_set_entry(4, 0, 0xFFFFFFFF, 0xF2, 0xCF);
 
     // TSS segment
-    // memset(&g_tss, 0, sizeof(TaskStateSegment));
+    memset(&g_tss, 0, sizeof(TaskStateSegment));
 
     // Set the Kernel Stack Segment (SS0) to Kernel Data (0x10)
     g_tss.ss0 = 0x10;

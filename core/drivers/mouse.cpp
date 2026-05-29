@@ -54,22 +54,44 @@ MouseDriver::MouseDriver(InterruptManager* manager, MouseEventHandler* handler)
  */
 MouseDriver::~MouseDriver() {}
 
+static bool WaitForInputBufferClear(Port8Bit& commandPort) {
+    for (int wait = 0; wait < 10000; wait++) {
+        if (!(commandPort.Read() & 0x2)) return true;
+    }
+    return false;
+}
+
+static bool WaitForOutputBufferFull(Port8Bit& commandPort) {
+    for (int wait = 0; wait < 10000; wait++) {
+        if (commandPort.Read() & 0x1) return true;
+    }
+    return false;
+}
+
 /**
  * @brief Activates the mouse driver and initializes the mouse hardware.
  */
 void MouseDriver::Activate() {
     // Enable the mouse
-    commandPort.Write(0xA8);  // Enable the auxiliary device (mouse) — 0xA8 = Enable second PS/2 port
+    if (!WaitForInputBufferClear(commandPort)) { this->is_Active = false; return; }
+    commandPort.Write(0xA8);  // Enable the auxiliary device (mouse)
 
     // Set mouse configuration
+    if (!WaitForInputBufferClear(commandPort)) { this->is_Active = false; return; }
     commandPort.Write(0x20);               // Request current configuration byte
+    if (!WaitForOutputBufferFull(commandPort)) { this->is_Active = false; return; }
     uint8_t status = dataPort.Read() | 2;  // Enable IRQ12 (mouse interrupts)
+    if (!WaitForInputBufferClear(commandPort)) { this->is_Active = false; return; }
     commandPort.Write(0x60);               // Set configuration byte
+    if (!WaitForInputBufferClear(commandPort)) { this->is_Active = false; return; }
     dataPort.Write(status);
 
     // Enable mouse device
+    if (!WaitForInputBufferClear(commandPort)) { this->is_Active = false; return; }
     commandPort.Write(0xD4);  // Signal the mouse device
+    if (!WaitForInputBufferClear(commandPort)) { this->is_Active = false; return; }
     dataPort.Write(0xF4);     // Enable packet streaming
+    if (!WaitForOutputBufferFull(commandPort)) { this->is_Active = false; return; }
     dataPort.Read();          // Acknowledge response
     this->is_Active = true;
 }

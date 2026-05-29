@@ -170,10 +170,11 @@ void GraphicsDriver::DrawRoundedRectangleShadow(int32_t x, int32_t y, uint32_t w
 
     for (int32_t Y = startY; Y < endY; ++Y) {
         if (Y < 0 || Y >= this->height) continue;
-        uint32_t* pixelPtr = &backBuffer[Y * this->width + startX];
+        int32_t clampedStartX = (startX < 0) ? 0 : startX;
+        int32_t clampedEndX = (endX > (int32_t)this->width) ? (int32_t)this->width : endX;
+        uint32_t* pixelPtr = &backBuffer[Y * this->width + clampedStartX];
 
-        for (int32_t X = startX; X < endX; ++X) {
-            if (X < 0 || X >= this->width) continue;
+        for (int32_t X = clampedStartX; X < clampedEndX; ++X) {
 
             int32_t dx = 0, dy = 0;
             if (X < x)
