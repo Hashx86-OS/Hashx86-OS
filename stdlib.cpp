@@ -9,11 +9,11 @@
 #include <stdint.h>
 #include <stdlib.h>
 
-char* itoa(int32_t num, char* str, size_t capacity, uint32_t base) {
-    return itoa_safe(num, str, capacity, base);
+char* itoa(int32_t num, char* str, uint32_t base, size_t capacity) {
+    return itoa_safe(num, str, base, capacity);
 }
 
-char* itoa_safe(int32_t num, char* str, size_t capacity, uint32_t base) {
+char* itoa_safe(int32_t num, char* str, uint32_t base, size_t capacity) {
     if (!str || capacity == 0 || base < 2 || base > 36) {
         if (str && capacity > 0) str[0] = '\0';
         return str;

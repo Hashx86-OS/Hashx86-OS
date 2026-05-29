@@ -188,9 +188,13 @@ int32_t HguiHandler::HandleWidget(CPUState* cpu, const WidgetData* _data) {
     } else if ((uint32_t)cpu->ebx == DELETE) {
         Widget* target = this->FindWidgetByID(_data->param1);
         if (target) {
-            // Remove any taskbar tab referencing this widget before freeing it
+            // Remove any taskbar tab referencing this widget's window before freeing it
             if (Desktop::activeInstance && Desktop::activeInstance->GetTaskbar()) {
-                Desktop::activeInstance->GetTaskbar()->RemoveTabByPID(target->PID);
+                Widget* win = target;
+                while (win && !win->IsWindow()) win = win->parent;
+                if (win) {
+                    Desktop::activeInstance->GetTaskbar()->RemoveTabByWindow(win);
+                }
             }
             // Detach from parent first
             if (target->parent) {

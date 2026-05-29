@@ -211,6 +211,7 @@ public:
     // Tab management
     void AddTab(uint32_t pid, const char* title, Widget* window);
     void RemoveTabByPID(uint32_t pid);
+    void RemoveTabByWindow(Widget* window);
     void SetActiveTab(Widget* window);
     void RepositionTabs();
 

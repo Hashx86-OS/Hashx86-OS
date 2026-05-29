@@ -353,7 +353,6 @@ void FontManager::LoadFile(uint32_t mod_start, uint32_t mod_end) {
 void FontManager::LoadFile(File* file) {
     if (!file || file->size == 0) {
         KDBG1("Font error: file is null or empty");
-        if (file) file->Close();
         return;
     }
 
@@ -368,14 +367,12 @@ void FontManager::LoadFile(File* file) {
         int32_t result = file->Read(buffer + bytesRead, file->size - bytesRead);
         if (result <= 0) {
             KDBG1("Font error: failed to read file (got %d bytes)", result);
-            file->Close();
             delete[] buffer;
             return;
         }
         bytesRead += (uint32_t)result;
     }
     buffer[bytesRead] = 0;
-    file->Close();
     LoadFile((uint32_t)buffer, (uint32_t)(buffer + bytesRead));
     delete[] buffer;
 }

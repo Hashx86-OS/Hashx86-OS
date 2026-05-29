@@ -69,22 +69,27 @@ int heap_init(void *start_addr, void *end_addr) {
 /**
  * increase the heap memory by size & get its address
  */
+enum { MAX_BRK_PER_CALL = 64 * 4096 };  // 256KB per sys_brk call
+
 void *kbrk(int size) {
     void *addr = NULL;
     if (size <= 0) return NULL;
 
     // check memory is available or not
     if ((long)(g_total_size - g_total_used_size) <= size) {
-        // Request more memory from kernel (min 1MB growth)
+        // Request more memory from kernel in chunks (kernel limit: 256KB per call)
         int needed = size - (g_total_size - g_total_used_size);
-        int request_size = (needed + 4095) & ~4095;                  // Page align
-        if (request_size < 1024 * 1024) request_size = 1024 * 1024;  // Min 1MB
+        int remaining = (needed + 4095) & ~4095;  // Page align
+        if (remaining < 1024 * 1024) remaining = 1024 * 1024;  // Min 1MB
 
-        int32_t res = syscall_brk(request_size);
-        if (res == -1) return NULL;
-
-        g_total_size += request_size;
-        g_heap_end_addr = (void *)((unsigned long)g_heap_end_addr + request_size);
+        while (remaining > 0) {
+            int chunk = remaining > MAX_BRK_PER_CALL ? MAX_BRK_PER_CALL : remaining;
+            int32_t res = syscall_brk(chunk);
+            if (res == -1) return NULL;
+            g_total_size += chunk;
+            g_heap_end_addr = (void *)((unsigned long)g_heap_end_addr + chunk);
+            remaining -= chunk;
+        }
     }
 
     // add start addr with total previously used memory

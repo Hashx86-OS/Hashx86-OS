@@ -274,7 +274,7 @@ void init_memory(MultibootInfo* mbinfo) {
         if (mbinfo->mods_count > 0) {
             for (int mod_idx = 0; mod_idx < (int)mbinfo->mods_count; mod_idx++) {
                 uint32_t mod_end = modules[mod_idx].mod_end;
-                if (mod_end > heap_start_addr) {
+                if (mod_end > heap_start_addr && mod_end <= g_kmap.available.end_addr) {
                     heap_start_addr = mod_end;
                 }
             }
@@ -539,7 +539,7 @@ void pDesktop(void* arg) {
             uint32_t end = timerTicks;
             uint32_t diff = (uint32_t)(end - start);
             char buf[32];
-            itoa(diff, buf, sizeof(buf), 16);
+            itoa(diff, buf, 16, sizeof(buf));
             screen->FillRectangle(5, 5, 50, 35, 0x0);
             screen->DrawString(10, 10, buf, VBE_font, 0xFFFFFFFF);
             screen->DrawString(25, 10, "ms", VBE_font, 0xFFFFFFFF);

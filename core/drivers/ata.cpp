@@ -171,6 +171,23 @@ void AdvancedTechnologyAttachment::Read28(uint32_t sectorNum, uint8_t* data, int
     }
 }
 
+static bool ata_wait_drq(Port8Bit& commandPort, const char* op) {
+    uint8_t status = commandPort.Read();
+    uint32_t bsyWait = 0;
+    while ((status & 0x80) == 0x80) {
+        if (bsyWait++ > 1000000) { KDBG1("%s ERROR: BSY timeout", op); return false; }
+        status = commandPort.Read();
+    }
+    uint32_t drqWait = 0;
+    while ((status & 0x08) != 0x08) {
+        if ((status & 0x01) == 0x01) { KDBG1("%s ERROR: ERR set while waiting for DRQ", op); return false; }
+        if ((status & 0x20) == 0x20) { KDBG1("%s ERROR: DF set while waiting for DRQ", op); return false; }
+        if (drqWait++ > 1000000) { KDBG1("%s ERROR: DRQ timeout", op); return false; }
+        status = commandPort.Read();
+    }
+    return true;
+}
+
 void AdvancedTechnologyAttachment::Write28(uint32_t sectorNum, uint8_t* data, uint32_t count) {
     if (sectorNum > 0x0FFFFFFF) return;
     if (data == nullptr || count <= 0) return;  // No-op: reject null or zero-length
@@ -182,52 +199,28 @@ void AdvancedTechnologyAttachment::Write28(uint32_t sectorNum, uint8_t* data, ui
     lbaLowPort.Write(sectorNum & 0x000000FF);
     lbaMidPort.Write((sectorNum & 0x0000FF00) >> 8);
     lbaHiPort.Write((sectorNum & 0x00FF0000) >> 16);
-    commandPort.Write(0x30);
 
-    uint8_t status = commandPort.Read();
-    uint8_t status2 = commandPort.Read();
-    uint8_t status3 = commandPort.Read();
-    uint8_t status4 = commandPort.Read();
-
-    uint32_t bsyWait = 0;
-    while ((status & 0x80) == 0x80) {
-        if (bsyWait++ > 1000000) {
-            KDBG1("WRITE ERROR: BSY timeout");
-            return;
-        }
-        status = commandPort.Read();
-    }
-    uint32_t drqWait = 0;
-    while ((status & 0x08) != 0x08) {
-        if ((status & 0x01) == 0x01) {
-            KDBG1("WRITE ERROR: ERR set while waiting for DRQ");
-            return;
-        }
-        if ((status & 0x20) == 0x20) {
-            KDBG1("WRITE ERROR: DF set while waiting for DRQ");
-            return;
-        }
-        if (drqWait++ > 1000000) {
-            KDBG1("WRITE ERROR: DRQ timeout");
-            return;
-        }
-        status = commandPort.Read();
-    }
-
-    // --- OPTIMIZED WRITE ---
-    // If we are writing a full sector, use outsw
     if (count == 512) {
+        // Full sector write: issue WRITE and send data directly
+        commandPort.Write(0x30);
+        if (!ata_wait_drq(commandPort, "WRITE")) return;
         outsw(dataPort.getPortNumber(), data, 256);
     } else {
-        // Partial write: Read-modify-write to preserve existing data
+        // Partial write: Read current sector first, merge, then write back
+        commandPort.Write(0x20);  // READ SECTOR
+        if (!ata_wait_drq(commandPort, "READ")) return;
+
         uint8_t sectorBuffer[512];
-        // First read the current sector from the device
         insw(dataPort.getPortNumber(), sectorBuffer, 256);
+
         // Overwrite only the first 'count' bytes with caller's data
         for (int i = 0; i < (int)count; i++) {
             sectorBuffer[i] = data[i];
         }
-        // Write the merged sector back
+
+        // Write merged sector back
+        commandPort.Write(0x30);  // WRITE SECTOR
+        if (!ata_wait_drq(commandPort, "WRITE")) return;
         outsw(dataPort.getPortNumber(), sectorBuffer, 256);
     }
 

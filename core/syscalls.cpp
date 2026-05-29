@@ -440,11 +440,20 @@ int32_t SyscallHandlers::Handle_sys_brk(uint32_t brk) {
             for (uint32_t addr = page_start; addr < page_end; addr += PAGE_SIZE) {
                 // Check if already mapped
                 if (g_paging->GetPhysicalAddress(process->page_directory, addr) == 0) {
+                    if (brkCount >= 64) {
+                        KDBG1("sys_brk: Per-call page limit (64) reached! Rolling back %d pages",
+                              brkCount);
+                        for (int r = 0; r < brkCount; r++) {
+                            g_paging->MapPage(process->page_directory, brkFrames[r].vaddr, 0, 0);
+                            asm volatile("invlpg (%0)" ::"r"(brkFrames[r].vaddr) : "memory");
+                            pmm_free_block((void*)brkFrames[r].phys);
+                        }
+                        return -1;
+                    }
                     uint32_t phys_frame = (uint32_t)pmm_alloc_block_low(256 * 1024 * 1024);
                     if (!phys_frame) {
                         KDBG1("sys_brk: Out of physical memory! Rolling back %d pages",
                               brkCount);
-                        // Rollback: unmap and free all frames allocated in this call
                         for (int r = 0; r < brkCount; r++) {
                             g_paging->MapPage(process->page_directory, brkFrames[r].vaddr, 0, 0);
                             asm volatile("invlpg (%0)" ::"r"(brkFrames[r].vaddr) : "memory");
@@ -464,11 +473,9 @@ int32_t SyscallHandlers::Handle_sys_brk(uint32_t brk) {
                         }
                         return -1;
                     }
-                    if (brkCount < 64) {
-                        brkFrames[brkCount].vaddr = addr;
-                        brkFrames[brkCount].phys = phys_frame;
-                        brkCount++;
-                    }
+                    brkFrames[brkCount].vaddr = addr;
+                    brkFrames[brkCount].phys = phys_frame;
+                    brkCount++;
                 }
             }
         }

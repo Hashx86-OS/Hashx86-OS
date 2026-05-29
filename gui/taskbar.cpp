@@ -414,6 +414,21 @@ void Taskbar::RemoveTabByPID(uint32_t pid) {
     }
 }
 
+void Taskbar::RemoveTabByWindow(Widget* window) {
+    TaskbarTab* found = nullptr;
+    tabs.ForEach([&](TaskbarTab* t) {
+        if (!found && t->GetWindow() == window) found = t;
+    });
+
+    if (found) {
+        tabs.Remove([&](TaskbarTab* t) { return t == found; });
+        this->RemoveChild(found);
+        delete found;
+        tabCount--;
+        RepositionTabs();
+    }
+}
+
 void Taskbar::SetActiveTab(Widget* window) {
     tabs.ForEach([&](TaskbarTab* t) { t->SetActive(t->GetWindow() == window); });
     MarkDirty();
@@ -528,8 +543,10 @@ bool Taskbar::StartMenuContains(int32_t screenX, int32_t screenY) const {
 
 // Read a CMOS/RTC register (NMI disabled during read cycle)
 static uint8_t rtc_read(uint8_t reg) {
-    outb(0x70, reg | 0x80);  // bit 7 = disable NMI
-    return inb(0x71);
+    outb(0x70, reg | 0x80);  // select register, disable NMI
+    uint8_t val = inb(0x71);
+    outb(0x70, reg);          // restore NMI to enabled state
+    return val;
 }
 
 // Convert BCD to binary

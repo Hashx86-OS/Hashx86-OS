@@ -380,113 +380,114 @@ uint32_t InterruptManager::DohandleException(uint8_t interruptNumber, uint32_t e
             g_GraphicsDriver->DrawString(120, 600, "Stop code : 0x", g_GraphicsDriver_font,
                                          0xFFFFFFFF);
             char Buffer[16];
-            itoa(interruptNumber, Buffer, sizeof(Buffer), 16);
+            itoa(interruptNumber, Buffer, 16, sizeof(Buffer));
             g_GraphicsDriver->DrawString(
                 120 + g_GraphicsDriver_font->getStringLength("Stop code : 0x"), 600,
                 (const char*)Buffer, g_GraphicsDriver_font, 0xFFFFFFFF);
 
-            const char* massage;
+            const char* message = "Unknown Exception";
             switch (interruptNumber) {
                 case 0x00:
-                    massage = "Division By Zero";
+                    message = "Division By Zero";
                     break;
                 case 0x01:
-                    massage = "Debug Exception";
+                    message = "Debug Exception";
                     break;
                 case 0x02:
-                    massage = "Non-Maskable Interrupt";
+                    message = "Non-Maskable Interrupt";
                     break;
                 case 0x03:
-                    massage = "Breakpoint Exception";
+                    message = "Breakpoint Exception";
                     break;
                 case 0x04:
-                    massage = "Overflow Exception";
+                    message = "Overflow Exception";
                     break;
                 case 0x05:
-                    massage = "BOUND Range Exceeded";
+                    message = "BOUND Range Exceeded";
                     break;
                 case 0x06:
-                    massage = "Invalid Opcode";
+                    message = "Invalid Opcode";
                     break;
                 case 0x07:
-                    massage = "Device Not Available";
+                    message = "Device Not Available";
                     break;
                 case 0x08:
-                    massage = "Double Fault";
+                    message = "Double Fault";
                     break;
                 case 0x09:
-                    massage = "Coprocessor Segment Overrun";
+                    message = "Coprocessor Segment Overrun";
                     break;
                 case 0x0A:
-                    massage = "Invalid TSS";
+                    message = "Invalid TSS";
                     break;
                 case 0x0B:
-                    massage = "Segment Not Present";
+                    message = "Segment Not Present";
                     break;
                 case 0x0C:
-                    massage = "Stack Segment Fault";
+                    message = "Stack Segment Fault";
                     break;
                 case 0x0D:
-                    massage = "General Protection Fault";
+                    message = "General Protection Fault";
                     break;
                 case 0x0E:
-                    massage = "Page Fault";
+                    message = "Page Fault";
                     break;
                 case 0x0F:
-                    massage = "Reserved (0x0F)";
+                    message = "Reserved (0x0F)";
                     break;
                 case 0x10:
-                    massage = "x87 FPU Error";
+                    message = "x87 FPU Error";
                     break;
                 case 0x11:
-                    massage = "Alignment Check";
+                    message = "Alignment Check";
                     break;
                 case 0x12:
-                    massage = "Machine Check";
+                    message = "Machine Check";
                     break;
                 case 0x13:
-                    massage = "SIMD Floating Point Exception";
+                    message = "SIMD Floating Point Exception";
                     break;
                 case 0x14:
-                    massage = "Virtualization Exception";
+                    message = "Virtualization Exception";
                     break;
                 case 0x15:
-                    massage = "Control Protection Exception";
+                    message = "Control Protection Exception";
                     break;
                 case 0x16:
-                    massage = "Reserved (0x16)";
+                    message = "Reserved (0x16)";
                     break;
                 case 0x17:
-                    massage = "Reserved (0x17)";
+                    message = "Reserved (0x17)";
                     break;
                 case 0x18:
-                    massage = "Reserved (0x18)";
+                    message = "Reserved (0x18)";
                     break;
                 case 0x19:
-                    massage = "Reserved (0x19)";
+                    message = "Reserved (0x19)";
                     break;
                 case 0x1A:
-                    massage = "Reserved (0x1A)";
+                    message = "Reserved (0x1A)";
                     break;
                 case 0x1B:
-                    massage = "Reserved (0x1B)";
+                    message = "Reserved (0x1B)";
                     break;
                 case 0x1C:
-                    massage = "Reserved (0x1C)";
+                    message = "Reserved (0x1C)";
                     break;
                 case 0x1D:
-                    massage = "Reserved (0x1D)";
+                    message = "Reserved (0x1D)";
                     break;
                 case 0x1E:
-                    massage = "Security Exception";
+                    message = "Security Exception";
                     break;
                 case 0x1F:
-                    massage = "Reserved (0x1F)";
+                    message = "Reserved (0x1F)";
                     break;
                 default:
+                    message = "Unknown Exception";
                     break;
             }
-            g_GraphicsDriver->DrawString(120, 620, massage, g_GraphicsDriver_font, 0xFFFFFFFF);
+            g_GraphicsDriver->DrawString(120, 620, message, g_GraphicsDriver_font, 0xFFFFFFFF);
 
             // Show register dump
             int x = 450;
@@ -498,7 +499,7 @@ uint32_t InterruptManager::DohandleException(uint8_t interruptNumber, uint32_t e
                 char buf[32];
                 g_GraphicsDriver->DrawString(x, y, name, g_GraphicsDriver_font, 0xFFFFFFFF);
                 g_GraphicsDriver->DrawString(x + 60, y, "0x", g_GraphicsDriver_font, 0xFFFFFFFF);
-                itoa(value, buf, sizeof(buf), 16);
+                itoa(value, buf, 16, sizeof(buf));
                 g_GraphicsDriver->DrawString(x + 77, y, buf, g_GraphicsDriver_font, 0xFFFFFFFF);
                 y += 20;
             };

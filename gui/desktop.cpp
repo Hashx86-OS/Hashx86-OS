@@ -126,12 +126,12 @@ void Desktop::Draw(GraphicsDriver* gc) {
                     int destX = MouseX + x;
                     int destY = MouseY + y;
 
-                if (destX >= (int)screenW || destY >= (int)screenH) continue;
+                    if (destX >= (int)screenW || destY >= (int)screenH) continue;
 
-                cursorBackBuffer[y * CURSOR_SIZE + x] = vesaBuffer[destY * screenW + destX];
+                    cursorBackBuffer[y * CURSOR_SIZE + x] = vesaBuffer[destY * screenW + destX];
                 }
             }
-        hasBackBuffer = true;
+            hasBackBuffer = true;
 
             // Draw Cursor
             gc->DrawBitmap(MouseX, MouseY, (const uint32_t*)icon_cursor_20x20, CURSOR_SIZE,

@@ -172,11 +172,8 @@ void pmm_init_region(PMM_PHYSICAL_ADDRESS base, uint32_t region_size) {
 
     while (blocks > 0) {
         if (pmm_mmap_test(align)) {
-            // Bit was set (allocated); now clearing it
             pmm_mmap_unset(align);
             g_pmm_info.used_blocks--;
-        } else {
-            pmm_mmap_unset(align);
         }
         align++;
         blocks--;
@@ -197,11 +194,8 @@ void pmm_deinit_region(PMM_PHYSICAL_ADDRESS base, uint32_t region_size) {
 
     while (blocks > 0) {
         if (!pmm_mmap_test(align)) {
-            // Bit was clear (free); now setting it
             pmm_mmap_set(align);
             g_pmm_info.used_blocks++;
-        } else {
-            pmm_mmap_set(align);
         }
         align++;
         blocks--;

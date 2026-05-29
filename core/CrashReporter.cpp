@@ -78,28 +78,26 @@ void CrashReporter::ShowUserCrashDialog(uint32_t pid, uint32_t tid, uint8_t exce
 
     line1[0] = '\0';
     append_safe(line1, sizeof(line1), "PID: ");
-    itoa((int)pid, num, sizeof(num), 10);
+    itoa((int)pid, num, 10, sizeof(num));
     append_safe(line1, sizeof(line1), num);
     append_safe(line1, sizeof(line1), "  TID: ");
-    itoa((int)tid, num, sizeof(num), 10);
-    append_safe(line1, sizeof(line1), num);
+    itoa((int)tid, num, 10, sizeof(num));
 
     line2[0] = '\0';
     append_safe(line2, sizeof(line2), "Exception: 0x");
-    itoa((int)exceptionNumber, num, sizeof(num), 16);
+    itoa((int)exceptionNumber, num, 16, sizeof(num));
     append_safe(line2, sizeof(line2), num);
     append_safe(line2, sizeof(line2), " (");
     append_safe(line2, sizeof(line2), GetExceptionName(exceptionNumber));
     append_safe(line2, sizeof(line2), ")  ERR: 0x");
-    itoa((int)errorCode, num, sizeof(num), 16);
-    append_safe(line2, sizeof(line2), num);
+    itoa((int)errorCode, num, 16, sizeof(num));
 
     line3[0] = '\0';
     append_safe(line3, sizeof(line3), "EIP: 0x");
-    itoa((int)eip, num, sizeof(num), 16);
+    itoa((int)eip, num, 16, sizeof(num));
     append_safe(line3, sizeof(line3), num);
     append_safe(line3, sizeof(line3), "  CR2: 0x");
-    itoa((int)cr2, num, sizeof(num), 16);
+    itoa((int)cr2, num, 16, sizeof(num));
     append_safe(line3, sizeof(line3), num);
 
     details[0] = '\0';

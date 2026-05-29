@@ -116,6 +116,20 @@ ProcessControlBlock* Scheduler::CreateProcess(bool isKernel, void (*entrypoint)(
         KDBG1("CreateProcess PID=%d Kernel=%d FAILED: CreateThread returned null", pcb->pid,
               isKernel);
         if (!isKernel && pcb->page_directory != _pager->KernelPageDirectory) {
+            for (uint32_t pd = 64; pd < 768; pd++) {
+                if (!(pcb->page_directory[pd] & PAGE_PRESENT)) continue;
+                uint32_t* pt = (uint32_t*)(pcb->page_directory[pd] & 0xFFFFF000);
+                for (uint32_t i = 0; i < 1024; i++) {
+                    if (!(pt[i] & PAGE_PRESENT)) continue;
+                    uint32_t phys = pt[i] & 0xFFFFF000;
+                    if (phys && phys != _trampolinePhys) {
+                        pmm_free_block((void*)phys);
+                    }
+                    pt[i] = 0;
+                }
+                pmm_free_block((void*)(pcb->page_directory[pd] & 0xFFFFF000));
+                pcb->page_directory[pd] = 0;
+            }
             pmm_free_block(pcb->page_directory);
         }
         delete pcb;
@@ -681,6 +695,7 @@ CPUState* Scheduler::Schedule(CPUState* context) {
         // No real work to do, Run the Idle Thread.
         currentThread = idleThread;
         currentThread->state = THREAD_STATE_RUNNING;
+        DrainPendingReclaims();
         _pager->SwitchDirectory((_pager->KernelPageDirectory));
         return currentThread->context;
 
