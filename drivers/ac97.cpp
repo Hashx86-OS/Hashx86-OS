@@ -283,6 +283,8 @@ public:
     }
 
     uint32_t WriteData(uint8_t* buffer, uint32_t size) override {
+        if (size == 0) return 0;
+        if (physBdlAddr == 0 || physPages[0] == 0) return 0;  // DMA not active
         if (size > AC97_HALF_SIZE) size = AC97_HALF_SIZE;
         InterruptGuard guard;
         if (buffersOccupied >= 2) {
@@ -316,17 +318,14 @@ public:
         }
         asm volatile("wbinvd" ::: "memory");
 
-        // Push LVI to the LAST BDL entry we wrote
-        uint8_t lastIdx = (sw_lvi + pagesUsed - 1) % AC97_BDL_ENTRIES;
-        outb(nabmBar + AC97_PO_LVI, lastIdx);
-
-        // Advance sw_lvi past the entries we used
-        sw_lvi = (sw_lvi + pagesUsed) % AC97_BDL_ENTRIES;
-
-        // Flip to the other half for next WriteData call
-        activeHalf = 1 - activeHalf;
-
-        buffersOccupied++;
+        // Only update BDL/LVI state when pages were actually written
+        if (pagesUsed > 0) {
+            uint8_t lastIdx = (sw_lvi + pagesUsed - 1) % AC97_BDL_ENTRIES;
+            outb(nabmBar + AC97_PO_LVI, lastIdx);
+            sw_lvi = (sw_lvi + pagesUsed) % AC97_BDL_ENTRIES;
+            activeHalf = 1 - activeHalf;
+            buffersOccupied++;
+        }
         return size;
     }
 

@@ -242,22 +242,25 @@ void VideoGraphicsArray::DrawRectangle(uint32_t x, uint32_t y, uint32_t w, uint3
 
 void VideoGraphicsArray::FillRoundedRectangle(uint32_t x, uint32_t y, uint32_t w, uint32_t h,
                                               uint32_t radius, uint8_t colorIndex) {
+    // Clamp radius so subtractions cannot underflow
+    uint32_t radiusClamped = (radius > w / 2) ? w / 2 : radius;
+    if (radiusClamped > h / 2) radiusClamped = h / 2;
     // Draw the central rectangle (excluding the rounded corners)
-    FillRectangle(x + radius, y, w - 2 * radius, h, colorIndex);
-    FillRectangle(x, y + radius, w, h - 2 * radius, colorIndex);
+    FillRectangle(x + radiusClamped, y, w - 2 * radiusClamped, h, colorIndex);
+    FillRectangle(x, y + radiusClamped, w, h - 2 * radiusClamped, colorIndex);
 
     // Draw the rounded corners using more precise quarter-circle logic
-    for (int32_t dy = 0; dy <= radius; ++dy) {
-        for (int32_t dx = 0; dx <= radius; ++dx) {
-            if ((dx * dx + dy * dy) <= (radius * radius)) {
+    for (int32_t dy = 0; dy <= (int32_t)radiusClamped; ++dy) {
+        for (int32_t dx = 0; dx <= (int32_t)radiusClamped; ++dx) {
+            if ((dx * dx + dy * dy) <= (int32_t)(radiusClamped * radiusClamped)) {
                 // Top-left corner
-                PutPixel(x + radius - dx, y + radius - dy, colorIndex);
+                PutPixel(x + radiusClamped - dx, y + radiusClamped - dy, colorIndex);
                 // Top-right corner
-                PutPixel(x + w - radius + dx - 1, y + radius - dy, colorIndex);
+                PutPixel(x + w - radiusClamped + dx - 1, y + radiusClamped - dy, colorIndex);
                 // Bottom-left corner
-                PutPixel(x + radius - dx, y + h - radius + dy - 1, colorIndex);
+                PutPixel(x + radiusClamped - dx, y + h - radiusClamped + dy - 1, colorIndex);
                 // Bottom-right corner
-                PutPixel(x + w - radius + dx - 1, y + h - radius + dy - 1, colorIndex);
+                PutPixel(x + w - radiusClamped + dx - 1, y + h - radiusClamped + dy - 1, colorIndex);
             }
         }
     }

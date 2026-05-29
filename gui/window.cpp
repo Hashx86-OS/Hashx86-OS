@@ -110,7 +110,9 @@ void Window::RedrawToCache() {
     NINA::activeInstance->FillRoundedRectangle(cache, w, h, 0, 0, w, h, 6, WINDOW_BACKGROUND_COLOR);
     NINA::activeInstance->DrawRoundedRectangle(cache, w, h, 0, 0, w, h, 6, borderColor);
     NINA::activeInstance->DrawBitmap(cache, w, h, 4, 2, (const uint32_t*)icon_main_20x20, 20, 20);
-    NINA::activeInstance->DrawString(cache, w, h, 28, 3, windowTitle, font, WINDOW_TITLE_COLOR);
+    if (font) {
+        NINA::activeInstance->DrawString(cache, w, h, 28, 3, windowTitle, font, WINDOW_TITLE_COLOR);
+    }
 
     for (auto& child : childrenList) {
         if (!child->isVisible) continue;

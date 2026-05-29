@@ -115,6 +115,9 @@ ProcessControlBlock* Scheduler::CreateProcess(bool isKernel, void (*entrypoint)(
                         PAGE_PRESENT | PAGE_USER);
     }
 
+    // Register PCB before CreateThread so the child is discoverable if scheduled
+    globalProcessList.PushBack(pcb);
+
     // Create the main thread (Stack setup)
     ThreadControlBlock* mainThread = CreateThread(pcb, entrypoint, arg);
     if (!mainThread) {
@@ -137,12 +140,11 @@ ProcessControlBlock* Scheduler::CreateProcess(bool isKernel, void (*entrypoint)(
             }
             pmm_free_block(pcb->page_directory);
         }
+        globalProcessList.Remove([pcb](ProcessControlBlock* p) { return p == pcb; });
         delete pcb;
         return nullptr;
     }
 
-    // Register
-    globalProcessList.PushBack(pcb);
     KDBG1("CreateProcess PID=%d Kernel=%d", pcb->pid, isKernel);
     return pcb;
 }
@@ -336,24 +338,57 @@ ThreadControlBlock* Scheduler::CloneCurrentThread(CPUState* parentContext, uint3
     // Linux clone contract: child returns 0 from clone.
     tcb->context->eax = 0;
 
-    // If a child stack is provided, child resumes with that user stack pointer.
+    // When child_stack is null, allocate a distinct user stack for the child
+    // so both threads do not share one user stack.
     if (child_stack) {
         tcb->context->esp = (uint32_t)child_stack;
+    } else {
+        // Allocate a small user stack for the child thread
+        uint32_t user_stack_size = 4096;
+        uint32_t user_stack_phys = (uint32_t)pmm_alloc_block_low(256 * 1024 * 1024);
+        if (!user_stack_phys) {
+            kfree(tcb->stack);
+            delete tcb;
+            return nullptr;
+        }
+        memset((void*)user_stack_phys, 0, 4096);
+        // Map it at a fixed high user address (just below 3GB) unique per thread
+        uint32_t user_stack_virt = 0xBFFF0000 - (tcb->tid * 4096);
+        if (user_stack_virt < 0x10000000) {
+            pmm_free_block((void*)user_stack_phys);
+            kfree(tcb->stack);
+            delete tcb;
+            return nullptr;
+        }
+        if (!_pager->MapPage(parent->page_directory, user_stack_virt, user_stack_phys,
+                             PAGE_PRESENT | PAGE_RW | PAGE_USER)) {
+            pmm_free_block((void*)user_stack_phys);
+            kfree(tcb->stack);
+            delete tcb;
+            return nullptr;
+        }
+        // Set esp to top of the allocated page
+        tcb->context->esp = user_stack_virt + 4096 - 8;
+        // Write a return address to the exit trampoline (bottom of stack)
+        uint32_t* stack_top_phys = (uint32_t*)(user_stack_phys + 4096);
+        stack_top_phys[-1] = 0;              // Argument
+        stack_top_phys[-2] = USER_EXIT_TRAMPOLINE_VIRT;
     }
 
     // Best-effort handling for common TID reporting flags.
     constexpr uint32_t CLONE_PARENT_SETTID = 0x00100000;
     constexpr uint32_t CLONE_CHILD_SETTID = 0x01000000;
     constexpr uint32_t USER_LOWER_BOUND = 0x10000000;
+    constexpr uint32_t KERNEL_BASE = 0xC0000000;
 
-    // Validate that the full 4-byte range is mapped and does not cross a page boundary
+    // Validate that the full 4-byte range is mapped, in user space, and does not cross a page boundary
     auto safeWriteTid = [&](void* addr, uint32_t tid_val, uint32_t* page_dir) -> bool {
         uint32_t uaddr = (uint32_t)addr;
         if (uaddr < USER_LOWER_BOUND) return false;
+        uint32_t end = uaddr + sizeof(uint32_t) - 1;
+        if (end < uaddr || end >= KERNEL_BASE) return false;
         // Check that write stays within a single page
         if ((uaddr & (PAGE_SIZE - 1)) > PAGE_SIZE - sizeof(uint32_t)) return false;
-        uint32_t end = uaddr + sizeof(uint32_t) - 1;
-        if (end < uaddr) return false;
         // Verify both start and end pages are mapped
         for (uint32_t page = uaddr & ~(PAGE_SIZE - 1); page <= end; page += PAGE_SIZE) {
             if (_pager->GetPhysicalAddress(page_dir, page) == 0xFFFFFFFF) return false;
@@ -492,20 +527,55 @@ ThreadControlBlock* Scheduler::CloneCurrentProcess(CPUState* parentContext, uint
     memcpy(tcb->context, parentContext, sizeof(CPUState));
     tcb->context->eax = 0;
 
+    // When child_stack is null in a CLONE_VM context, allocate a distinct user stack
     if (child_stack) {
         tcb->context->esp = (uint32_t)child_stack;
+    } else {
+        uint32_t user_stack_size = 4096;
+        uint32_t user_stack_phys = (uint32_t)pmm_alloc_block_low(256 * 1024 * 1024);
+        if (!user_stack_phys) {
+            kfree(tcb->stack);
+            delete tcb;
+            if (childProc->page_directory) freeChildAddressSpace();
+            delete childProc;
+            return nullptr;
+        }
+        memset((void*)user_stack_phys, 0, 4096);
+        uint32_t user_stack_virt = 0xBFFF0000 - (tcb->tid * 4096);
+        if (user_stack_virt < 0x10000000) {
+            pmm_free_block((void*)user_stack_phys);
+            kfree(tcb->stack);
+            delete tcb;
+            if (childProc->page_directory) freeChildAddressSpace();
+            delete childProc;
+            return nullptr;
+        }
+        if (!_pager->MapPage(childProc->page_directory, user_stack_virt, user_stack_phys,
+                             PAGE_PRESENT | PAGE_RW | PAGE_USER)) {
+            pmm_free_block((void*)user_stack_phys);
+            kfree(tcb->stack);
+            delete tcb;
+            if (childProc->page_directory) freeChildAddressSpace();
+            delete childProc;
+            return nullptr;
+        }
+        uint32_t* stack_top_phys = (uint32_t*)(user_stack_phys + 4096);
+        stack_top_phys[-1] = 0;
+        stack_top_phys[-2] = USER_EXIT_TRAMPOLINE_VIRT;
+        tcb->context->esp = user_stack_virt + 4096 - 8;
     }
 
     constexpr uint32_t CLONE_PARENT_SETTID = 0x00100000;
     constexpr uint32_t CLONE_CHILD_SETTID = 0x01000000;
     constexpr uint32_t USER_LOWER_BOUND = 0x10000000;
+    constexpr uint32_t KERNEL_BASE = 0xC0000000;
 
     auto safeWriteTid = [&](void* addr, uint32_t tid_val, uint32_t* page_dir) -> bool {
         uint32_t uaddr = (uint32_t)addr;
         if (uaddr < USER_LOWER_BOUND) return false;
-        if ((uaddr & (PAGE_SIZE - 1)) > PAGE_SIZE - sizeof(uint32_t)) return false;
         uint32_t end = uaddr + sizeof(uint32_t) - 1;
-        if (end < uaddr) return false;
+        if (end < uaddr || end >= KERNEL_BASE) return false;
+        if ((uaddr & (PAGE_SIZE - 1)) > PAGE_SIZE - sizeof(uint32_t)) return false;
         for (uint32_t page = uaddr & ~(PAGE_SIZE - 1); page <= end; page += PAGE_SIZE) {
             if (_pager->GetPhysicalAddress(page_dir, page) == 0xFFFFFFFF) return false;
         }

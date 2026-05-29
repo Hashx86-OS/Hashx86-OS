@@ -443,6 +443,13 @@ uint32_t FAT32::ReadStream(File* file, uint8_t* buffer, uint32_t length) {
     if (!file || !buffer || length == 0) return 0;
     if (file->id < 2) return 0;
 
+    // Clamp length to remaining bytes in file (skip for directories - size is 0)
+    if (!(file->flags & 1)) {
+        if (file->position >= file->size) return 0;
+        uint32_t remaining = file->size - file->position;
+        if (length > remaining) length = remaining;
+    }
+
     uint32_t currentCluster = file->id;
     uint32_t offset = file->position;
     uint32_t clusterSize = bpb.sectorsPerCluster * 512;
@@ -904,6 +911,15 @@ void FAT32::WriteFile(char* path, uint8_t* buffer, uint32_t length) {
             break;
         }
         currentCluster = next;
+    }
+
+    // Free any trailing clusters left from a previous larger file
+    if (currentCluster >= 2 && fat_valid_cluster(currentCluster, this->bpb)) {
+        uint32_t tail = GetFATEntry(currentCluster);
+        if (tail >= 2 && tail < 0x0FFFFFF8) {
+            SetFATEntry(currentCluster, 0x0FFFFFFF);
+            FreeChain(tail);
+        }
     }
 
     uint8_t dirBuff[512];

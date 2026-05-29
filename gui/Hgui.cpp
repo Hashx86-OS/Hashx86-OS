@@ -165,6 +165,8 @@ uint32_t HguiHandler::HandleInterrupt(uint32_t esp) {
 
 int32_t HguiHandler::HandleWidget(CPUState* cpu, const WidgetData* _data) {
     if (!cpu || !_data) return -1;
+    ProcessControlBlock* proc = GetCurrentProcSafe();
+    if (!proc) return -1;
 
     if ((uint32_t)cpu->ebx == ADD_CHILD) {
         Widget* parentBase = this->FindWidgetByID(_data->param0);
@@ -172,16 +174,18 @@ int32_t HguiHandler::HandleWidget(CPUState* cpu, const WidgetData* _data) {
         CompositeWidget* parentWidget = static_cast<CompositeWidget*>(parentBase);
 
         Widget* childWidget = this->FindWidgetByID(_data->param1);
-        if (!childWidget) return -1;  // Also fixes a bug where parentWidget was checked twice
+        if (!childWidget) return -1;
 
-        // TODO: Add checks for widgets before add to desktop
+        // PID ownership: caller must own child; parent must be owned by caller or be desktop (ID==0)
+        if (childWidget->PID != proc->pid) return -1;
+        if (parentWidget->PID != proc->pid && parentWidget->ID != 0) return -1;
+
         parentWidget->AddChild(childWidget);
 
         // If adding a window to the Desktop, create a taskbar tab
         if (parentWidget->ID == 0) {
             Desktop* desktop = Desktop::activeInstance;
             if (desktop && desktop->GetTaskbar()) {
-                // Safely check if childWidget is a Window before casting
                 const char* tabTitle = "App";
                 if (childWidget->IsWindow()) {
                     Window* win = static_cast<Window*>(childWidget);
@@ -196,24 +200,32 @@ int32_t HguiHandler::HandleWidget(CPUState* cpu, const WidgetData* _data) {
         return 1;
     } else if ((uint32_t)cpu->ebx == DELETE) {
         Widget* target = this->FindWidgetByID(_data->param1);
-        if (target) {
-            // Remove any taskbar tab referencing this widget's window before freeing it
-            if (Desktop::activeInstance && Desktop::activeInstance->GetTaskbar()) {
-                Widget* win = target;
-                while (win && !win->IsWindow()) win = win->parent;
-                if (win) {
-                    Desktop::activeInstance->GetTaskbar()->RemoveTabByWindow(win);
-                }
+        if (!target) return 1;
+        if (target->PID != proc->pid) return -1;  // caller must own the widget
+
+        // Remove any taskbar tab referencing this widget's window before freeing it
+        if (Desktop::activeInstance && Desktop::activeInstance->GetTaskbar()) {
+            Widget* win = target;
+            while (win && !win->IsWindow()) win = win->parent;
+            if (win) {
+                Desktop::activeInstance->GetTaskbar()->RemoveTabByWindow(win);
             }
-            // Detach from parent first
-            if (target->parent) {
-                target->parent->RemoveChild(target);
-            }
-            // Remove from global widget list
-            HguiWidgets.Remove([&](Widget* c) { return c->ID == _data->param1; });
-            // Destroy the widget
-            delete target;
         }
+        // Walk descendant tree and remove every descendant from HguiWidgets
+        {
+            LinkedList<Widget*> toRemove;
+            toRemove.PushBack(target);
+            while (toRemove.GetSize() > 0) {
+                Widget* cur = toRemove.PopFront();
+                cur->childrenList.ForEach([&](Widget* child) { toRemove.PushBack(child); });
+                HguiWidgets.Remove([&](Widget* c) { return c->ID == cur->ID; });
+            }
+        }
+        // Detach from parent and destroy the widget
+        if (target->parent) {
+            target->parent->RemoveChild(target);
+        }
+        delete target;
         return 1;
     }
 

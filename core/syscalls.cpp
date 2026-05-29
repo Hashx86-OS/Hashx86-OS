@@ -143,7 +143,7 @@ uint32_t SyscallHandler::HandleInterrupt(uint32_t esp) {
             if (Scheduler::activeInstance) {
                 cpu = Scheduler::activeInstance->Schedule(cpu);
                 esp = (uint32_t)cpu;
-                return_val = 0;
+                return esp;
             }
             break;
 
@@ -343,6 +343,11 @@ int32_t SyscallHandlers::Handle_sys_execve(const char* path, char* const argv[],
             // Copy up to 5 argv strings from user space into kernel-owned memory for now.
             ProgramArguments* args =
                 new ProgramArguments{nullptr, nullptr, nullptr, nullptr, nullptr};
+            if (!args) {
+                f->Close();
+                delete f;
+                return -1;
+            }
             ProcessControlBlock* proc = Scheduler::activeInstance->GetCurrentProcess();
             bool argvFailed = false;
             if (argv && proc) {

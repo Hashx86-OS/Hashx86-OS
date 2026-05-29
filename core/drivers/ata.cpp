@@ -119,9 +119,10 @@ void AdvancedTechnologyAttachment::Read28(uint32_t sectorNum, uint8_t* data, int
     commandPort.Write(0x20);
 
     uint8_t status = commandPort.Read();
-    uint8_t status2 = commandPort.Read();
-    uint8_t status3 = commandPort.Read();
-    uint8_t status4 = commandPort.Read();
+    // ATA 400ns delay via four status reads
+    commandPort.Read();
+    commandPort.Read();
+    commandPort.Read();
 
     uint32_t bsyWait = 0;
     while ((status & 0x80) == 0x80) {

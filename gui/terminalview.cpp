@@ -263,7 +263,15 @@ void TerminalView::RedrawToCache() {
         return;
     }
 
-    for (int i = 0; text[i] != '\0'; i++) {
+    // Skip lines according to scrollOffset (count newlines)
+    int skippedLines = 0;
+    int textIdx = 0;
+    while (text[textIdx] != '\0' && skippedLines < scrollOffset) {
+        if (text[textIdx] == '\n') skippedLines++;
+        textIdx++;
+    }
+
+    for (int i = textIdx; text[i] != '\0'; i++) {
         char c = text[i];
 
         if (c == '\n') {

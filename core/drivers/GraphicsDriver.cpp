@@ -14,7 +14,10 @@ GraphicsDriver::GraphicsDriver(uint32_t w, uint32_t h, uint32_t b, uint32_t* vra
     this->bpp = b;
     this->videoMemory = vram;
 
-    // Allocate Backbuffer
+    // Validate framebuffer size before allocation
+    if (width == 0 || height == 0 || (size_t)width * (size_t)height > (0xFFFFFFFFu / sizeof(uint32_t))) {
+        HALT("CRITICAL: Invalid graphics dimensions!");
+    }
     this->backBuffer = new uint32_t[width * height];
     if (!this->backBuffer) {
         HALT("CRITICAL: Failed to allocate graphics back buffer!\n");
@@ -35,10 +38,8 @@ GraphicsDriver::~GraphicsDriver() {
 }
 
 void GraphicsDriver::Flush() {
-    // Copy Backbuffer to Video Memory
     if (videoMemory && backBuffer) {
-        uint32_t size = width * height * sizeof(uint32_t);
-        memcpy(videoMemory, backBuffer, size);
+        memcpy(videoMemory, backBuffer, (size_t)width * height * sizeof(uint32_t));
     }
 }
 

@@ -270,6 +270,7 @@ void* kmalloc(size_t size) {
             return new_block->data;
         } else {
             worst->metadata.is_free = false;
+            worst->metadata.size = size;
             // if (size != 8) KDBG3("Alloc size=%d ptr=0x%x", size, worst->data);
             return worst->data;
         }
