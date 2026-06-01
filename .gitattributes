@@ -1,2 +1,13 @@
-# Auto detect text files and perform LF normalization
-* text=auto
+
+* text=auto eol=lf
+
+# Keep binary files untouched
+*.png binary
+*.jpg binary
+*.o binary
+*.bin binary
+*.iso binary
+*.img binary
+*.bmp binary
+*.vdi binary
+*.sys binary

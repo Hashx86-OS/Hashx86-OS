@@ -1,0 +1,308 @@
+/**
+ * @file        keyboard.cpp
+ * @brief       Generic Keyboard Driver for #x86
+ *
+ * @date        13/01/2025
+ * @version     1.0.0-beta
+ */
+
+#define KDBG_COMPONENT "KEYBOARD"
+#include <core/drivers/keyboard.h>
+#include <core/memory.h>
+
+KeyboardDriver* KeyboardDriver::activeInstance = nullptr;
+
+// Modifier key states
+bool leftShiftPressed = false;
+bool rightShiftPressed = false;
+bool leftCtrlPressed = false;
+bool rightCtrlPressed = false;
+bool leftAltPressed = false;
+bool rightAltPressed = false;
+bool capsLockActive = false;
+
+/**
+ * KeyboardEventHandler constructor
+ */
+KeyboardEventHandler::KeyboardEventHandler() {}
+
+/**
+ * Virtual method to handle key press events
+ */
+void KeyboardEventHandler::OnKeyDown(const char* key) {}
+
+/**
+ * Virtual method to handle key release events
+ */
+void KeyboardEventHandler::OnKeyUp(const char* key) {}
+
+/**
+ * Virtual method to handle special key press events
+ */
+void KeyboardEventHandler::OnSpecialKeyDown(uint8_t key) {}
+
+/**
+ * Virtual method to handle special key release events
+ */
+void KeyboardEventHandler::OnSpecialKeyUp(uint8_t key) {}
+
+/**
+ * KeyboardDriver constructor
+ *
+ * Initializes the keyboard driver with the interrupt manager and event handler.
+ */
+KeyboardDriver::KeyboardDriver(InterruptManager* manager, KeyboardEventHandler* handler)
+    : InterruptHandler(0x21, manager), dataPort(0x60), commandPort(0x64) {
+    this->eventHandler = handler;
+    this->driverName = "Generic Keyboard Driver  ";
+    memset(this->keyStates, 0, sizeof(this->keyStates));
+    activeInstance = this;
+}
+
+/**
+ * KeyboardDriver destructor
+ */
+KeyboardDriver::~KeyboardDriver() {}
+
+/**
+ * Activates the keyboard driver and initializes the hardware
+ */
+static bool WaitForKBACK(Port8Bit& dataPort, Port8Bit& commandPort, int retries) {
+    for (int i = 0; i < retries; i++) {
+        for (int wait = 0; wait < 10000; wait++) {
+            if (commandPort.Read() & 0x1) {
+                uint8_t ack = dataPort.Read();
+                if (ack == 0xFA) return true;
+                if (ack == 0xFE) break;
+                return false;
+            }
+        }
+    }
+    return false;
+}
+
+void KeyboardDriver::Activate() {
+    // Clear the keyboard buffer
+    while (commandPort.Read() & 0x1) dataPort.Read();
+
+    // Enable the keyboard (controller command — no ACK expected)
+    commandPort.Write(0xAE);
+
+    // Read controller command byte
+    commandPort.Write(0x20);
+    int bufReady = 0;
+    for (int wait = 0; wait < 10000; wait++) {
+        if (commandPort.Read() & 0x1) {
+            bufReady = 1;
+            break;
+        }
+    }
+    if (!bufReady) {
+        this->is_Active = false;
+        return;
+    }
+    uint8_t status = (dataPort.Read() | 1) & ~0x10;  // Enable IRQ1, disable key lock
+    // Write back the modified command byte (controller command — no ACK expected)
+    commandPort.Write(0x60);
+    dataPort.Write(status);
+
+    // Activate the keyboard
+    dataPort.Write(0xF4);
+    if (!WaitForKBACK(dataPort, commandPort, 3)) {
+        this->is_Active = false;
+        return;
+    }
+    this->is_Active = true;
+}
+
+/**
+ * Handles keyboard interrupts and processes key events
+ *
+ * @param esp Current stack pointer
+ * @return Updated stack pointer after handling interrupt
+ */
+uint32_t KeyboardDriver::HandleInterrupt(uint32_t esp) {
+    uint8_t key = dataPort.Read();
+
+    static bool isExtendedScancode = false;
+
+    if (key == 0xE0) {
+        isExtendedScancode = true;
+        return esp;
+    }
+
+    // Key mappings
+    static const char normalKeyMap[128] = {
+        0,   0,   '1', '2', '3', '4', '5', '6', '7', '8', '9',  '0', '-', '=',  0,  // 0x00 - 0x0E
+        0,   'q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p',  '[', ']', '\n', 0,  // 0x0F - 0x1D
+        'a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l', ';', '\'', '`', 0,   '\\',     // 0x1E - 0x2C
+        'z', 'x', 'c', 'v', 'b', 'n', 'm', ',', '.', '/', 0,    '*', 0,   ' ',      // 0x2D - 0x39
+        0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,    0,   0,   0,        // 0x3A - 0x48
+        0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,    0,   0,   0         // 0x49 - 0x58
+    };
+
+    static const char shiftKeyMap[128] = {
+        0,   0,   '!', '@', '#', '$', '%', '^', '&', '*', '(', ')', '_', '+',  0,  // 0x00 - 0x0E
+        0,   'Q', 'W', 'E', 'R', 'T', 'Y', 'U', 'I', 'O', 'P', '{', '}', '\n', 0,  // 0x0F - 0x1D
+        'A', 'S', 'D', 'F', 'G', 'H', 'J', 'K', 'L', ':', '"', '~', 0,   '|',      // 0x1E - 0x2C
+        'Z', 'X', 'C', 'V', 'B', 'N', 'M', '<', '>', '?', 0,   '*', 0,   ' ',      // 0x2D - 0x39
+        0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,        // 0x3A - 0x48
+        0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0         // 0x49 - 0x58
+    };
+
+    if (isExtendedScancode) {
+        isExtendedScancode = false;
+        // Always update modifier state
+        switch (key) {
+            case 0x1D:
+                rightCtrlPressed = true;
+                break;
+            case 0x38:
+                rightAltPressed = true;
+                break;
+            case 0x9D:
+                rightCtrlPressed = false;
+                break;
+            case 0xB8:
+                rightAltPressed = false;
+                break;
+        }
+        // Only invoke callbacks if handler is set
+        if (this->eventHandler) {
+            switch (key) {
+                case 0x1D:
+                case 0x38:
+                case 0x48:
+                case 0x50:
+                case 0x4B:
+                case 0x4D:
+                case 0x53:
+                    eventHandler->OnSpecialKeyDown(key);
+                    break;
+                case 0x9D:
+                case 0xB8:
+                case 0xC8:
+                case 0xD0:
+                case 0xCB:
+                case 0xCD:
+                case 0xD3:
+                    eventHandler->OnSpecialKeyUp(key);
+                    break;
+            }
+        }
+        return esp;
+    }
+
+    // Normal scancodes
+    if (key < 0x80) {
+        keyStates[key] = 1;
+        // Always update modifier state
+        switch (key) {
+            case 0x2A:
+                leftShiftPressed = true;
+                break;
+            case 0x36:
+                rightShiftPressed = true;
+                break;
+            case 0x1D:
+                leftCtrlPressed = true;
+                break;
+            case 0x38:
+                leftAltPressed = true;
+                break;
+            case 0x3A:
+                capsLockActive = !capsLockActive;
+                break;
+        }
+        // Only invoke callbacks if handler is set
+        if (this->eventHandler) {
+            switch (key) {
+                case 0x1C:
+                case 0x2A:
+                case 0x36:
+                case 0x1D:
+                case 0x38:
+                case 0x3A:
+                case 0x0F:
+                case 0x0E:
+                case 0x01:
+                case 0x3B:
+                case 0x3C:
+                case 0x3D:
+                case 0x3E:
+                case 0x3F:
+                case 0x40:
+                case 0x41:
+                case 0x42:
+                case 0x43:
+                case 0x44:
+                case 0x57:
+                case 0x58:
+                    eventHandler->OnSpecialKeyDown(key);
+                    break;
+                default:
+                    if (key < 128) {
+                        char character = normalKeyMap[key];
+                        bool shiftPressed = leftShiftPressed || rightShiftPressed;
+                        if (character >= 'a' && character <= 'z') {
+                            if (shiftPressed ^ capsLockActive) character = shiftKeyMap[key];
+                        } else {
+                            if (shiftPressed) character = shiftKeyMap[key];
+                        }
+                        if (character != 0) {
+                            char keyStr[2] = {character, '\0'};
+                            eventHandler->OnKeyDown(keyStr);
+                        }
+                    }
+                    break;
+            }
+        }
+    } else {
+        uint8_t releaseScancode = key & 0x7F;
+        if (releaseScancode < 128) keyStates[releaseScancode] = 0;
+        // Always update modifier state
+        switch (key) {
+            case 0xAA:
+                leftShiftPressed = false;
+                break;
+            case 0xB6:
+                rightShiftPressed = false;
+                break;
+            case 0x9D:
+                leftCtrlPressed = false;
+                break;
+            case 0xB8:
+                leftAltPressed = false;
+                break;
+        }
+        // Only invoke callbacks if handler is set
+        if (this->eventHandler) {
+            switch (key) {
+                case 0x9C:
+                case 0xAA:
+                case 0xB6:
+                case 0x9D:
+                case 0xB8:
+                case 0x8F:
+                case 0x8E:
+                case 0x81:
+                case 0xBB:
+                case 0xBC:
+                case 0xBD:
+                case 0xBE:
+                case 0xBF:
+                case 0xC0:
+                case 0xC1:
+                case 0xC2:
+                case 0xC3:
+                case 0xC4:
+                case 0xD7:
+                case 0xD8:
+                    eventHandler->OnSpecialKeyUp(key);
+                    break;
+            }
+        }
+    }
+
+    return esp;
+}
