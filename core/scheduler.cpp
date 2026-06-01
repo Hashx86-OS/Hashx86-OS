@@ -111,8 +111,15 @@ ProcessControlBlock* Scheduler::CreateProcess(bool isKernel, void (*entrypoint)(
 
     // Map the user-mode exit trampoline into this process's address space
     if (!isKernel) {
-        _pager->MapPage(pcb->page_directory, USER_EXIT_TRAMPOLINE_VIRT, _trampolinePhys,
-                        PAGE_PRESENT | PAGE_USER);
+        if (!_pager->MapPage(pcb->page_directory, USER_EXIT_TRAMPOLINE_VIRT, _trampolinePhys,
+                             PAGE_PRESENT | PAGE_USER)) {
+            KDBG1("CreateProcess PID=%d FAILED: MapPage for exit trampoline", pcb->pid);
+            if (pcb->page_directory != _pager->KernelPageDirectory) {
+                pmm_free_block(pcb->page_directory);
+            }
+            delete pcb;
+            return nullptr;
+        }
     }
 
     // Register PCB before CreateThread so the child is discoverable if scheduled
@@ -697,6 +704,7 @@ bool Scheduler::KillProcess(uint32_t pid) {
 }
 
 void Scheduler::TerminateThread(ThreadControlBlock* thread) {
+    InterruptGuard guard;
     if (!thread) return;
     if (thread->state == THREAD_STATE_TERMINATED) return;
 
@@ -814,8 +822,9 @@ CPUState* Scheduler::Schedule(CPUState* context) {
         // No real work to do, Run the Idle Thread.
         currentThread = idleThread;
         currentThread->state = THREAD_STATE_RUNNING;
-        DrainPendingReclaims();
+        g_tss.esp0 = (uint32_t)(idleThread->stack + KERNEL_STACK_SIZE);
         _pager->SwitchDirectory((_pager->KernelPageDirectory));
+        DrainPendingReclaims();
         return currentThread->context;
 
     } else {

@@ -160,6 +160,12 @@ uint32_t FAT32::ParsePath(char* path, char* filenameOut) {
     }
     filenameOut[fIdx] = 0;  // Ensure null termination
 
+    // Reject empty basename (e.g. trailing slash)
+    if (fIdx == 0) {
+        filenameOut[0] = 0;
+        return 0;
+    }
+
     return dirCluster;
 }
 

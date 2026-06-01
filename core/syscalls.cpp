@@ -758,6 +758,11 @@ int32_t SyscallHandlers::Handle_sys_Hcall(uint32_t hcall_id, uint32_t arg1, uint
             return -1;
         }
 
+        if (!Desktop::activeInstance) {
+            KDBG1("Hsys_regEventH: Desktop not initialized");
+            Scheduler::activeInstance->TerminateThread(thread);
+            return -1;
+        }
         Desktop::activeInstance->createNewHandler(current_process->pid, thread);
 
         return (int32_t)thread->tid;

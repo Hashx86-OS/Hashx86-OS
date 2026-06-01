@@ -136,7 +136,7 @@ void AudioMixer::ProcessAudio() {
         }
     }
 
-    unlock(flags);
-
     driver->WriteData(mixBuffer, bufferSize);
+
+    unlock(flags);
 }

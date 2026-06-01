@@ -111,7 +111,7 @@ build:
 	@sleep $(RUNQ_DELAY)
 	make runq
 
-runq:
+runq: iso
 	qemu-system-i386 -cdrom $(KERNEL_ISO) -boot d -vga std -serial stdio -m 1G \
 	-drive file=$(QEMU_DISK),format=vdi
 
@@ -128,7 +128,7 @@ hdd:
 # 	1. Load the NBD module
 	sudo modprobe nbd max_part=16
 # 	2. Connect VHD to /dev/nbd0
-	sudo qemu-nbd --connect=/dev/nbd0 HDD.vdi
+	sudo qemu-nbd --connect=/dev/nbd0 $(QEMU_DISK)
 # 	3. Mount Partition 1 (p1)
 	sudo mkdir -p /mnt/vdi_p1
 	sudo mount /dev/nbd0p1 /mnt/vdi_p1
@@ -174,7 +174,7 @@ hdd:
 	sudo umount /mnt/vdi_p1
 	sudo qemu-nbd --disconnect /dev/nbd0
 
-runvb: $(KERNEL_ISO)
+runvb: iso
 	(killall VirtualBox && sleep 1) || true
 	VirtualBox --startvm 'My Operating System' &
 

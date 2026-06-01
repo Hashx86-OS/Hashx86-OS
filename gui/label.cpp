@@ -12,7 +12,7 @@
 Label::Label(Widget* parent, int32_t x, int32_t y, int32_t w, int32_t h, const char* text)
     : Widget(parent, x, y, w, h) {
     this->isFocussable = false;
-    this->font = FontManager::activeInstance->getNewFont();
+    this->font = FontManager::activeInstance ? FontManager::activeInstance->getNewFont() : nullptr;
     const char* t = text ? text : "";
     this->text = new char[strlen(t) + 1];
     if (!this->text) {
@@ -53,7 +53,9 @@ void Label::RedrawToCache() {
     // Clear background to transparent (0)
     memset(cache, 0, sizeof(uint32_t) * w * h);
 
-    NINA::activeInstance->DrawString(cache, w, h, 2, 2, text, font, LABEL_TEXT_COLOR_NORMAL);
+    if (NINA::activeInstance) {
+        NINA::activeInstance->DrawString(cache, w, h, 2, 2, text, font, LABEL_TEXT_COLOR_NORMAL);
+    }
     isDirty = false;
 }
 

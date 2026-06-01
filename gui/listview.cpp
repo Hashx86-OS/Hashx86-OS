@@ -87,7 +87,7 @@ void ListView::RedrawToCache() {
         isDirty = false;
         return;
     }
-    memset(cache, 0, sizeof(uint32_t) * w * h);
+    memset(cache, 0, (size_t)w * (size_t)h * sizeof(uint32_t));
 
     // Background
     NINA::activeInstance->FillRoundedRectangle(cache, w, h, 0, 0, w, h, 4, LISTVIEW_BG_COLOR);

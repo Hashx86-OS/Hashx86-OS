@@ -28,27 +28,30 @@ NINA::~NINA() {}
 
 void NINA::DrawBitmapToBuffer(uint32_t* dst, int dstW, int dstH, int dstX, int dstY, uint32_t* src,
                               int srcW, int srcH) {
-    for (int y = 0; y < srcH; ++y) {
+    if (dstY + srcH <= 0 || dstY >= dstH) return;
+    if (dstX + srcW <= 0 || dstX >= dstW) return;
+
+    int srcY0 = (dstY < 0) ? -dstY : 0;
+    int srcY1 = (dstY + srcH > dstH) ? dstH - dstY : srcH;
+
+    int srcX0 = (dstX < 0) ? -dstX : 0;
+    int srcX1 = (dstX + srcW > dstW) ? dstW - dstX : srcW;
+
+    for (int y = srcY0; y < srcY1; ++y) {
         int dy = dstY + y;
-        if (dy < 0 || dy >= dstH) continue;
+        int clippedDstX = dstX + srcX0;
+        uint32_t* dstRow = dst + dy * dstW + clippedDstX;
+        uint32_t* srcRow = src + y * srcW + srcX0;
+        int span = srcX1 - srcX0;
 
-        uint32_t* dstRow = dst + dy * dstW + dstX;
-        uint32_t* srcRow = src + y * srcW;
-
-        for (int x = 0; x < srcW; ++x) {
-            int dx = dstX + x;
-            if (dx < 0 || dx >= dstW) continue;
-
+        for (int x = 0; x < span; ++x) {
             uint32_t srcPixel = srcRow[x];
             uint8_t srcA = (srcPixel >> 24) & 0xFF;
 
             if (srcA == 255) {
-                // Fully opaque — just copy
                 dstRow[x] = srcPixel;
             } else if (srcA > 0) {
-                // Blend using alpha table
                 uint32_t dstPixel = dstRow[x];
-
                 uint8_t srcR = (srcPixel >> 16) & 0xFF;
                 uint8_t srcG = (srcPixel >> 8) & 0xFF;
                 uint8_t srcB = srcPixel & 0xFF;
@@ -58,14 +61,12 @@ void NINA::DrawBitmapToBuffer(uint32_t* dst, int dstW, int dstH, int dstX, int d
                 uint8_t dstB = dstPixel & 0xFF;
 
                 uint8_t invA = 255 - srcA;
-
                 uint8_t outR = alphaTable[srcA][srcR] + alphaTable[invA][dstR];
                 uint8_t outG = alphaTable[srcA][srcG] + alphaTable[invA][dstG];
                 uint8_t outB = alphaTable[srcA][srcB] + alphaTable[invA][dstB];
 
                 dstRow[x] = (0xFF << 24) | (outR << 16) | (outG << 8) | outB;
             }
-            // else: srcA == 0, fully transparent, skip
         }
     }
 }

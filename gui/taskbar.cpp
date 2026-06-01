@@ -7,6 +7,7 @@
  */
 
 #define KDBG_COMPONENT "GUI:TASKBAR"
+#include <core/Iguard.h>
 #include <core/timing.h>
 #include <gui/taskbar.h>
 
@@ -377,6 +378,7 @@ void TaskbarTab::OnMouseMove(int32_t oldx, int32_t oldy, int32_t newx, int32_t n
 
 // Taskbar tab management
 void Taskbar::AddTab(uint32_t pid, const char* title, Widget* window) {
+    InterruptGuard guard;
     if (tabCount >= TASKBAR_TAB_MAX_TABS) return;
 
     // Don't add duplicate tabs for the same PID
@@ -404,6 +406,7 @@ void Taskbar::AddTab(uint32_t pid, const char* title, Widget* window) {
 }
 
 void Taskbar::RemoveTabByPID(uint32_t pid) {
+    InterruptGuard guard;
     TaskbarTab* found = nullptr;
     tabs.ForEach([&](TaskbarTab* t) {
         if (!found && t->GetPID() == pid) found = t;
@@ -419,6 +422,7 @@ void Taskbar::RemoveTabByPID(uint32_t pid) {
 }
 
 void Taskbar::RemoveTabByWindow(Widget* window) {
+    InterruptGuard guard;
     TaskbarTab* found = nullptr;
     tabs.ForEach([&](TaskbarTab* t) {
         if (!found && t->GetWindow() == window) found = t;
