@@ -115,14 +115,11 @@ void KeyboardDriver::Activate() {
 uint32_t KeyboardDriver::HandleInterrupt(uint32_t esp) {
     uint8_t key = dataPort.Read();
 
-    if (this->eventHandler == 0) return esp;
-
-    // KDBG1(WHITE, "\nKey is 0x%x\n", key);
     static bool isExtendedScancode = false;
 
     if (key == 0xE0) {
-        isExtendedScancode = true;  // Mark the next scancode as extended
-        return esp;                 // Skip processing for now
+        isExtendedScancode = true;
+        return esp;
     }
 
     // Key mappings
@@ -145,286 +142,96 @@ uint32_t KeyboardDriver::HandleInterrupt(uint32_t esp) {
     };
 
     if (isExtendedScancode) {
-        isExtendedScancode = false;  // Reset the flag
+        isExtendedScancode = false;
+        // Always update modifier state
         switch (key) {
-            case 0x1D:  // Right Ctrl Pressed
-                rightCtrlPressed = true;
-                eventHandler->OnSpecialKeyDown(key);
-                // KDBG1("R Ctrl pressed");
-                break;
-            case 0x38:  // Right Alt Pressed
-                rightAltPressed = true;
-                eventHandler->OnSpecialKeyDown(key);
-                // KDBG1("R Alt pressed");
-                break;
-            case 0x48:  // Up Arrow
-                eventHandler->OnSpecialKeyDown(key);
-                // KDBG1("Up Arrow pressed");
-                break;
-            case 0x50:  // Down Arrow
-                eventHandler->OnSpecialKeyDown(key);
-                // KDBG1("Down Arrow pressed");
-                break;
-            case 0x4B:  // Left Arrow
-                eventHandler->OnSpecialKeyDown(key);
-                // KDBG1("Left Arrow pressed");
-                break;
-            case 0x4D:  // Right Arrow
-                eventHandler->OnSpecialKeyDown(key);
-                // KDBG1("Right Arrow pressed");
-                break;
-            case 0x53:  // Delete
-                eventHandler->OnSpecialKeyDown(key);
-                // KDBG1("Delete pressed");
-                break;
-            case 0x9D:  // Right Ctrl Released
-                rightCtrlPressed = false;
-                eventHandler->OnSpecialKeyUp(key);
-                // KDBG1("R Ctrl released");
-                break;
-            case 0xB8:  // Right Alt Released
-                rightAltPressed = false;
-                eventHandler->OnSpecialKeyUp(key);
-                // KDBG1("R Alt released");
-                break;
-            case 0xC8:  // Up Arrow Released
-                eventHandler->OnSpecialKeyUp(key);
-                // KDBG1("Up Arrow released");
-                break;
-            case 0xD0:  // Down Arrow Released
-                eventHandler->OnSpecialKeyUp(key);
-                // KDBG1("Down Arrow released");
-                break;
-            case 0xCB:  // Left Arrow Released
-                eventHandler->OnSpecialKeyUp(key);
-                // KDBG1("Left Arrow released");
-                break;
-            case 0xCD:  // Right Arrow Released
-                eventHandler->OnSpecialKeyUp(key);
-                // KDBG1("Right Arrow released");
-                break;
-            case 0xD3:  // Delete Released
-                eventHandler->OnSpecialKeyUp(key);
-                // KDBG1("Delete released");
-                break;
-
-            default:
-                // KDBG1("Error : Unhandled extended key: 0x%x", key);
-                break;
+            case 0x1D: rightCtrlPressed = true; break;
+            case 0x38: rightAltPressed = true; break;
+            case 0x9D: rightCtrlPressed = false; break;
+            case 0xB8: rightAltPressed = false; break;
+        }
+        // Only invoke callbacks if handler is set
+        if (this->eventHandler) {
+            switch (key) {
+                case 0x1D:  case 0x38:
+                case 0x48:  case 0x50:
+                case 0x4B:  case 0x4D:
+                case 0x53:
+                    eventHandler->OnSpecialKeyDown(key);
+                    break;
+                case 0x9D:  case 0xB8:
+                case 0xC8:  case 0xD0:
+                case 0xCB:  case 0xCD:
+                case 0xD3:
+                    eventHandler->OnSpecialKeyUp(key);
+                    break;
+            }
         }
         return esp;
     }
 
     // Normal scancodes
-    // Key down event
     if (key < 0x80) {
-        keyStates[key] = 1;  // Track key down
+        keyStates[key] = 1;
+        // Always update modifier state
         switch (key) {
-            case 0x1C:  // Enter Pressed
-                eventHandler->OnSpecialKeyDown(key);
-                // KDBG1("Enter pressed");
-                break;
-            case 0x2A:  // Left Shift Pressed
-                eventHandler->OnSpecialKeyDown(key);
-                leftShiftPressed = true;
-                // KDBG1("L Shift pressed");
-                break;
-            case 0x36:  // Right Shift Pressed
-                eventHandler->OnSpecialKeyDown(key);
-                rightShiftPressed = true;
-                // KDBG1("R Shift pressed");
-                break;
-            case 0x1D:  // Left Ctrl Pressed
-                eventHandler->OnSpecialKeyDown(key);
-                leftCtrlPressed = true;
-                // KDBG1("L Ctrl pressed");
-                break;
-            case 0x38:  // Left Alt Pressed
-                eventHandler->OnSpecialKeyDown(key);
-                leftAltPressed = true;
-                // KDBG1("L Alt pressed");
-                break;
-            case 0x3A:  // Caps Lock Pressed
-                eventHandler->OnSpecialKeyDown(key);
-                capsLockActive = !capsLockActive;
-                // KDBG1(capsLockActive ? "CAP activated" : "CAP deactivated");
-                break;
-            case 0x0F:  // Tab Pressed
-                eventHandler->OnSpecialKeyDown(key);
-                // KDBG1("Tab pressed");
-                break;
-            case 0x0E:  // Backspace Pressed
-                eventHandler->OnSpecialKeyDown(key);
-                // KDBG1("Backspace pressed");
-                break;
-
-            case 0x01:  // ESC
-                eventHandler->OnSpecialKeyDown(key);
-                // KDBG1("ESC pressed");
-                break;
-            case 0x3B:  // F1
-                eventHandler->OnSpecialKeyDown(key);
-                // KDBG1("F1 pressed");
-                break;
-            case 0x3C:  // F2
-                eventHandler->OnSpecialKeyDown(key);
-                // KDBG1("F2 pressed");
-                break;
-            case 0x3D:  // F3
-                eventHandler->OnSpecialKeyDown(key);
-                // KDBG1("F3 pressed");
-                break;
-            case 0x3E:  // F4
-                eventHandler->OnSpecialKeyDown(key);
-                // KDBG1("F4 pressed");
-                break;
-            case 0x3F:  // F5
-                eventHandler->OnSpecialKeyDown(key);
-                // KDBG1("F5 pressed");
-                break;
-            case 0x40:  // F6
-                eventHandler->OnSpecialKeyDown(key);
-                // KDBG1("F6 pressed");
-                break;
-            case 0x41:  // F7
-                eventHandler->OnSpecialKeyDown(key);
-                // KDBG1("F7 pressed");
-                break;
-            case 0x42:  // F8
-                eventHandler->OnSpecialKeyDown(key);
-                // KDBG1("F8 pressed");
-                break;
-            case 0x43:  // F9
-                eventHandler->OnSpecialKeyDown(key);
-                // KDBG1("F9 pressed");
-                break;
-            case 0x44:  // F10
-                eventHandler->OnSpecialKeyDown(key);
-                // KDBG1("F10 pressed");
-                break;
-            case 0x57:  // F11
-                eventHandler->OnSpecialKeyDown(key);
-                // KDBG1("F11 pressed");
-                break;
-            case 0x58:  // F12
-                eventHandler->OnSpecialKeyDown(key);
-                // KDBG1("F12 pressed");
-                break;
-
-            default:
-                if (key < 128) {  // Valid keycode range
-                    char character = normalKeyMap[key];
-                    bool shiftPressed = leftShiftPressed || rightShiftPressed;
-                    if (character >= 'a' && character <= 'z') {
-                        // Letters: XOR shift and caps
-                        if (shiftPressed ^ capsLockActive)
-                            character = shiftKeyMap[key];
-                    } else {
-                        // Non-letters: shift always applies
-                        if (shiftPressed)
-                            character = shiftKeyMap[key];
-                    }
-
-                    if (character != 0) {  // Valid character
-                        char keyStr[2] = {character, '\0'};
-                        eventHandler->OnKeyDown(keyStr);
-                    }
-                }
-                break;
+            case 0x2A: leftShiftPressed = true; break;
+            case 0x36: rightShiftPressed = true; break;
+            case 0x1D: leftCtrlPressed = true; break;
+            case 0x38: leftAltPressed = true; break;
+            case 0x3A: capsLockActive = !capsLockActive; break;
         }
-        // Key up event
+        // Only invoke callbacks if handler is set
+        if (this->eventHandler) {
+            switch (key) {
+                case 0x1C:  case 0x2A:  case 0x36:  case 0x1D:
+                case 0x38:  case 0x3A:  case 0x0F:  case 0x0E:
+                case 0x01:  case 0x3B:  case 0x3C:  case 0x3D:
+                case 0x3E:  case 0x3F:  case 0x40:  case 0x41:
+                case 0x42:  case 0x43:  case 0x44:  case 0x57:
+                case 0x58:
+                    eventHandler->OnSpecialKeyDown(key);
+                    break;
+                default:
+                    if (key < 128) {
+                        char character = normalKeyMap[key];
+                        bool shiftPressed = leftShiftPressed || rightShiftPressed;
+                        if (character >= 'a' && character <= 'z') {
+                            if (shiftPressed ^ capsLockActive)
+                                character = shiftKeyMap[key];
+                        } else {
+                            if (shiftPressed)
+                                character = shiftKeyMap[key];
+                        }
+                        if (character != 0) {
+                            char keyStr[2] = {character, '\0'};
+                            eventHandler->OnKeyDown(keyStr);
+                        }
+                    }
+                    break;
+            }
+        }
     } else {
         uint8_t releaseScancode = key & 0x7F;
-        if (releaseScancode < 128) keyStates[releaseScancode] = 0;  // Track key up
+        if (releaseScancode < 128) keyStates[releaseScancode] = 0;
+        // Always update modifier state
         switch (key) {
-            case 0x9C:  // Enter Released
-                eventHandler->OnSpecialKeyUp(key);
-                // KDBG1("Enter released");
-                break;
-            case 0xAA:  // Left Shift Released
-                leftShiftPressed = false;
-                eventHandler->OnSpecialKeyUp(key);
-                // KDBG1("L Shift released");
-                break;
-            case 0xB6:  // Right Shift Released
-                rightShiftPressed = false;
-                eventHandler->OnSpecialKeyUp(key);
-                // KDBG1("R Shift released");
-                break;
-            case 0x9D:  // Left Ctrl Released
-                leftCtrlPressed = false;
-                eventHandler->OnSpecialKeyUp(key);
-                // KDBG1("L Ctrl released");
-                break;
-            case 0xB8:  // Left Alt Released
-                leftAltPressed = false;
-                eventHandler->OnSpecialKeyUp(key);
-                // KDBG1("L Alt released");
-                break;
-            case 0x8F:  // Tab
-                eventHandler->OnSpecialKeyUp(key);
-                // KDBG1("Tab released");
-                break;
-            case 0x8E:  // Backspace
-                eventHandler->OnSpecialKeyUp(key);
-                // KDBG1("Backspace released");
-                break;
-
-            case 0x81:  // ESC
-                eventHandler->OnSpecialKeyUp(key);
-                // KDBG1("ESC released");
-                break;
-            case 0xBB:  // F1
-                eventHandler->OnSpecialKeyUp(key);
-                // KDBG1("F1 released");
-                break;
-            case 0xBC:  // F2
-                eventHandler->OnSpecialKeyUp(key);
-                // KDBG1("F2 released");
-                break;
-            case 0xBD:  // F3
-                eventHandler->OnSpecialKeyUp(key);
-                // KDBG1("F3 released");
-                break;
-            case 0xBE:  // F4
-                eventHandler->OnSpecialKeyUp(key);
-                // KDBG1("F4 released");
-                break;
-            case 0xBF:  // F5
-                eventHandler->OnSpecialKeyUp(key);
-                // KDBG1("F5 released");
-                break;
-            case 0xC0:  // F6
-                eventHandler->OnSpecialKeyUp(key);
-                // KDBG1("F6 released");
-                break;
-            case 0xC1:  // F7
-                eventHandler->OnSpecialKeyUp(key);
-                // KDBG1("F7 released");
-                break;
-            case 0xC2:  // F8
-                eventHandler->OnSpecialKeyUp(key);
-                // KDBG1("F8 released");
-                break;
-            case 0xC3:  // F9
-                eventHandler->OnSpecialKeyUp(key);
-                // KDBG1("F9 released");
-                break;
-            case 0xC4:  // F10
-                eventHandler->OnSpecialKeyUp(key);
-                // KDBG1("F10 released");
-                break;
-            case 0xD7:  // F11
-                eventHandler->OnSpecialKeyUp(key);
-                // KDBG1("F11 released");
-                break;
-            case 0xD8:  // F12
-                eventHandler->OnSpecialKeyUp(key);
-                // KDBG1("F12 released");
-                break;
-
-            default:
-                break;
+            case 0xAA: leftShiftPressed = false; break;
+            case 0xB6: rightShiftPressed = false; break;
+            case 0x9D: leftCtrlPressed = false; break;
+            case 0xB8: leftAltPressed = false; break;
+        }
+        // Only invoke callbacks if handler is set
+        if (this->eventHandler) {
+            switch (key) {
+                case 0x9C:  case 0xAA:  case 0xB6:  case 0x9D:
+                case 0xB8:  case 0x8F:  case 0x8E:  case 0x81:
+                case 0xBB:  case 0xBC:  case 0xBD:  case 0xBE:
+                case 0xBF:  case 0xC0:  case 0xC1:  case 0xC2:
+                case 0xC3:  case 0xC4:  case 0xD7:  case 0xD8:
+                    eventHandler->OnSpecialKeyUp(key);
+                    break;
+            }
         }
     }
 

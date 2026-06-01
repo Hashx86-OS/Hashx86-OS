@@ -15,19 +15,19 @@ PMM_INFO g_pmm_info;
 // Set bit in memory map array with bounds check
 static inline void pmm_mmap_set(int bit) {
     if (bit >= 0 && bit < (int)g_pmm_info.max_blocks)
-        g_pmm_info.memory_map_array[bit / 32] |= (1 << (bit % 32));
+        g_pmm_info.memory_map_array[bit / 32] |= (1u << (bit % 32));
 }
 
 // Unset bit in memory map array with bounds check
 static inline void pmm_mmap_unset(int bit) {
     if (bit >= 0 && bit < (int)g_pmm_info.max_blocks)
-        g_pmm_info.memory_map_array[bit / 32] &= ~(1 << (bit % 32));
+        g_pmm_info.memory_map_array[bit / 32] &= ~(1u << (bit % 32));
 }
 
 // Test if given nth bit is set with bounds check
-static inline char pmm_mmap_test(int bit) {
+static inline int pmm_mmap_test(int bit) {
     if (bit >= 0 && bit < (int)g_pmm_info.max_blocks)
-        return g_pmm_info.memory_map_array[bit / 32] & (1 << (bit % 32));
+        return (g_pmm_info.memory_map_array[bit / 32] & (1u << (bit % 32))) != 0;
     return 0;
 }
 
@@ -77,8 +77,12 @@ int pmm_mmap_first_free_low(uint32_t limit_frame) {
                     KDBG2("low-memory search result=none limit_frame=%u", limit_frame);
                     return -1;
                 }
+                if (bit >= (int)g_pmm_info.max_blocks) {
+                    KDBG2("low-memory search result=none max_blocks=%u", g_pmm_info.max_blocks);
+                    return -1;
+                }
 
-                if (!(g_pmm_info.memory_map_array[i] & (1 << j))) {
+                if (!(g_pmm_info.memory_map_array[i] & (1u << j))) {
                     KDBG3("first_free_low limit_frame=%u bit=%d", limit_frame, bit);
                     return bit;
                 }
@@ -267,6 +271,12 @@ void pmm_free_block(void* p) {
     }
     PMM_PHYSICAL_ADDRESS addr = (PMM_PHYSICAL_ADDRESS)p;
 
+    // Reject unaligned addresses to prevent freeing the wrong frame
+    if ((addr % PMM_BLOCK_SIZE) != 0) {
+        KDBG2("free_block rejected: unaligned addr=0x%x", addr);
+        return;
+    }
+
     // Guard: Refuse to free kernel identity-map page table frames
     extern Paging* g_paging;
     if (g_paging && g_paging->KernelPageDirectory) {
@@ -357,6 +367,12 @@ void pmm_free_blocks(void* p, uint32_t size) {
         return;
     }
     PMM_PHYSICAL_ADDRESS addr = (PMM_PHYSICAL_ADDRESS)p;
+
+    // Reject unaligned addresses
+    if ((addr % PMM_BLOCK_SIZE) != 0) {
+        KDBG2("free_blocks rejected: unaligned addr=0x%x", addr);
+        return;
+    }
 
     // Use Absolute Addressing
     int frame = addr / PMM_BLOCK_SIZE;

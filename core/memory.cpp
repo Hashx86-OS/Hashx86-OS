@@ -153,18 +153,18 @@ int kheap_init(void* start_addr, void* end_addr) {
  * increase the heap memory by size & get its address
  */
 void* kbrk(size_t size) {
-    void* addr = NULL;
     if (size == 0) return NULL;
+    // Round size up to max_align_t (16 bytes) to satisfy default operator new alignment
+    size_t aligned = (size + 15) & ~(size_t)15;
     // check memory is available or not
     size_t available = g_total_size - g_total_used_size;
-    if (available < size) {
-        KDBG1("HeapExhausted req=%u available=%u", (uint32_t)size, (uint32_t)available);
+    if (available < aligned) {
+        KDBG1("HeapExhausted req=%u avail=%u", (uint32_t)aligned, (uint32_t)available);
         return NULL;
     }
     // add start addr with total previously used memory
-    addr = (void*)((unsigned long)g_kheap_start_addr + g_total_used_size);
-    g_total_used_size += size;
-    // KDBG3("HeapExpand size=%d addr=0x%x", size, addr);
+    void* addr = (void*)((unsigned long)g_kheap_start_addr + g_total_used_size);
+    g_total_used_size += aligned;
     return addr;
 }
 

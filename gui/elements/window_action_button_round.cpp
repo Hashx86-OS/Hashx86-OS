@@ -12,15 +12,16 @@
 ACRButton::ACRButton(Widget* parent, int32_t x, int32_t y, const char* label)
     : ACButton(parent, x, y, label) {
     // Set specific font for window controls
-    this->font = FontManager::activeInstance->getNewFont();
-    this->font->setSize(SMALL);
+    this->font = FontManager::activeInstance ? FontManager::activeInstance->getNewFont() : nullptr;
+    if (this->font) this->font->setSize(SMALL);
 
     // Calculate Square/Circle dimensions
-    int32_t textW = font->getStringLength(label);
-    int32_t textH = font->getLineHeight();
+    int32_t textW = this->font ? this->font->getStringLength(label) : 0;
+    int32_t textH = this->font ? this->font->getLineHeight() : 0;
 
     // Make it a square box that fits the text
     int32_t diameter = (textW > textH) ? textW : textH;
+    if (diameter == 0) diameter = 8;
     diameter += 4;  // Padding
 
     this->w = diameter;
@@ -43,6 +44,10 @@ ACRButton::~ACRButton() {}
 
 void ACRButton::RedrawToCache() {
     if (!cache) return;
+    if (!NINA::activeInstance) {
+        isDirty = false;
+        return;
+    }
     // Clear Background (Transparent)
     memset(cache, 0, sizeof(uint32_t) * w * h);
 
@@ -61,15 +66,17 @@ void ACRButton::RedrawToCache() {
     NINA::activeInstance->DrawCircle(cache, w, h, radius, radius, radius, borderColor);
 
     // Centered Text
-    int32_t textW = font->getStringLength(label);
-    int32_t textH = font->getLineHeight();
+    if (this->font) {
+        int32_t textW = font->getStringLength(label);
+        int32_t textH = font->getLineHeight();
 
-    int32_t textX = (w - textW) / 2;
-    int32_t textY = (h - textH) / 2;
+        int32_t textX = (w - textW) / 2;
+        int32_t textY = (h - textH) / 2;
 
-    uint32_t textColor = isPressed ? BUTTON_TEXT_COLOR_PRESSED : BUTTON_TEXT_COLOR_NORMAL;
+        uint32_t textColor = isPressed ? BUTTON_TEXT_COLOR_PRESSED : BUTTON_TEXT_COLOR_NORMAL;
 
-    NINA::activeInstance->DrawString(cache, w, h, textX, textY - 2, label, this->font, textColor);
+        NINA::activeInstance->DrawString(cache, w, h, textX, textY - 2, label, this->font, textColor);
+    }
 
     isDirty = false;
 }

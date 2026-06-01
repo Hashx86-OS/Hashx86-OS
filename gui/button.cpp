@@ -11,7 +11,7 @@
 
 Button::Button(Widget* parent, int32_t x, int32_t y, uint32_t w, uint32_t h, const char* label)
     : Widget(parent, x, y, w, h), isPressed(false) {
-    this->font = FontManager::activeInstance->getNewFont();
+    this->font = FontManager::activeInstance ? FontManager::activeInstance->getNewFont() : nullptr;
 
     if (label == nullptr) label = "";
     this->label = new char[strlen(label) + 1];
@@ -45,7 +45,7 @@ void Button::SetLabel(const char* newLabel) {
 }
 
 void Button::SetWidth(int32_t reqW) {
-    int32_t minW = this->font->getStringLength(label) + 4;
+    int32_t minW = this->font ? this->font->getStringLength(label) + 4 : 0;
     this->w = (reqW < minW) ? minW : reqW;
 
     if (cache) delete[] cache;
@@ -57,7 +57,7 @@ void Button::SetWidth(int32_t reqW) {
 }
 
 void Button::SetHeight(int32_t reqH) {
-    int32_t minH = this->font->getLineHeight() + 4;
+    int32_t minH = this->font ? this->font->getLineHeight() + 4 : 0;
     this->h = (reqH < minH) ? minH : reqH;
 
     if (cache) delete[] cache;
@@ -69,6 +69,10 @@ void Button::SetHeight(int32_t reqH) {
 }
 
 void Button::RedrawToCache() {
+    if (!NINA::activeInstance) {
+        isDirty = false;
+        return;
+    }
     uint32_t bgColor = isPressed ? BUTTON_BACKGROUND_COLOR_PRESSED : BUTTON_BACKGROUND_COLOR_NORMAL;
     uint32_t borderColor = isPressed ? BUTTON_BORDER_COLOR_PRESSED : BUTTON_BORDER_COLOR_NORMAL;
     uint32_t textColor = isPressed ? BUTTON_TEXT_COLOR_PRESSED : BUTTON_TEXT_COLOR_NORMAL;
@@ -76,10 +80,11 @@ void Button::RedrawToCache() {
     NINA::activeInstance->FillRoundedRectangle(cache, w, h, 0, 0, w, h, 3, bgColor);
     NINA::activeInstance->DrawRoundedRectangle(cache, w, h, 0, 0, w, h, 3, borderColor);
 
-    int textX = (w - this->font->getStringLength(label)) / 2;
-    int textY = (h - this->font->getLineHeight()) / 2;
-
-    NINA::activeInstance->DrawString(cache, w, h, textX, textY, label, font, textColor);
+    if (this->font) {
+        int textX = (w - this->font->getStringLength(label)) / 2;
+        int textY = (h - this->font->getLineHeight()) / 2;
+        NINA::activeInstance->DrawString(cache, w, h, textX, textY, label, font, textColor);
+    }
 
     isDirty = false;
 }

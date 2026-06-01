@@ -198,5 +198,9 @@ ProcessControlBlock* ELFLoader::loadELF(File* elf, void* args) {
 };
 
 void ELFLoader::ElevatetoKernel(ProcessControlBlock* pELF) {
-    // pELF->isKernelProcess = true;
+    // TODO: implement elevation — set the kernel-process flag and perform
+    // any required privilege/credential updates and sanity checks.
+    // Future implementation should assign pELF->isKernelProcess = true and
+    // update the page directory mask to allow access to kernel-space mappings.
+    (void)pELF;
 };

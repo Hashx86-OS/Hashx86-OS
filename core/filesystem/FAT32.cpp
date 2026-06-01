@@ -864,8 +864,28 @@ void FAT32::WriteFile(char* path, uint8_t* buffer, uint32_t length) {
         return;
     }
 
-    // Allocate First Cluster if Empty
     uint32_t currentCluster = ((uint32_t)entry.firstClusterHi << 16) | entry.firstClusterLow;
+
+    // Truncation to zero: free the old cluster chain and clear the directory entry
+    if (length == 0) {
+        if (currentCluster != 0) {
+            FreeChain(currentCluster);
+            currentCluster = 0;
+            entry.firstClusterLow = 0;
+            entry.firstClusterHi = 0;
+        }
+        uint8_t dirBuff[512];
+        hd->Read28(dirSector, dirBuff, 512);
+        DirectoryEntryFat32* onDisk = (DirectoryEntryFat32*)(dirBuff + dirOffset);
+        onDisk->firstClusterLow = 0;
+        onDisk->firstClusterHi = 0;
+        onDisk->size = 0;
+        hd->Write28(dirSector, dirBuff, 512);
+        KDBG2("Truncated.");
+        return;
+    }
+
+    // Allocate First Cluster if Empty
     if (currentCluster == 0) {
         currentCluster = AllocateCluster();
         if (currentCluster == 0) return;

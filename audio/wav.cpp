@@ -63,6 +63,17 @@ Wav::~Wav() {
 void Wav::Load(File* file) {
     if (!file) return;
 
+    // Clear any prior state before reload
+    if (buffer) {
+        kfree(buffer);
+        buffer = nullptr;
+    }
+    length = 0;
+    valid = false;
+    sampleRate = 0;
+    channels = 0;
+    bitsPerSample = 0;
+
     WavHeader header;
     if (file->Read((uint8_t*)&header, sizeof(WavHeader)) != sizeof(WavHeader)) {
         KDBG1("Error: Header read failed.");

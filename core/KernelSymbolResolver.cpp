@@ -154,9 +154,9 @@ void KernelSymbolTable::PrintStackTrace(unsigned int maxFrames) {
 
     KDBG1("[ Stack Trace ]");
 
-    // Cycle detection: track the lowest valid EBP we've seen; if EBP ever
-    // goes up (closer to 0), we've entered a cycle.
-    uint32_t prev_ebp = 0xFFFFFFFF;
+    // Cycle detection: older x86 frames live at higher addresses so track the
+    // lowest valid EBP; if EBP ever does not strictly increase, we have a cycle.
+    uint32_t prev_ebp = 0;
 
     for (unsigned int i = 0; i < maxFrames; ++i) {
         // If the stack pointer is null or invalid, stop
@@ -167,8 +167,8 @@ void KernelSymbolTable::PrintStackTrace(unsigned int maxFrames) {
         // would cause a page fault and infinite loop since activeInstance=0.
         if ((uint32_t)stack < 0x1000 || (uint32_t)stack >= 0x10000000) break;
 
-        // Cycle detection: EBP should strictly decrease as we walk up the stack
-        if ((uint32_t)stack >= prev_ebp) break;
+        // Cycle detection: EBP should strictly increase as we walk up the stack
+        if ((uint32_t)stack <= prev_ebp) break;
         prev_ebp = (uint32_t)stack;
 
         /*

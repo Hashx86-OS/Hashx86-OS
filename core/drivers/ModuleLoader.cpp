@@ -427,6 +427,14 @@ void* ModuleLoader::LoadDriver(File* file) {
     }
 
     // Cleanup
+    if (entry_point == 0) {
+        // Entry point not found — free SHF_ALLOC section images before releasing metadata
+        for (int i = 0; i < header.sh_entry_count; i++) {
+            if (sections[i].addr != 0 && (sections[i].flags & 0x2)) {
+                kfree((void*)sections[i].addr);
+            }
+        }
+    }
     kfree(sections);
     kfree(strtab);
     kfree(symtab);

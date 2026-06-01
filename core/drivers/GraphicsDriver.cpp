@@ -15,7 +15,8 @@ GraphicsDriver::GraphicsDriver(uint32_t w, uint32_t h, uint32_t b, uint32_t* vra
     this->videoMemory = vram;
 
     // Validate framebuffer size before allocation
-    if (width == 0 || height == 0 || (size_t)width * (size_t)height > (0xFFFFFFFFu / sizeof(uint32_t))) {
+    uint64_t pixel_count = (uint64_t)width * (uint64_t)height;
+    if (width == 0 || height == 0 || pixel_count > (0xFFFFFFFFu / sizeof(uint32_t))) {
         HALT("CRITICAL: Invalid graphics dimensions!");
     }
     this->backBuffer = new uint32_t[width * height];
@@ -26,7 +27,7 @@ GraphicsDriver::GraphicsDriver(uint32_t w, uint32_t h, uint32_t b, uint32_t* vra
     // Clear backbuffer directly — avoids dereferencing NINA::activeInstance
     // (which may not exist yet) via FillRectangle.
     uint32_t clearColor = 0xFF000000;  // Opaque black
-    for (uint32_t i = 0; i < width * height; i++) {
+    for (uint64_t i = 0; i < pixel_count; i++) {
         backBuffer[i] = clearColor;
     }
 
@@ -39,7 +40,8 @@ GraphicsDriver::~GraphicsDriver() {
 
 void GraphicsDriver::Flush() {
     if (videoMemory && backBuffer) {
-        memcpy(videoMemory, backBuffer, (size_t)width * height * sizeof(uint32_t));
+        uint64_t byte_count = (uint64_t)width * (uint64_t)height * sizeof(uint32_t);
+        memcpy(videoMemory, backBuffer, (size_t)byte_count);
     }
 }
 

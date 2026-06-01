@@ -41,6 +41,7 @@ void Label::setText(const char* newText) {
 }
 
 void Label::setSize(FontSize size) {
+    if (!this->font) return;
     this->font->setSize(size);
     MarkDirty();
 }
@@ -53,7 +54,7 @@ void Label::RedrawToCache() {
     // Clear background to transparent (0)
     memset(cache, 0, sizeof(uint32_t) * w * h);
 
-    if (NINA::activeInstance) {
+    if (NINA::activeInstance && font) {
         NINA::activeInstance->DrawString(cache, w, h, 2, 2, text, font, LABEL_TEXT_COLOR_NORMAL);
     }
     isDirty = false;

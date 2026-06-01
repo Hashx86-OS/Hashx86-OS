@@ -92,6 +92,7 @@ Scheduler::Scheduler(Paging* pager) {
 }
 
 ProcessControlBlock* Scheduler::CreateProcess(bool isKernel, void (*entrypoint)(void*), void* arg) {
+    InterruptGuard guard;
     ProcessControlBlock* pcb = new ProcessControlBlock();
     if (!pcb) {
         HALT("CRITICAL: Failed to allocate ProcessControlBlock!\n");
@@ -360,13 +361,14 @@ ThreadControlBlock* Scheduler::CloneCurrentThread(CPUState* parentContext, uint3
         }
         memset((void*)user_stack_phys, 0, 4096);
         // Map it at a fixed high user address (just below 3GB) unique per thread
-        uint32_t user_stack_virt = 0xBFFF0000 - (tcb->tid * 4096);
-        if (user_stack_virt < 0x10000000) {
+        uint64_t stack_virt64 = (uint64_t)0xBFFF0000 - ((uint64_t)tcb->tid * 4096ULL);
+        if (stack_virt64 < 0x10000000ULL || stack_virt64 > 0xFFFFFFFFULL) {
             pmm_free_block((void*)user_stack_phys);
             kfree(tcb->stack);
             delete tcb;
             return nullptr;
         }
+        uint32_t user_stack_virt = (uint32_t)stack_virt64;
         if (!_pager->MapPage(parent->page_directory, user_stack_virt, user_stack_phys,
                              PAGE_PRESENT | PAGE_RW | PAGE_USER)) {
             pmm_free_block((void*)user_stack_phys);
@@ -548,8 +550,8 @@ ThreadControlBlock* Scheduler::CloneCurrentProcess(CPUState* parentContext, uint
             return nullptr;
         }
         memset((void*)user_stack_phys, 0, 4096);
-        uint32_t user_stack_virt = 0xBFFF0000 - (tcb->tid * 4096);
-        if (user_stack_virt < 0x10000000) {
+        uint64_t stack_virt64 = (uint64_t)0xBFFF0000 - ((uint64_t)tcb->tid * 4096ULL);
+        if (stack_virt64 < 0x10000000ULL || stack_virt64 > 0xFFFFFFFFULL) {
             pmm_free_block((void*)user_stack_phys);
             kfree(tcb->stack);
             delete tcb;
@@ -557,6 +559,7 @@ ThreadControlBlock* Scheduler::CloneCurrentProcess(CPUState* parentContext, uint
             delete childProc;
             return nullptr;
         }
+        uint32_t user_stack_virt = (uint32_t)stack_virt64;
         if (!_pager->MapPage(childProc->page_directory, user_stack_virt, user_stack_phys,
                              PAGE_PRESENT | PAGE_RW | PAGE_USER)) {
             pmm_free_block((void*)user_stack_phys);
