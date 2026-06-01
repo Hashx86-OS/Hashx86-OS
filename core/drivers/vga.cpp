@@ -260,7 +260,8 @@ void VideoGraphicsArray::FillRoundedRectangle(uint32_t x, uint32_t y, uint32_t w
                 // Bottom-left corner
                 PutPixel(x + radiusClamped - dx, y + h - radiusClamped + dy - 1, colorIndex);
                 // Bottom-right corner
-                PutPixel(x + w - radiusClamped + dx - 1, y + h - radiusClamped + dy - 1, colorIndex);
+                PutPixel(x + w - radiusClamped + dx - 1, y + h - radiusClamped + dy - 1,
+                         colorIndex);
             }
         }
     }

@@ -137,8 +137,10 @@ void MSDOSPartitionTable::ReadPartitions() {
         uint32_t start = mbr.primaryPartition[i].start_lba;
         uint32_t length = mbr.primaryPartition[i].length;
         if (length == 0 || start >= totalSectors || length > totalSectors - start) {
-            KDBG1("Warning: Partition %d extent [%u, %u+%u) outside device (totalSectors=%u); skipping",
-                  i, start, start, length, totalSectors);
+            KDBG1(
+                "Warning: Partition %d extent [%u, %u+%u) outside device (totalSectors=%u); "
+                "skipping",
+                i, start, start, length, totalSectors);
             continue;
         }
 

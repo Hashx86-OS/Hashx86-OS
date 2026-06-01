@@ -75,7 +75,8 @@ void ACRButton::RedrawToCache() {
 
         uint32_t textColor = isPressed ? BUTTON_TEXT_COLOR_PRESSED : BUTTON_TEXT_COLOR_NORMAL;
 
-        NINA::activeInstance->DrawString(cache, w, h, textX, textY - 2, label, this->font, textColor);
+        NINA::activeInstance->DrawString(cache, w, h, textX, textY - 2, label, this->font,
+                                         textColor);
     }
 
     isDirty = false;

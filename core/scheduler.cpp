@@ -242,8 +242,7 @@ ThreadControlBlock* Scheduler::CreateThread(ProcessControlBlock* parent, void (*
                         // Unmap before freeing to leave clean page tables
                         uint32_t pd_idx = va >> 22;
                         uint32_t pt_idx = (va >> 12) & 0x3FF;
-                        uint32_t* pt =
-                            (uint32_t*)(parent->page_directory[pd_idx] & 0xFFFFF000);
+                        uint32_t* pt = (uint32_t*)(parent->page_directory[pd_idx] & 0xFFFFF000);
                         pt[pt_idx] = 0;
                         asm volatile("invlpg %0" : : "m"(*(uint8_t*)va) : "memory");
                         pmm_free_block((void*)pf);
@@ -266,8 +265,7 @@ ThreadControlBlock* Scheduler::CreateThread(ProcessControlBlock* parent, void (*
                         // Unmap before freeing to leave clean page tables
                         uint32_t pd_idx = va >> 22;
                         uint32_t pt_idx = (va >> 12) & 0x3FF;
-                        uint32_t* pt =
-                            (uint32_t*)(parent->page_directory[pd_idx] & 0xFFFFF000);
+                        uint32_t* pt = (uint32_t*)(parent->page_directory[pd_idx] & 0xFFFFF000);
                         pt[pt_idx] = 0;
                         asm volatile("invlpg %0" : : "m"(*(uint8_t*)va) : "memory");
                         pmm_free_block((void*)pf);
@@ -286,11 +284,11 @@ ThreadControlBlock* Scheduler::CreateThread(ProcessControlBlock* parent, void (*
             uint32_t pd_idx = top_page_phys >> 22;
             uint32_t pt_idx = (top_page_phys >> 12) & 0x3FF;
             uint32_t* pt = (uint32_t*)(parent->page_directory[pd_idx] & 0xFFFFF000);
-            KDBG1("CreateThread: top_page_phys=0x%x pd[%u]=0x%x kernel_pd[%u]=0x%x "
-                  "pte[%u]=0x%x pt_virt=0x%x",
-                  top_page_phys, pd_idx, parent->page_directory[pd_idx],
-                  pd_idx, _pager->KernelPageDirectory[pd_idx],
-                  pt_idx, pt[pt_idx], top_page_phys);
+            KDBG1(
+                "CreateThread: top_page_phys=0x%x pd[%u]=0x%x kernel_pd[%u]=0x%x "
+                "pte[%u]=0x%x pt_virt=0x%x",
+                top_page_phys, pd_idx, parent->page_directory[pd_idx], pd_idx,
+                _pager->KernelPageDirectory[pd_idx], pt_idx, pt[pt_idx], top_page_phys);
         }
         user_stack_top_phys[-1] = (uint32_t)arg;              // Argument
         user_stack_top_phys[-2] = USER_EXIT_TRAMPOLINE_VIRT;  // Return to exit trampoline
@@ -380,7 +378,7 @@ ThreadControlBlock* Scheduler::CloneCurrentThread(CPUState* parentContext, uint3
         tcb->context->esp = user_stack_virt + 4096 - 8;
         // Write a return address to the exit trampoline (bottom of stack)
         uint32_t* stack_top_phys = (uint32_t*)(user_stack_phys + 4096);
-        stack_top_phys[-1] = 0;              // Argument
+        stack_top_phys[-1] = 0;  // Argument
         stack_top_phys[-2] = USER_EXIT_TRAMPOLINE_VIRT;
     }
 
@@ -390,7 +388,8 @@ ThreadControlBlock* Scheduler::CloneCurrentThread(CPUState* parentContext, uint3
     constexpr uint32_t USER_LOWER_BOUND = 0x10000000;
     constexpr uint32_t KERNEL_BASE = 0xC0000000;
 
-    // Validate that the full 4-byte range is mapped, in user space, and does not cross a page boundary
+    // Validate that the full 4-byte range is mapped, in user space, and does not cross a page
+    // boundary
     auto safeWriteTid = [&](void* addr, uint32_t tid_val, uint32_t* page_dir) -> bool {
         uint32_t uaddr = (uint32_t)addr;
         if (uaddr < USER_LOWER_BOUND) return false;

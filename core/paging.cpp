@@ -129,8 +129,10 @@ bool Paging::MapPage(uint32_t* directory, uint32_t virtual_addr, uint32_t physic
     // These entries are shared across all processes via CreateProcessDirectory;
     // altering them would corrupt kernel mappings for every process.
     if (pd_idx < 64 || (pd_idx >= 768 && pd_idx < 1024)) {
-        KDBG1("MapPage: rejected attempt to map kernel-range virtual address 0x%x "
-              "(pd_idx=%u)", virtual_addr, pd_idx);
+        KDBG1(
+            "MapPage: rejected attempt to map kernel-range virtual address 0x%x "
+            "(pd_idx=%u)",
+            virtual_addr, pd_idx);
         return false;
     }
 

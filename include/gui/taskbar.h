@@ -215,7 +215,9 @@ public:
     void SetActiveTab(Widget* window);
     void RepositionTabs();
 
-    bool IsTaskbar() const override { return true; }
+    bool IsTaskbar() const override {
+        return true;
+    }
 
     void Draw(GraphicsDriver* gc) override;
     void RedrawToCache() override;

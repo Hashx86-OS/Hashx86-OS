@@ -7,8 +7,8 @@
  */
 
 #define KDBG_COMPONENT "PMM"
-#include <core/pmm.h>
 #include <core/paging.h>
+#include <core/pmm.h>
 
 PMM_INFO g_pmm_info;
 

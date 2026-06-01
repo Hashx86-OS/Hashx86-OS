@@ -79,7 +79,7 @@ void *kbrk(int size) {
     if ((long)(g_total_size - g_total_used_size) <= size) {
         // Request more memory from kernel in chunks (kernel limit: 256KB per call)
         int needed = size - (g_total_size - g_total_used_size);
-        int remaining = (needed + 4095) & ~4095;  // Page align
+        int remaining = (needed + 4095) & ~4095;               // Page align
         if (remaining < 1024 * 1024) remaining = 1024 * 1024;  // Min 1MB
 
         while (remaining > 0) {

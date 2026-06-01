@@ -308,7 +308,8 @@ void init_memory(MultibootInfo* mbinfo) {
     // These MUST stay below 256MB because the kernel accesses them via
     // identity-mapped physical addresses after paging is activated.
     // The kernel heap only needs a modest amount for kmalloc (PCBs, TCBs, buffers, etc.).
-    uint32_t heap_size_bytes = 128 * 1024 * 1024;  // 128 MB for kernel objects, GUI, font data, stacks
+    uint32_t heap_size_bytes =
+        128 * 1024 * 1024;  // 128 MB for kernel objects, GUI, font data, stacks
     uint32_t blocks_needed = heap_size_bytes / PMM_BLOCK_SIZE;
 
     KDBG1("Kernel Heap: Start=0x%x Size=%d MB (%d blocks)", actual_heap_start,
@@ -555,7 +556,9 @@ extern "C" void kernelMain(void* multiboot_structure, uint32_t magicnumber) {
     if (magicnumber != 0x2BADB002) {
         KDBG1("Invalid magic number : [%x]", magicnumber);
         // Halt the CPU — return is undefined in a freestanding kernel
-        while (1) { asm volatile("hlt"); }
+        while (1) {
+            asm volatile("hlt");
+        }
     }
 
     MultibootInfo* mbinfo = (MultibootInfo*)multiboot_structure;

@@ -186,7 +186,7 @@ ProcessControlBlock* ELFLoader::loadELF(File* elf, void* args) {
 
     pELF->heap.startAddress = max_virt_end;
     pELF->heap.endAddress = max_virt_end;  // Zero-size initially, grown by brk
-    {   // Prevent overflow when max_virt_end is near top of address space
+    {  // Prevent overflow when max_virt_end is near top of address space
         uint64_t maxAddr = (uint64_t)max_virt_end + (1024ULL * 1024ULL * 256ULL);
         if (maxAddr > 0xFFFFFFFFULL) maxAddr = 0xFFFFFFFFULL;
         pELF->heap.maxAddress = (uint32_t)maxAddr;

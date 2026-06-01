@@ -38,7 +38,10 @@ void AudioMixer::PlayBuffer(uint8_t* data, uint32_t length, bool loop) {
         if (!streams[i].active) {
             // Make an owned copy of the data to avoid lifetime issues
             uint8_t* copy = (uint8_t*)kmalloc(length);
-            if (!copy) { unlock(flags); return; }  // Out of memory; fail gracefully
+            if (!copy) {
+                unlock(flags);
+                return;
+            }  // Out of memory; fail gracefully
             memcpy(copy, data, length);
             streams[i].data = copy;
             streams[i].ownsData = true;

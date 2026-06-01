@@ -43,7 +43,9 @@ public:
 
     void update();
     void RedrawToCache() override;
-    bool IsListView() const override { return true; }
+    bool IsListView() const override {
+        return true;
+    }
 
     void OnMouseDown(int32_t x, int32_t y, uint8_t button) override;
     void OnMouseUp(int32_t x, int32_t y, uint8_t button) override;

@@ -43,8 +43,8 @@ struct CPUState {
     uint32_t ss;
 } __attribute__((packed));
 
-class Process;       // Forward declaration
-class File;          // Forward declaration
+class Process;            // Forward declaration
+class File;               // Forward declaration
 struct ProgramArguments;  // Forward declaration (freed via KillProcess when set on PCB)
 
 struct ProcessControlBlock;  // Forward declaration

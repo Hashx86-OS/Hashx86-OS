@@ -132,8 +132,7 @@ void* ModuleLoader::LoadDriver(File* file) {
             }
             void* mem = kmalloc(sections[i].size);
             if (!mem) {
-                KDBG1("Module Error: Failed to allocate section %d (size %d)", i,
-                      sections[i].size);
+                KDBG1("Module Error: Failed to allocate section %d (size %d)", i, sections[i].size);
                 alloc_failed = true;
                 break;
             }
@@ -330,11 +329,16 @@ void* ModuleLoader::LoadDriver(File* file) {
                     size_t max_len = strtab_sym_size - name_off;
                     bool found_nul = false;
                     for (size_t k = 0; k < max_len; k++) {
-                        if (name[k] == '\0') { found_nul = true; break; }
+                        if (name[k] == '\0') {
+                            found_nul = true;
+                            break;
+                        }
                     }
                     if (!found_nul) {
-                        KDBG1("Module Link Error: Symbol name at offset %u not NUL-terminated "
-                              "within %u-byte strtab", name_off, strtab_sym_size);
+                        KDBG1(
+                            "Module Link Error: Symbol name at offset %u not NUL-terminated "
+                            "within %u-byte strtab",
+                            name_off, strtab_sym_size);
                         relocation_failed = true;
                         break;
                     }
@@ -410,15 +414,17 @@ void* ModuleLoader::LoadDriver(File* file) {
             if (name_off + target_len + 1 <= strtab_sym_size) {
                 match = true;
                 for (uint32_t c = 0; c < target_len; c++)
-                    if ((uint8_t)target[c] != (uint8_t)name[c]) { match = false; break; }
+                    if ((uint8_t)target[c] != (uint8_t)name[c]) {
+                        match = false;
+                        break;
+                    }
                 if (name[target_len] != 0) match = false;
             }
 
             if (match) {
                 uint32_t sec_idx = symtab[i].shndx;
                 if (sec_idx != 0 && sec_idx < header.sh_entry_count &&
-                    (sections[sec_idx].flags & 0x2) &&
-                    symtab[i].value < sections[sec_idx].size) {
+                    (sections[sec_idx].flags & 0x2) && symtab[i].value < sections[sec_idx].size) {
                     entry_point = (void*)(sections[sec_idx].addr + symtab[i].value);
                     break;
                 }
@@ -505,7 +511,10 @@ bool ModuleLoader::Probe(File* file, DriverManifest* info) {
         bool match = true;
         for (int c = 0; target[c] != 0; c++) {
             uint32_t idx = name_off + c;
-            if (idx >= strtab_size) { match = false; break; }
+            if (idx >= strtab_size) {
+                match = false;
+                break;
+            }
             if (target[c] != sec_name[c]) {
                 match = false;
                 break;
@@ -514,8 +523,10 @@ bool ModuleLoader::Probe(File* file, DriverManifest* info) {
         // Ensure the names are the same length (null terminator check)
         if (match) {
             uint32_t idx = name_off + 12;
-            if (idx >= strtab_size) match = false;
-            else if (sec_name[12] != 0) match = false;
+            if (idx >= strtab_size)
+                match = false;
+            else if (sec_name[12] != 0)
+                match = false;
         }
 
         // If found, verify size and read data
@@ -529,9 +540,10 @@ bool ModuleLoader::Probe(File* file, DriverManifest* info) {
                 if (bytesRead == sizeof(DriverManifest) && info->magic == DRIVER_INFO_MAGIC) {
                     found = true;
                 } else if (bytesRead != sizeof(DriverManifest)) {
-                    KDBG1("Probe: short read of .driver_info at section %d "
-                          "(offset=0x%x, size=%u, got=%d)",
-                          i, sections[i].offset, sizeof(DriverManifest), bytesRead);
+                    KDBG1(
+                        "Probe: short read of .driver_info at section %d "
+                        "(offset=0x%x, size=%u, got=%d)",
+                        i, sections[i].offset, sizeof(DriverManifest), bytesRead);
                 }
             } else {
                 KDBG1("Warning: '.driver_info' section too small (Old driver version?)");

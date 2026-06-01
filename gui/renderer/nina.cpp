@@ -368,7 +368,7 @@ void NINA::DrawCharacter(uint32_t* buffer, int32_t bufferWidth, int32_t bufferHe
                          int32_t y, char c, Font* font, uint32_t colorIndex) {
     if (!buffer || !font || !font->font_glyphs || !font->font_atlas) return;
     int idx = (uint8_t)c - 32;
-    if (idx < 0 || idx >= 95) return;           // Only standard ASCII printable range (0-94)
+    if (idx < 0 || idx >= 95) return;          // Only standard ASCII printable range (0-94)
     int16_t* g = &font->font_glyphs[idx * 8];  // each glyph = 8 values
 
     int charID = g[0];
@@ -383,9 +383,9 @@ void NINA::DrawCharacter(uint32_t* buffer, int32_t bufferWidth, int32_t bufferHe
     if (charWidth <= 0 || charHeight <= 0) return;
     if (charWidth > font->atlas_width || charHeight > font->atlas_height) return;
     // Validate atlas region bounds before reading pixel data
-    if (gridX < 0 || gridY < 0 ||
-        gridX + charWidth > font->atlas_width ||
-        gridY + charHeight > font->atlas_height) return;
+    if (gridX < 0 || gridY < 0 || gridX + charWidth > font->atlas_width ||
+        gridY + charHeight > font->atlas_height)
+        return;
     const uint32_t maxGlyphPixels = 262144;  // 1024x256
     uint32_t glyphPixels = (uint32_t)(charWidth * charHeight);
     if (glyphPixels == 0 || glyphPixels > maxGlyphPixels) return;

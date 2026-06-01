@@ -35,8 +35,7 @@ FAT32::FAT32(AdvancedTechnologyAttachment* hd, uint32_t partitionOffset) {
     }
 
     // Validate BPB geometry before using any fields
-    if (bpb.sectorsPerCluster == 0 ||
-        (bpb.sectorsPerCluster & (bpb.sectorsPerCluster - 1)) != 0) {
+    if (bpb.sectorsPerCluster == 0 || (bpb.sectorsPerCluster & (bpb.sectorsPerCluster - 1)) != 0) {
         KDBG1("Error: Invalid sectorsPerCluster=%u", bpb.sectorsPerCluster);
         return;
     }
@@ -48,9 +47,10 @@ FAT32::FAT32(AdvancedTechnologyAttachment* hd, uint32_t partitionOffset) {
         KDBG1("Error: tableSize=0");
         return;
     }
-    uint32_t dataSectors = (bpb.totalSectorCount > bpb.reservedSectors + bpb.tableSize * bpb.fatCopies)
-        ? bpb.totalSectorCount - bpb.reservedSectors - bpb.tableSize * bpb.fatCopies
-        : 0;
+    uint32_t dataSectors =
+        (bpb.totalSectorCount > bpb.reservedSectors + bpb.tableSize * bpb.fatCopies)
+            ? bpb.totalSectorCount - bpb.reservedSectors - bpb.tableSize * bpb.fatCopies
+            : 0;
     uint32_t maxCluster = 2 + (dataSectors / bpb.sectorsPerCluster);
     if (bpb.rootCluster < 2 || bpb.rootCluster >= maxCluster) {
         KDBG1("Error: rootCluster=%u out of range [2, %u)", bpb.rootCluster, maxCluster);
@@ -202,9 +202,10 @@ void FAT32::SetFATEntry(uint32_t cluster, uint32_t value) {
 uint32_t FAT32::AllocateCluster() {
     // Compute maximum valid cluster from partition geometry
     // Total data sectors = bpb.totalSectorCount - reservedSectors - (tableSize * fatCopies)
-    uint32_t dataSectors = (bpb.totalSectorCount > (bpb.reservedSectors + bpb.tableSize * bpb.fatCopies))
-        ? bpb.totalSectorCount - bpb.reservedSectors - (bpb.tableSize * bpb.fatCopies)
-        : 0;
+    uint32_t dataSectors =
+        (bpb.totalSectorCount > (bpb.reservedSectors + bpb.tableSize * bpb.fatCopies))
+            ? bpb.totalSectorCount - bpb.reservedSectors - (bpb.tableSize * bpb.fatCopies)
+            : 0;
     uint32_t maxCluster = 2 + (dataSectors / bpb.sectorsPerCluster);
 
     uint8_t buffer[512];
@@ -308,7 +309,8 @@ bool FAT32::FindFreeEntryInCluster(uint32_t dirCluster, uint32_t& sectorOut, uin
     uint32_t maxClusters = bpb.tableSize * 128;
 
     if (!fat_valid_cluster(currentCluster, this->bpb)) {
-        KDBG1("FAT corruption: invalid initial cluster %u in FindFreeEntryInCluster", currentCluster);
+        KDBG1("FAT corruption: invalid initial cluster %u in FindFreeEntryInCluster",
+              currentCluster);
         return false;
     }
 

@@ -16,7 +16,9 @@ public:
     void setSize(FontSize size);
     void setType(FontType type);
     void RedrawToCache() override;
-    bool IsLabel() const override { return true; }
+    bool IsLabel() const override {
+        return true;
+    }
 };
 
 #endif

@@ -176,7 +176,8 @@ int32_t HguiHandler::HandleWidget(CPUState* cpu, const WidgetData* _data) {
         Widget* childWidget = this->FindWidgetByID(_data->param1);
         if (!childWidget) return -1;
 
-        // PID ownership: caller must own child; parent must be owned by caller or be desktop (ID==0)
+        // PID ownership: caller must own child; parent must be owned by caller or be desktop
+        // (ID==0)
         if (childWidget->PID != proc->pid) return -1;
         if (parentWidget->PID != proc->pid && parentWidget->ID != 0) return -1;
 

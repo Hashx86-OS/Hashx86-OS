@@ -227,8 +227,8 @@ void ListView::RedrawToCache() {
         Font* msgFont = FontManager::activeInstance->getNewFont();
         if (msgFont) {
             msgFont->setSize(SMALL);
-            NINA::activeInstance->DrawString(cache, w, h, w / 2 - 40, h / 2 - 8, "No items", msgFont,
-                                             0xFF6C7086);
+            NINA::activeInstance->DrawString(cache, w, h, w / 2 - 40, h / 2 - 8, "No items",
+                                             msgFont, 0xFF6C7086);
             delete msgFont;
         }
     }
@@ -244,7 +244,8 @@ void ListView::OnMouseDown(int32_t mx, int32_t my, uint8_t button) {
     int localY = my - this->y;
     int localX = mx - this->x;
 
-    if (localY > LISTVIEW_HEADER_HEIGHT && localY < h && localX >= 0 && localX < w - LISTVIEW_SCROLLBAR_WIDTH) {
+    if (localY > LISTVIEW_HEADER_HEIGHT && localY < h && localX >= 0 &&
+        localX < w - LISTVIEW_SCROLLBAR_WIDTH) {
         int clickedItem =
             scrollOffset + (localY - LISTVIEW_HEADER_HEIGHT - 1) / LISTVIEW_ITEM_HEIGHT;
         if (clickedItem >= 0 && clickedItem < itemCount) {

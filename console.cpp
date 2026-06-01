@@ -313,8 +313,14 @@ void printf(TextColor color, const char* format, ...) {
                     int position = cursorRow * SCREEN_WIDTH + cursorCol;
                     VideoMemory[position] = (color << 8) | '%';
                     cursorCol++;
-                    if (cursorCol >= SCREEN_WIDTH) { cursorCol = 0; cursorRow++; }
-                    if (cursorRow >= SCREEN_HEIGHT) { scrollScreen(); cursorRow = SCREEN_HEIGHT - 1; }
+                    if (cursorCol >= SCREEN_WIDTH) {
+                        cursorCol = 0;
+                        cursorRow++;
+                    }
+                    if (cursorRow >= SCREEN_HEIGHT) {
+                        scrollScreen();
+                        cursorRow = SCREEN_HEIGHT - 1;
+                    }
                     break;
                 }
 

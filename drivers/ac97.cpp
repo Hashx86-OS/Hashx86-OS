@@ -11,8 +11,8 @@
 #include <core/drivers/driver_info.h>
 #include <core/interrupts.h>
 #include <core/memory.h>
-#include <core/pmm.h>
 #include <core/pci.h>
+#include <core/pmm.h>
 #include <debug.h>
 #include <utils/string.h>
 
@@ -46,9 +46,9 @@
 /* ================= Memory ================= */
 /* Audio buffer and BDL sizes (in bytes) */
 #define AC97_AUDIO_BUF_SIZE 0x10000  // 64KB audio buffer
-#define AC97_BDL_BUF_SIZE  0x1000    // 4KB for BDL (fits 32 entries)
-#define AC97_HALF_SIZE     (AC97_AUDIO_BUF_SIZE / 2)
-#define AC97_BDL_ENTRIES   32
+#define AC97_BDL_BUF_SIZE 0x1000     // 4KB for BDL (fits 32 entries)
+#define AC97_HALF_SIZE (AC97_AUDIO_BUF_SIZE / 2)
+#define AC97_BDL_ENTRIES 32
 
 struct AC97_BDL_Entry {
     uint32_t addr;
@@ -87,7 +87,7 @@ private:
     // relying on large contiguous PMM allocations (which can collide with
     // single-page allocations like the Scheduler trampoline on some VMs).
     uint32_t physPages[AC97_BUF_PAGES];  // AC97_AUDIO_BUF_SIZE bytes (64KB = 16 pages)
-    uint32_t physBdlAddr;               // Buffer descriptor list (AC97_BDL_BUF_SIZE bytes)
+    uint32_t physBdlAddr;                // Buffer descriptor list (AC97_BDL_BUF_SIZE bytes)
 
     // --- State ---
     // sw_lvi: The BDL index we are currently preparing to write to (Software Pointer)

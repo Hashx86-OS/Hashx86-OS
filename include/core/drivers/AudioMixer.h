@@ -39,8 +39,7 @@ private:
     }
     // Restore interrupts if they were enabled
     static inline void unlock(uint32_t eflags) {
-        if (eflags & 0x200)
-            asm volatile("sti");
+        if (eflags & 0x200) asm volatile("sti");
     }
 
 public:

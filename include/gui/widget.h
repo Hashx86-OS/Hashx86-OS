@@ -82,11 +82,21 @@ public:
     virtual bool IsComposite() const;
     virtual bool IsMouseCaptured() const;
     virtual bool IsPressed() const;
-    virtual bool IsWindow() const { return false; }
-    virtual bool IsLabel() const { return false; }
-    virtual bool IsListView() const { return false; }
-    virtual bool IsTerminalView() const { return false; }
-    virtual bool IsTaskbar() const { return false; }
+    virtual bool IsWindow() const {
+        return false;
+    }
+    virtual bool IsLabel() const {
+        return false;
+    }
+    virtual bool IsListView() const {
+        return false;
+    }
+    virtual bool IsTerminalView() const {
+        return false;
+    }
+    virtual bool IsTaskbar() const {
+        return false;
+    }
 };
 
 /**

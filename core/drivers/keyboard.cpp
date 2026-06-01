@@ -92,9 +92,15 @@ void KeyboardDriver::Activate() {
     commandPort.Write(0x20);
     int bufReady = 0;
     for (int wait = 0; wait < 10000; wait++) {
-        if (commandPort.Read() & 0x1) { bufReady = 1; break; }
+        if (commandPort.Read() & 0x1) {
+            bufReady = 1;
+            break;
+        }
     }
-    if (!bufReady) { this->is_Active = false; return; }
+    if (!bufReady) {
+        this->is_Active = false;
+        return;
+    }
     uint8_t status = (dataPort.Read() | 1) & ~0x10;  // Enable IRQ1, disable key lock
     // Write back the modified command byte (controller command — no ACK expected)
     commandPort.Write(0x60);
@@ -102,7 +108,10 @@ void KeyboardDriver::Activate() {
 
     // Activate the keyboard
     dataPort.Write(0xF4);
-    if (!WaitForKBACK(dataPort, commandPort, 3)) { this->is_Active = false; return; }
+    if (!WaitForKBACK(dataPort, commandPort, 3)) {
+        this->is_Active = false;
+        return;
+    }
     this->is_Active = true;
 }
 
@@ -145,23 +154,37 @@ uint32_t KeyboardDriver::HandleInterrupt(uint32_t esp) {
         isExtendedScancode = false;
         // Always update modifier state
         switch (key) {
-            case 0x1D: rightCtrlPressed = true; break;
-            case 0x38: rightAltPressed = true; break;
-            case 0x9D: rightCtrlPressed = false; break;
-            case 0xB8: rightAltPressed = false; break;
+            case 0x1D:
+                rightCtrlPressed = true;
+                break;
+            case 0x38:
+                rightAltPressed = true;
+                break;
+            case 0x9D:
+                rightCtrlPressed = false;
+                break;
+            case 0xB8:
+                rightAltPressed = false;
+                break;
         }
         // Only invoke callbacks if handler is set
         if (this->eventHandler) {
             switch (key) {
-                case 0x1D:  case 0x38:
-                case 0x48:  case 0x50:
-                case 0x4B:  case 0x4D:
+                case 0x1D:
+                case 0x38:
+                case 0x48:
+                case 0x50:
+                case 0x4B:
+                case 0x4D:
                 case 0x53:
                     eventHandler->OnSpecialKeyDown(key);
                     break;
-                case 0x9D:  case 0xB8:
-                case 0xC8:  case 0xD0:
-                case 0xCB:  case 0xCD:
+                case 0x9D:
+                case 0xB8:
+                case 0xC8:
+                case 0xD0:
+                case 0xCB:
+                case 0xCD:
                 case 0xD3:
                     eventHandler->OnSpecialKeyUp(key);
                     break;
@@ -175,20 +198,45 @@ uint32_t KeyboardDriver::HandleInterrupt(uint32_t esp) {
         keyStates[key] = 1;
         // Always update modifier state
         switch (key) {
-            case 0x2A: leftShiftPressed = true; break;
-            case 0x36: rightShiftPressed = true; break;
-            case 0x1D: leftCtrlPressed = true; break;
-            case 0x38: leftAltPressed = true; break;
-            case 0x3A: capsLockActive = !capsLockActive; break;
+            case 0x2A:
+                leftShiftPressed = true;
+                break;
+            case 0x36:
+                rightShiftPressed = true;
+                break;
+            case 0x1D:
+                leftCtrlPressed = true;
+                break;
+            case 0x38:
+                leftAltPressed = true;
+                break;
+            case 0x3A:
+                capsLockActive = !capsLockActive;
+                break;
         }
         // Only invoke callbacks if handler is set
         if (this->eventHandler) {
             switch (key) {
-                case 0x1C:  case 0x2A:  case 0x36:  case 0x1D:
-                case 0x38:  case 0x3A:  case 0x0F:  case 0x0E:
-                case 0x01:  case 0x3B:  case 0x3C:  case 0x3D:
-                case 0x3E:  case 0x3F:  case 0x40:  case 0x41:
-                case 0x42:  case 0x43:  case 0x44:  case 0x57:
+                case 0x1C:
+                case 0x2A:
+                case 0x36:
+                case 0x1D:
+                case 0x38:
+                case 0x3A:
+                case 0x0F:
+                case 0x0E:
+                case 0x01:
+                case 0x3B:
+                case 0x3C:
+                case 0x3D:
+                case 0x3E:
+                case 0x3F:
+                case 0x40:
+                case 0x41:
+                case 0x42:
+                case 0x43:
+                case 0x44:
+                case 0x57:
                 case 0x58:
                     eventHandler->OnSpecialKeyDown(key);
                     break;
@@ -197,11 +245,9 @@ uint32_t KeyboardDriver::HandleInterrupt(uint32_t esp) {
                         char character = normalKeyMap[key];
                         bool shiftPressed = leftShiftPressed || rightShiftPressed;
                         if (character >= 'a' && character <= 'z') {
-                            if (shiftPressed ^ capsLockActive)
-                                character = shiftKeyMap[key];
+                            if (shiftPressed ^ capsLockActive) character = shiftKeyMap[key];
                         } else {
-                            if (shiftPressed)
-                                character = shiftKeyMap[key];
+                            if (shiftPressed) character = shiftKeyMap[key];
                         }
                         if (character != 0) {
                             char keyStr[2] = {character, '\0'};
@@ -216,19 +262,42 @@ uint32_t KeyboardDriver::HandleInterrupt(uint32_t esp) {
         if (releaseScancode < 128) keyStates[releaseScancode] = 0;
         // Always update modifier state
         switch (key) {
-            case 0xAA: leftShiftPressed = false; break;
-            case 0xB6: rightShiftPressed = false; break;
-            case 0x9D: leftCtrlPressed = false; break;
-            case 0xB8: leftAltPressed = false; break;
+            case 0xAA:
+                leftShiftPressed = false;
+                break;
+            case 0xB6:
+                rightShiftPressed = false;
+                break;
+            case 0x9D:
+                leftCtrlPressed = false;
+                break;
+            case 0xB8:
+                leftAltPressed = false;
+                break;
         }
         // Only invoke callbacks if handler is set
         if (this->eventHandler) {
             switch (key) {
-                case 0x9C:  case 0xAA:  case 0xB6:  case 0x9D:
-                case 0xB8:  case 0x8F:  case 0x8E:  case 0x81:
-                case 0xBB:  case 0xBC:  case 0xBD:  case 0xBE:
-                case 0xBF:  case 0xC0:  case 0xC1:  case 0xC2:
-                case 0xC3:  case 0xC4:  case 0xD7:  case 0xD8:
+                case 0x9C:
+                case 0xAA:
+                case 0xB6:
+                case 0x9D:
+                case 0xB8:
+                case 0x8F:
+                case 0x8E:
+                case 0x81:
+                case 0xBB:
+                case 0xBC:
+                case 0xBD:
+                case 0xBE:
+                case 0xBF:
+                case 0xC0:
+                case 0xC1:
+                case 0xC2:
+                case 0xC3:
+                case 0xC4:
+                case 0xD7:
+                case 0xD8:
                     eventHandler->OnSpecialKeyUp(key);
                     break;
             }

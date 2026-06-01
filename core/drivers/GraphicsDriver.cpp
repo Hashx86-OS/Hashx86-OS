@@ -124,7 +124,8 @@ void GraphicsDriver::DrawBitmap(int32_t x, int32_t y, const uint32_t* bitmapData
                 uint8_t blendedGreen = alphaTable[alpha][srcGreen] + alphaTable[invAlpha][dstGreen];
                 uint8_t blendedBlue = alphaTable[alpha][srcBlue] + alphaTable[invAlpha][dstBlue];
 
-                rowDst[screenX] = (0xFF << 24) | (blendedRed << 16) | (blendedGreen << 8) | blendedBlue;
+                rowDst[screenX] =
+                    (0xFF << 24) | (blendedRed << 16) | (blendedGreen << 8) | blendedBlue;
             }
         }
     }
@@ -178,7 +179,6 @@ void GraphicsDriver::DrawRoundedRectangleShadow(int32_t x, int32_t y, uint32_t w
         uint32_t* pixelPtr = &backBuffer[Y * this->width + clampedStartX];
 
         for (int32_t X = clampedStartX; X < clampedEndX; ++X) {
-
             int32_t dx = 0, dy = 0;
             if (X < x)
                 dx = x - X;
@@ -196,7 +196,7 @@ void GraphicsDriver::DrawRoundedRectangleShadow(int32_t x, int32_t y, uint32_t w
                     alpha = shadowAlpha;  // No falloff: constant opacity
                 } else {
                     alpha = alphaTable[shadowAlpha][255 - (distanceSquared * 255) /
-                                                               (shadowRadius * shadowRadius)];
+                                                              (shadowRadius * shadowRadius)];
                 }
                 uint32_t dstColor = *pixelPtr;
                 uint32_t invAlpha = 255 - alpha;

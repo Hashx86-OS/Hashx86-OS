@@ -176,14 +176,26 @@ static bool ata_wait_drq(Port8Bit& commandPort, const char* op) {
     uint8_t status = commandPort.Read();
     uint32_t bsyWait = 0;
     while ((status & 0x80) == 0x80) {
-        if (bsyWait++ > 1000000) { KDBG1("%s ERROR: BSY timeout", op); return false; }
+        if (bsyWait++ > 1000000) {
+            KDBG1("%s ERROR: BSY timeout", op);
+            return false;
+        }
         status = commandPort.Read();
     }
     uint32_t drqWait = 0;
     while ((status & 0x08) != 0x08) {
-        if ((status & 0x01) == 0x01) { KDBG1("%s ERROR: ERR set while waiting for DRQ", op); return false; }
-        if ((status & 0x20) == 0x20) { KDBG1("%s ERROR: DF set while waiting for DRQ", op); return false; }
-        if (drqWait++ > 1000000) { KDBG1("%s ERROR: DRQ timeout", op); return false; }
+        if ((status & 0x01) == 0x01) {
+            KDBG1("%s ERROR: ERR set while waiting for DRQ", op);
+            return false;
+        }
+        if ((status & 0x20) == 0x20) {
+            KDBG1("%s ERROR: DF set while waiting for DRQ", op);
+            return false;
+        }
+        if (drqWait++ > 1000000) {
+            KDBG1("%s ERROR: DRQ timeout", op);
+            return false;
+        }
         status = commandPort.Read();
     }
     return true;

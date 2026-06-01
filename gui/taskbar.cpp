@@ -140,7 +140,7 @@ void StartMenu::AddApp(const char* name, const char* description, const char* bi
     int32_t itemY =
         START_MENU_HEADER_HEIGHT + START_MENU_PADDING + itemCount * (START_MENU_ITEM_HEIGHT + 2);
 
-        StartMenuButton* btn = new StartMenuButton(this, 0, itemY, this->w, START_MENU_ITEM_HEIGHT,
+    StartMenuButton* btn = new StartMenuButton(this, 0, itemY, this->w, START_MENU_ITEM_HEIGHT,
                                                name, description, binPath);
     if (!btn) return;
 
@@ -353,9 +353,8 @@ void TaskbarTab::OnMouseDown(int32_t x, int32_t y, uint8_t button) {
     }
 
     // Set this tab as active
-    Taskbar* tb = (this->parent && this->parent->IsTaskbar())
-                      ? static_cast<Taskbar*>(this->parent)
-                      : nullptr;
+    Taskbar* tb =
+        (this->parent && this->parent->IsTaskbar()) ? static_cast<Taskbar*>(this->parent) : nullptr;
     if (tb) {
         tb->SetActiveTab(windowWidget);
     }
@@ -553,7 +552,7 @@ bool Taskbar::StartMenuContains(int32_t screenX, int32_t screenY) const {
 static uint8_t rtc_read(uint8_t reg) {
     outb(0x70, reg | 0x80);  // select register, disable NMI
     uint8_t val = inb(0x71);
-    outb(0x70, reg);          // restore NMI to enabled state
+    outb(0x70, reg);  // restore NMI to enabled state
     return val;
 }
 

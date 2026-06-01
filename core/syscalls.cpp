@@ -220,8 +220,8 @@ int32_t SyscallHandlers::Handle_sys_restart_syscall() {
     } __attribute__((packed)) nullIdtr = {0, 0};
     asm volatile(
         "cli;"
-        "lidt %0;"    // Load null IDT (limit=0, base=0)
-        "int3;"       // Trigger an interrupt -> triple fault -> CPU reset
+        "lidt %0;"  // Load null IDT (limit=0, base=0)
+        "int3;"     // Trigger an interrupt -> triple fault -> CPU reset
         ::"m"(nullIdtr));
     return 0;
 }
@@ -356,12 +356,18 @@ int32_t SyscallHandlers::Handle_sys_execve(const char* path, char* const argv[],
                 for (int i = 0; i < MAX_ARGS; i++) {
                     // Read pointer from user argv array
                     char* userPtr = nullptr;
-                    if (!CopyFromUser(proc, &userPtr, &argv[i], sizeof(void*))) { argvFailed = true; break; }
+                    if (!CopyFromUser(proc, &userPtr, &argv[i], sizeof(void*))) {
+                        argvFailed = true;
+                        break;
+                    }
                     if (!userPtr) break;  // NULL terminator
 
                     // Measure and copy string safely (cap length)
                     char* buf = (char*)kmalloc(MAX_ARG_LEN);
-                    if (!buf) { argvFailed = true; break; }
+                    if (!buf) {
+                        argvFailed = true;
+                        break;
+                    }
                     // Read at most MAX_ARG_LEN-1 bytes
                     size_t read = 0;
                     while (read + 1 < (size_t)MAX_ARG_LEN) {
@@ -374,7 +380,10 @@ int32_t SyscallHandlers::Handle_sys_execve(const char* path, char* const argv[],
                         buf[read++] = c;
                         if (c == '\0') break;
                     }
-                    if (!buf) { argvFailed = true; break; }
+                    if (!buf) {
+                        argvFailed = true;
+                        break;
+                    }
                     buf[MAX_ARG_LEN - 1] = '\0';
                     switch (i) {
                         case 0:
@@ -458,8 +467,7 @@ int32_t SyscallHandlers::Handle_sys_brk(uint32_t brk) {
                 if (g_paging->GetPhysicalAddress(process->page_directory, addr) == 0xFFFFFFFF) {
                     uint32_t phys_frame = (uint32_t)pmm_alloc_block_low(256 * 1024 * 1024);
                     if (!phys_frame) {
-                        KDBG1("sys_brk: Out of physical memory! Rolling back %d pages",
-                              brkCount);
+                        KDBG1("sys_brk: Out of physical memory! Rolling back %d pages", brkCount);
                         for (int r = 0; r < brkCount; r++) {
                             g_paging->MapPage(process->page_directory, brkFrames[r].vaddr, 0, 0);
                             asm volatile("invlpg (%0)" ::"r"(brkFrames[r].vaddr) : "memory");
@@ -472,8 +480,7 @@ int32_t SyscallHandlers::Handle_sys_brk(uint32_t brk) {
                     if (!g_paging->MapPage(process->page_directory, addr, phys_frame,
                                            PAGE_PRESENT | PAGE_RW | PAGE_USER)) {
                         pmm_free_block((void*)phys_frame);
-                        KDBG1("sys_brk: MapPage failed! Rolling back %d pages",
-                              brkCount);
+                        KDBG1("sys_brk: MapPage failed! Rolling back %d pages", brkCount);
                         for (int r = 0; r < brkCount; r++) {
                             g_paging->MapPage(process->page_directory, brkFrames[r].vaddr, 0, 0);
                             asm volatile("invlpg (%0)" ::"r"(brkFrames[r].vaddr) : "memory");
@@ -696,7 +703,8 @@ int32_t SyscallHandlers::Handle_sys_peek_memory(uint32_t address, uint32_t size,
     (void)size;
     if (return_data) {
         int32_t zero = 0;
-        ProcessControlBlock* p = Scheduler::activeInstance ? Scheduler::activeInstance->GetCurrentProcess() : nullptr;
+        ProcessControlBlock* p =
+            Scheduler::activeInstance ? Scheduler::activeInstance->GetCurrentProcess() : nullptr;
         if (p && IsUserRange(p, (uint32_t)return_data, sizeof(int32_t)))
             CopyToUser(p, return_data, &zero, sizeof(int32_t));
     }
@@ -704,8 +712,7 @@ int32_t SyscallHandlers::Handle_sys_peek_memory(uint32_t address, uint32_t size,
 #endif
     ProcessControlBlock* process = Scheduler::activeInstance->GetCurrentProcess();
     if (!process) {
-        if (return_data)
-            *return_data = 0;
+        if (return_data) *return_data = 0;
         return -1;
     }
     // Dev/debug: available to all processes (not just kernel).
@@ -812,8 +819,8 @@ int32_t SyscallHandlers::Handle_sys_Hcall(uint32_t hcall_id, uint32_t arg1, uint
                     if (!new_pt) return -1;
                     uint32_t* old_pt = (uint32_t*)(g_paging->KernelPageDirectory[i] & 0xFFFFF000);
                     for (uint32_t j = 0; j < 1024; j++) new_pt[j] = old_pt[j];
-                    current_process->page_directory[i] = ((uint32_t)new_pt & 0xFFFFF000)
-                                                         | PAGE_PRESENT | PAGE_RW;
+                    current_process->page_directory[i] =
+                        ((uint32_t)new_pt & 0xFFFFF000) | PAGE_PRESENT | PAGE_RW;
                 }
             }
 

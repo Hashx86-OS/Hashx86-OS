@@ -118,7 +118,8 @@ You need a `HDD.vdi` file to store drivers and files. Choose one of the methods 
 If you prefer to create a fresh disk:
 1. Create a 1GB VirtualBox Disk Image (VDI):
     ```bash
-    qemu-img create -f vdi HDD.vdi 1G
+    mkdir build
+    qemu-img create -f vdi build/HDD.vdi 1G
     ```
 
 2. Run the OS for the first time.

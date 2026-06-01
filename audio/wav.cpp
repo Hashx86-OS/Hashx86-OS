@@ -179,8 +179,8 @@ void Wav::Load(File* file) {
     uint32_t read = file->Read(this->buffer, this->length);
 
     if (read != this->length) {
-        KDBG2("Warning: Read mismatch (%d vs %d); truncating to %d bytes",
-              (int32_t)read, (int32_t)this->length, (int32_t)read);
+        KDBG2("Warning: Read mismatch (%d vs %d); truncating to %d bytes", (int32_t)read,
+              (int32_t)this->length, (int32_t)read);
         this->length = read;
         // If nothing was read, fail validation
         if (read == 0) {

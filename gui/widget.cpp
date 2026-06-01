@@ -104,8 +104,10 @@ void Widget::SetFocussable(bool focussable) {
 
 bool Widget::AddChild(Widget* child) {
     if (!child) return false;
-    if (child->parent != nullptr && child->parent != this) return false;  // different parent, detach first
-    if (childrenList.Find([&](Widget* c) { return c == child; }) != nullptr) return false;  // already in list
+    if (child->parent != nullptr && child->parent != this)
+        return false;  // different parent, detach first
+    if (childrenList.Find([&](Widget* c) { return c == child; }) != nullptr)
+        return false;  // already in list
     childrenList.PushBack(child);
     child->parent = this;
     this->MarkDirty();

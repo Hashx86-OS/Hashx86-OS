@@ -65,7 +65,7 @@ LD_PARAMS = -melf_i386
 KERNEL_BIN = $(BUILD_DIR)/kernel.bin
 KERNEL_MAP = $(BUILD_DIR)/kernel.map
 KERNEL_ISO = $(BUILD_DIR)/kernel.iso
-QEMU_DISK = HDD.vdi
+QEMU_DISK = $(BUILD_DIR)/HDD.vdi
 RUNQ_DELAY ?= 1
 
 # Generic pattern rules: any file under build/obj/ maps to source tree
