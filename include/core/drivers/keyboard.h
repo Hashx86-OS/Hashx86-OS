@@ -60,6 +60,13 @@ class KeyboardDriver : public InterruptHandler, public Driver {
     KeyboardEventHandler* eventHandler;  ///< Event handler for keyboard events.
     uint8_t keyStates[128];              ///< Scancode-indexed key state (1=pressed, 0=released)
 
+    static const uint16_t INPUT_QUEUE_SIZE = 256;
+    char inputQueue[INPUT_QUEUE_SIZE];
+    uint16_t inputHead;
+    uint16_t inputTail;
+
+    void QueueInputChar(char c);
+
 public:
     static KeyboardDriver* activeInstance;
 
@@ -71,6 +78,12 @@ public:
     uint8_t* GetKeyStates() {
         return keyStates;
     }
+
+    /// Pops one character from the keyboard input queue (false if empty).
+    bool PopInputChar(char* out);
+
+    /// Clears all pending characters from the keyboard input queue.
+    void ClearInputQueue();
     /**
      * @brief Constructor for the KeyboardDriver.
      *

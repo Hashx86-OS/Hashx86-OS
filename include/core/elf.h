@@ -12,6 +12,9 @@
 
 #define ELF_MAGIC 0x464C457F
 
+#define HX86_APP_META_MAGIC 0x36385848
+#define HX86_APP_META_VERSION 1
+
 // ELF Header
 struct elf_header {
     uint32_t magic;
@@ -87,6 +90,12 @@ struct ProgramArguments {
     const char* str4;
     const char* str5;
 };
+
+struct hx86_app_meta {
+    uint32_t magic;
+    uint16_t version;
+    uint16_t appType;
+} __attribute__((packed));
 
 inline void FreeProgramArguments(ProgramArguments* a) {
     if (!a) return;

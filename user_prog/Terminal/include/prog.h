@@ -12,6 +12,7 @@ namespace {
 // --- Constants ---
 constexpr uint8_t SC_ESC = 0x01;
 constexpr uint8_t SC_BACKSPACE = 0x0E;
+constexpr uint8_t SC_TAB = 0x0F;
 constexpr uint8_t SC_ENTER = 0x1C;
 constexpr uint8_t SC_LSHIFT = 0x2A;
 constexpr uint8_t SC_RSHIFT = 0x36;
@@ -41,6 +42,8 @@ constexpr int STATUS_H = 18;
 constexpr int CHAR_W = 8;
 constexpr int CHAR_H = 10;
 constexpr int MAX_RENDER_TEXT = 64 * 1024;
+constexpr int MAX_PATH_LEN = 256;
+constexpr int MAX_SHELL_TOKEN = 128;
 
 // --- Keyboard Maps ---
 static const char kNormalMap[128] = {
@@ -115,6 +118,9 @@ private:
     bool capsLock;
     int inputStartColumn;
     bool viewDirty;
+    int32_t foregroundPid;
+    int32_t backgroundPid;
+    char currentPath[MAX_PATH_LEN];
 
     // Buffers
     char renderText[MAX_RENDER_TEXT];
@@ -128,6 +134,7 @@ private:
     void MarkDirty();
     void PushBanner();
     void PushPrompt();
+    void PrintLine(const char* text);
     void ClearScreen();
     void ScrollUp();
     void ScrollDown();
@@ -136,12 +143,23 @@ private:
     void AppendCharSafe(char c, int& idx, int limit);
     void BuildViewText();
     void UpdateView();
+    void TrimInPlace(char* text) const;
+    void SplitCommand(const char* input, char* outCmd, char* outArgs) const;
+    bool ResolvePath(const char* input, char* outPath) const;
+    bool ResolveExecutablePath(const char* input, char* outPath) const;
+    bool IsDirectoryPath(const char* path) const;
+    bool IsRegularPath(const char* path) const;
+    void CommandCd(const char* args);
+    void CommandLs(const char* args);
+    void CommandPwd();
+    void CommandRun(const char* args);
 
     char TranslateScancode(uint8_t scancode, bool shiftPressed) const;
     void ExecuteCommand(const char* cmd);
     void HandleEnter();
     void HandleScancode(uint8_t scancode, bool shiftPressed);
     void HandleScrollAction(int32_t scrollAction);
+    void PollForegroundProcess();
 };
 
 }  // namespace

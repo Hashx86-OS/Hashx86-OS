@@ -7,6 +7,7 @@
  */
 
 #define KDBG_COMPONENT "KEYBOARD"
+#include <core/Iguard.h>
 #include <core/drivers/keyboard.h>
 #include <core/memory.h>
 
@@ -56,6 +57,9 @@ KeyboardDriver::KeyboardDriver(InterruptManager* manager, KeyboardEventHandler* 
     this->eventHandler = handler;
     this->driverName = "Generic Keyboard Driver  ";
     memset(this->keyStates, 0, sizeof(this->keyStates));
+    memset(this->inputQueue, 0, sizeof(this->inputQueue));
+    this->inputHead = 0;
+    this->inputTail = 0;
     activeInstance = this;
 }
 
@@ -63,6 +67,35 @@ KeyboardDriver::KeyboardDriver(InterruptManager* manager, KeyboardEventHandler* 
  * KeyboardDriver destructor
  */
 KeyboardDriver::~KeyboardDriver() {}
+
+void KeyboardDriver::QueueInputChar(char c) {
+    uint16_t nextHead = (uint16_t)((inputHead + 1) % INPUT_QUEUE_SIZE);
+
+    // Full queue: drop oldest character to preserve latest input.
+    if (nextHead == inputTail) {
+        inputTail = (uint16_t)((inputTail + 1) % INPUT_QUEUE_SIZE);
+    }
+
+    inputQueue[inputHead] = c;
+    inputHead = nextHead;
+}
+
+bool KeyboardDriver::PopInputChar(char* out) {
+    if (!out) return false;
+
+    InterruptGuard guard;
+    if (inputHead == inputTail) return false;
+
+    *out = inputQueue[inputTail];
+    inputTail = (uint16_t)((inputTail + 1) % INPUT_QUEUE_SIZE);
+    return true;
+}
+
+void KeyboardDriver::ClearInputQueue() {
+    InterruptGuard guard;
+    inputHead = 0;
+    inputTail = 0;
+}
 
 /**
  * Activates the keyboard driver and initializes the hardware
@@ -217,14 +250,23 @@ uint32_t KeyboardDriver::HandleInterrupt(uint32_t esp) {
         // Only invoke callbacks if handler is set
         if (this->eventHandler) {
             switch (key) {
-                case 0x1C:
+                case 0x1C:  // Enter
+                    eventHandler->OnSpecialKeyDown(key);
+                    QueueInputChar('\n');
+                    break;
+                case 0x0F:  // Tab
+                    eventHandler->OnSpecialKeyDown(key);
+                    QueueInputChar('\t');
+                    break;
+                case 0x0E:  // Backspace
+                    eventHandler->OnSpecialKeyDown(key);
+                    QueueInputChar('\b');
+                    break;
                 case 0x2A:
                 case 0x36:
                 case 0x1D:
                 case 0x38:
                 case 0x3A:
-                case 0x0F:
-                case 0x0E:
                 case 0x01:
                 case 0x3B:
                 case 0x3C:
@@ -250,6 +292,7 @@ uint32_t KeyboardDriver::HandleInterrupt(uint32_t esp) {
                             if (shiftPressed) character = shiftKeyMap[key];
                         }
                         if (character != 0) {
+                            QueueInputChar(character);
                             char keyStr[2] = {character, '\0'};
                             eventHandler->OnKeyDown(keyStr);
                         }

@@ -12,8 +12,22 @@
 Desktop* Desktop::activeInstance = nullptr;
 static volatile uint32_t g_focusedWidgetID = 0;
 
+void Desktop::RestoreFocus() {
+    if (g_focusedWidgetID != 0) return;
+    childrenList.ForEach([&](Widget* c) {
+        if (g_focusedWidgetID == 0 && c->onKeyPressMemberPtr && c->keyCallbackInstance) {
+            g_focusedWidgetID = c->ID;
+        }
+    });
+}
+
 static void DispatchKeyToFocused(uint8_t scancode, bool shiftPressed) {
-    if (!Desktop::activeInstance || g_focusedWidgetID == 0) return;
+    if (!Desktop::activeInstance) return;
+
+    if (g_focusedWidgetID == 0) {
+        Desktop::activeInstance->RestoreFocus();
+    }
+    if (g_focusedWidgetID == 0) return;
 
     Widget* target = Desktop::activeInstance->FindWidgetByID((uint32_t)g_focusedWidgetID);
     if (!target) {
@@ -68,7 +82,7 @@ void EventHandlerHGUI(void* arg) {
                         }
 
                         if (!tmpWidget->parent || tmpWidget->parent->ID == 0) {
-                            syscall_exit(10);
+                            syscall_exit_group(10);
                         } else {
                             tmpWidget->parent->RemoveChild(tmpWidget);
 

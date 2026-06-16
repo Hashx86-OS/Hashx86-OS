@@ -108,11 +108,9 @@ void StartMenuButton::LaunchProgram() {
 
     File* file = g_bootPartition->Open((char*)binPath);
     if (file && file->size > 0) {
-        ProgramArguments* args = new ProgramArguments{"ARG1", "ARG2", "ARG3", "ARG4", "ARG5"};
-        ProcessControlBlock* prog = g_elfLoader->loadELF(file, args);
+        ProcessControlBlock* prog = g_elfLoader->loadELF(file, nullptr);
         if (!prog) {
             KDBG1("StartMenu: Failed to load ELF: %s\n", binPath);
-            delete args;
         }
         file->Close();
         delete file;

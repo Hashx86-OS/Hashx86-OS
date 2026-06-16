@@ -12,6 +12,7 @@ public:
     Desktop();
     ~Desktop();
     void innitEventHandler();
+    void RestoreFocus();
 };
 
 #endif  // Desktop_H

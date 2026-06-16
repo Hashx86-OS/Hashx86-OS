@@ -19,6 +19,8 @@
 #include <Math3D.h>
 #include <Renderer3D.h>
 
+HX86_DECLARE_APP(HX86_APP_GUI);
+
 // Scancode defines for WASD
 #define SC_W 0x11
 #define SC_A 0x1E

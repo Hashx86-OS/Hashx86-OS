@@ -34,7 +34,18 @@ struct linux_dirent {
     char d_name[];      // Filename (null-terminated)
 };
 
-typedef enum { Hsys_regEventH = 1, Hsys_getFramebuffer = 2, Hsys_getInput = 3 } HSYSCALL;
+typedef enum {
+    Hsys_regEventH = 1,
+    Hsys_getFramebuffer = 2,
+    Hsys_getInput = 3,
+    Hsys_initCli = 4,
+    Hsys_stdinPush = 5,
+    Hsys_getAppMode = 6,
+    Hsys_setCliHostView = 7,
+    Hsys_getCliAttachedView = 8,
+    Hsys_isProcessAlive = 9,
+    Hsys_getProcessAppMode = 10,
+} HSYSCALL;
 
 class SyscallHandler : public InterruptHandler {
 public:
@@ -48,7 +59,9 @@ class SyscallHandlers {
 public:
     static int32_t Handle_sys_restart_syscall();
     static int32_t Handle_sys_exit(uint32_t status);
+    static int32_t Handle_sys_exit_group(uint32_t status);
     static int32_t Handle_sys_read(uint32_t fd, char* buf, uint32_t count);
+    static int32_t Handle_sys_write(uint32_t fd, const char* buf, uint32_t count);
     static int32_t Handle_sys_open(const char* path, int32_t flags);
     static int32_t Handle_sys_close(uint32_t fd);
     static int32_t Handle_sys_execve(const char* path, char* const argv[], char* const envp[]);

@@ -96,7 +96,7 @@ install: $(KERNEL_BIN)
 
 # Clean rule
 clean:
-	rm -rf $(BUILD_DIR)
+	-test -d $(BUILD_DIR) && find $(BUILD_DIR) -mindepth 1 -maxdepth 1 ! -name 'HDD.vdi' -exec rm -rf {} +
 
 build:
 	make clean
@@ -168,6 +168,7 @@ hdd:
 	-sudo cp $(BUILD_DIR)/user/test.bin /mnt/vdi_p1/SYS32/test.bin
 	-sudo cp $(BUILD_DIR)/user/Explorer.bin /mnt/vdi_p1/SYS32/Explorer.bin
 	-sudo cp $(BUILD_DIR)/user/Terminal.bin /mnt/vdi_p1/SYS32/TERMINAL.BIN
+	-sudo cp $(BUILD_DIR)/user/CLIHello.bin /mnt/vdi_p1/SYS32/CLIHello.bin
 	-sudo cp $(BUILD_DIR)/user/Game3D.bin /mnt/vdi_p1/ProgFile/Game3D/Game3D.bin
 
 # 	5. Cleanup

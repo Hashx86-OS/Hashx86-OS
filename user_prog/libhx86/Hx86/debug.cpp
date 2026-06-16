@@ -7,6 +7,7 @@
  */
 
 #include <Hx86/debug.h>
+#include <Hx86/Hx86.h>
 
 void vprintf(const char* format, va_list args);
 
@@ -87,8 +88,16 @@ void vprintf(const char* format, va_list args) {
 
     output[idx] = '\0';  // Null terminate
 
-    // SEND TO KERNEL IN ONE GO
-    syscall_debug(output);
+    // Write through stdout; fallback to debug syscall if stdio is unavailable.
+    if (idx > 0) {
+        int32_t written = syscall_write(1, output, (uint32_t)idx);
+        if (written < 0) {
+            syscall_debug(output);
+        }
+
+        // If CLI mode created a terminal host window, mirror output there.
+        cli_append_output(output);
+    }
 }
 
 void DebugPrintf(const char* tag, const char* format, ...) {

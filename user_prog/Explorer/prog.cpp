@@ -12,6 +12,8 @@
 #include <Hx86/debug.h>
 #include <Hx86/utils/string.h>
 
+HX86_DECLARE_APP(HX86_APP_GUI);
+
 #define MAX_ENTRIES 64
 
 static char currentPath[256] = "/";

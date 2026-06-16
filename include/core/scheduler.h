@@ -62,6 +62,7 @@ public:
     ProcessControlBlock* GetCurrentProcess() {
         return currentThread ? currentThread->parent : nullptr;
     }
+    ProcessControlBlock* FindProcess(uint32_t pid);
     Paging* GetPager() {
         return _pager;
     }
