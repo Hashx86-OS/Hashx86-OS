@@ -15,7 +15,7 @@ static volatile uint32_t g_focusedWidgetID = 0;
 void Desktop::RestoreFocus() {
     if (g_focusedWidgetID != 0) return;
     childrenList.ForEach([&](Widget* c) {
-        if (g_focusedWidgetID == 0 && c->onKeyPressMemberPtr && c->keyCallbackInstance) {
+        if (g_focusedWidgetID == 0 && (c->onKeyPressPtr || (c->onKeyPressMemberPtr && c->keyCallbackInstance))) {
             g_focusedWidgetID = c->ID;
         }
     });

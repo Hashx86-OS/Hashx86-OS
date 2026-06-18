@@ -32,6 +32,9 @@ uint16_t DetectELFAppType(File* elf, const elf_header& header) {
     if (header.sh_size != sizeof(elf_section_header)) return APP_BINARY_GUI;
 
     uint32_t shTableSize = sizeof(elf_section_header) * header.sh_entry_count;
+    if (shTableSize > elf->size || header.sh_offset > elf->size - shTableSize) {
+        return APP_BINARY_GUI;
+    }
     elf_section_header* shTable = new elf_section_header[header.sh_entry_count];
     if (!shTable) return APP_BINARY_GUI;
 
@@ -48,6 +51,11 @@ uint16_t DetectELFAppType(File* elf, const elf_header& header) {
 
     elf_section_header* shStr = &shTable[header.sh_str_index];
     if (shStr->size == 0) {
+        delete[] shTable;
+        return APP_BINARY_GUI;
+    }
+
+    if (shStr->size > elf->size || shStr->offset > elf->size - shStr->size) {
         delete[] shTable;
         return APP_BINARY_GUI;
     }

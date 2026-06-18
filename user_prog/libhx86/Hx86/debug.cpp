@@ -91,7 +91,7 @@ void vprintf(const char* format, va_list args) {
     // Write through stdout; fallback to debug syscall if stdio is unavailable.
     if (idx > 0) {
         int32_t written = syscall_write(1, output, (uint32_t)idx);
-        if (written < 0) {
+        if (written < (int32_t)idx) {
             syscall_debug(output);
         }
 

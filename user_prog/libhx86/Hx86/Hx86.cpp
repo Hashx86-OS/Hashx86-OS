@@ -115,7 +115,11 @@ void init_sys(void* arg) {
             if (attachedView > 0) {
                 g_cliAttachedViewId = (uint32_t)attachedView;
                 if (syscall_init_cli() > 0) {
-                    EnsureCliTextBuffer();
+                    if (!EnsureCliTextBuffer()) {
+                        syscall_debug("init_sys: failed to allocate CLI text buffer\n");
+                    }
+                } else {
+                    syscall_debug("init_sys: syscall_init_cli() failed\n");
                 }
             } else {
                 g_cliAttachedViewId = 0;

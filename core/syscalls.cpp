@@ -405,9 +405,15 @@ int32_t SyscallHandlers::Handle_sys_write(uint32_t fd, const char* buf, uint32_t
     if (!buf) return -1;
     if (count == 0) return 0;
 
-    // Validate Buffer is User Space
-    if ((uint32_t)buf < 0x10000000) {
-        KDBG1("sys_write: SECURITY VIOLATION: Buffer in Kernel Space! 0x%x", buf);
+    // Validate buffer is entirely within valid user space
+    uint32_t start = (uint32_t)buf;
+    if (start < USER_LOWER_BOUND || start > 0xFFFFFFFFu - count + 1) {
+        KDBG1("sys_write: SECURITY VIOLATION: Buffer invalid buf=0x%x count=%u", buf, count);
+        return -1;
+    }
+    uint32_t end = start + count - 1;
+    if (end >= USER_UPPER_BOUND) {
+        KDBG1("sys_write: SECURITY VIOLATION: Buffer crosses kernel boundary buf=0x%x count=%u", buf, count);
         return -1;
     }
 
@@ -1022,9 +1028,13 @@ int32_t SyscallHandlers::Handle_sys_Hcall(uint32_t hcall_id, uint32_t arg1, uint
     } else if (hcall_id == Hsys_stdinPush) {
         if (!Scheduler::activeInstance) return -1;
 
-        // arg1: target PID (0 means current process), arg2: char value
         ProcessControlBlock* target = Scheduler::activeInstance->FindProcess(arg1);
         if (!target) return -1;
+
+        // Only allow the CLI host or the target process itself to push stdin
+        if (current_process->pid != target->cliHostPid && current_process->pid != target->pid) {
+            return -1;
+        }
 
         target->stdinAttached = true;
         char c = (char)(arg2 & 0xFF);
