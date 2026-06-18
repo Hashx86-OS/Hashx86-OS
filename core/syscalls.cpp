@@ -419,9 +419,17 @@ int32_t SyscallHandlers::Handle_sys_write(uint32_t fd, const char* buf, uint32_t
 
     // stdout/stderr: write to serial sink for now.
     if (fd == 1 || fd == 2) {
-        for (uint32_t i = 0; i < count; i++) {
-            writeSerial(buf[i]);
+        ProcessControlBlock* process = Scheduler::activeInstance->GetCurrentProcess();
+        char* kbuf = (char*)kmalloc(count);
+        if (!kbuf) return -1;
+        if (!CopyFromUser(process, kbuf, buf, count)) {
+            kfree(kbuf);
+            return -1;
         }
+        for (uint32_t i = 0; i < count; i++) {
+            writeSerial(kbuf[i]);
+        }
+        kfree(kbuf);
         return (int32_t)count;
     }
 
@@ -905,6 +913,7 @@ int32_t SyscallHandlers::Handle_sys_peek_memory(uint32_t address, uint32_t size,
 
 int32_t SyscallHandlers::Handle_sys_Hcall(uint32_t hcall_id, uint32_t arg1, uint32_t arg2,
                                           uint32_t arg3, uint32_t arg4) {
+    if (!Scheduler::activeInstance) return -1;
     ProcessControlBlock* current_process = Scheduler::activeInstance->GetCurrentProcess();
 
     if (hcall_id == Hsys_regEventH) {

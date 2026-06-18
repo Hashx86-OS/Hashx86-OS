@@ -85,6 +85,9 @@ uint16_t DetectELFAppType(File* elf, const elf_header& header) {
         if (sh->size < sizeof(hx86_app_meta)) {
             continue;
         }
+        if (sh->offset > elf->size - sizeof(hx86_app_meta)) {
+            continue;
+        }
 
         hx86_app_meta meta;
         elf->Seek(sh->offset);

@@ -120,6 +120,7 @@ void init_sys(void* arg) {
                     }
                 } else {
                     syscall_debug("init_sys: syscall_init_cli() failed\n");
+                    g_cliAttachedViewId = 0;
                 }
             } else {
                 g_cliAttachedViewId = 0;
