@@ -432,9 +432,9 @@ int32_t HguiHandler::HandleTerminalView(CPUState* cpu, const WidgetData* _data) 
     if (!cpu || !_data) return -1;
     ProcessControlBlock* proc = GetCurrentProcSafe();
     if (!proc) return -1;
-    char textBuf[MAX_USER_TEXT];
 
     if ((uint32_t)cpu->ebx == CREATE) {
+        char textBuf[MAX_USER_TEXT];
         Widget* parentBase = this->FindWidgetByID(_data->param0);
         if (!parentBase || !parentBase->IsComposite()) return -1;
         CompositeWidget* parentWidget = static_cast<CompositeWidget*>(parentBase);
@@ -456,13 +456,20 @@ int32_t HguiHandler::HandleTerminalView(CPUState* cpu, const WidgetData* _data) 
         HguiWidgets.Add(_widget);
         return (int32_t)_newID;
     } else if ((uint32_t)cpu->ebx == SET_TEXT) {
+        // Use a larger heap buffer for terminal text — CLI apps can produce
+        // output far exceeding the 256-byte MAX_USER_TEXT stack buffer.
+        constexpr size_t MAX_TERMINAL_TEXT = 8192;
         Widget* w = this->FindWidgetByID(_data->param0);
         if (!w || !w->IsTerminalView()) return -1;
         TerminalView* widget = static_cast<TerminalView*>(w);
-        if (!CopyUserString(proc, _data->param5, textBuf, sizeof(textBuf))) {
+        char* textBuf = (char*)kmalloc(MAX_TERMINAL_TEXT);
+        if (!textBuf) return -1;
+        if (!CopyUserString(proc, _data->param5, textBuf, MAX_TERMINAL_TEXT)) {
+            kfree(textBuf);
             return -1;
         }
         widget->setText(textBuf);
+        kfree(textBuf);
         return 1;
     } else if ((uint32_t)cpu->ebx == SET_FONT_SIZE) {
         Widget* w = this->FindWidgetByID(_data->param0);

@@ -55,8 +55,8 @@ void CrashReporter::ShowUserCrashDialog(uint32_t pid, uint32_t tid, uint8_t exce
         desktop->AddChild(g_crashDialog);
     }
 
-    // Refresh ownership metadata on every crash, not just on first allocation
-    g_crashDialog->SetPID(pid);
+    // Assign a fresh widget ID so FindWidgetByID works, but keep PID=0
+    // (kernel-owned) so RemoveAppByPID does not tear down the dialog.
     g_crashDialog->SetID(desktop->getNewID());
 
     char line1[96];

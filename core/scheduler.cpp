@@ -99,6 +99,15 @@ ProcessControlBlock* Scheduler::CreateProcess(bool isKernel, void (*entrypoint)(
     }
     pcb->pid = _pidCounter++;
     pcb->isKernelProcess = isKernel;
+    pcb->appType = APP_BINARY_GUI;
+    pcb->stdinHead = 0;
+    pcb->stdinTail = 0;
+    pcb->stdinAttached = false;
+    memset(pcb->stdinQueue, 0, sizeof(pcb->stdinQueue));
+    pcb->isCliHost = false;
+    pcb->cliHostViewId = 0;
+    pcb->cliHostPid = 0;
+    pcb->cliAttachedViewId = 0;
     for (uint32_t fd = FD_MIN; fd < FD_MAX; fd++) {
         pcb->fdTable[fd] = nullptr;
     }
@@ -155,6 +164,25 @@ ProcessControlBlock* Scheduler::CreateProcess(bool isKernel, void (*entrypoint)(
 
     KDBG1("CreateProcess PID=%d Kernel=%d", pcb->pid, isKernel);
     return pcb;
+}
+
+ProcessControlBlock* Scheduler::FindProcess(uint32_t pid) {
+    if (pid == 0) {
+        return GetCurrentProcess();
+    }
+
+    InterruptGuard guard;
+    ProcessControlBlock* found = nullptr;
+    int pCount = globalProcessList.GetSize();
+    for (int i = 0; i < pCount; i++) {
+        ProcessControlBlock* temp = globalProcessList.PopFront();
+        if (!found && temp->pid == pid) {
+            found = temp;
+        }
+        globalProcessList.PushBack(temp);
+    }
+
+    return found;
 }
 
 ThreadControlBlock* Scheduler::CreateThread(ProcessControlBlock* parent, void (*entrypoint)(void*),
@@ -447,9 +475,18 @@ ThreadControlBlock* Scheduler::CloneCurrentProcess(CPUState* parentContext, uint
 
     childProc->pid = _pidCounter++;
     childProc->isKernelProcess = false;
+    childProc->appType = parent->appType;
     childProc->parent = parent;
     childProc->page_directory = _pager->CreateProcessDirectory();
     childProc->heap = parent->heap;
+    childProc->stdinHead = 0;
+    childProc->stdinTail = 0;
+    childProc->stdinAttached = false;
+    memset(childProc->stdinQueue, 0, sizeof(childProc->stdinQueue));
+    childProc->isCliHost = false;
+    childProc->cliHostViewId = 0;
+    childProc->cliHostPid = 0;
+    childProc->cliAttachedViewId = 0;
     for (uint32_t fd = FD_MIN; fd < FD_MAX; fd++) {
         childProc->fdTable[fd] = nullptr;
     }

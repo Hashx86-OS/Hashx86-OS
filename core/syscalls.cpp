@@ -17,6 +17,67 @@
 #include <core/syscalls.h>
 
 namespace {
+
+bool PushProcessStdin(ProcessControlBlock* process, char c) {
+    if (!process) return false;
+
+    InterruptGuard guard;
+    uint16_t nextHead =
+        (uint16_t)((process->stdinHead + 1) % ProcessControlBlock::STDIN_QUEUE_SIZE);
+
+    // Full queue: drop oldest to preserve latest input.
+    if (nextHead == process->stdinTail) {
+        process->stdinTail =
+            (uint16_t)((process->stdinTail + 1) % ProcessControlBlock::STDIN_QUEUE_SIZE);
+    }
+
+    process->stdinQueue[process->stdinHead] = c;
+    process->stdinHead = nextHead;
+    return true;
+}
+
+bool PopProcessStdin(ProcessControlBlock* process, char* out) {
+    if (!process || !out) return false;
+
+    InterruptGuard guard;
+    if (process->stdinHead == process->stdinTail) return false;
+
+    *out = process->stdinQueue[process->stdinTail];
+    process->stdinTail =
+        (uint16_t)((process->stdinTail + 1) % ProcessControlBlock::STDIN_QUEUE_SIZE);
+    return true;
+}
+
+void ClearProcessStdin(ProcessControlBlock* process) {
+    if (!process) return;
+
+    InterruptGuard guard;
+    process->stdinHead = 0;
+    process->stdinTail = 0;
+}
+
+void CleanupExitedProcessGui(uint32_t pid, uint32_t status, const char* sourceTag) {
+    if (!pid) return;
+
+    if (Desktop::activeInstance) {
+        Desktop::activeInstance->RemoveAppByPID(pid);
+    }
+    if (HguiHandler::activeInstance) {
+        HguiHandler::activeInstance->RemoveAppByPID(pid);
+    }
+
+    if (g_stop_gui_rendering && g_gui_owner_pid == (int)pid) {
+        KDBG1("%s: Releasing GUI lock from PID %d", sourceTag, pid);
+        g_stop_gui_rendering = false;
+        g_gui_owner_pid = -1;
+        if (Desktop::activeInstance) {
+            Desktop::activeInstance->MarkDirty();
+        }
+    }
+
+    KDBG1("%s: Process PID %d terminated with status %d", sourceTag, pid, status);
+}
+
 constexpr uint32_t USER_LOWER_BOUND = 0x10000000;
 constexpr uint32_t USER_UPPER_BOUND = 0xC0000000;
 
@@ -147,8 +208,24 @@ uint32_t SyscallHandler::HandleInterrupt(uint32_t esp) {
             }
             break;
 
+        case sys_exit_group:
+            SyscallHandlers::Handle_sys_exit_group(cpu->ebx);
+            // The entire process is now dead — reschedule immediately
+            // rather than returning to dead user code.
+            if (Scheduler::activeInstance) {
+                cpu = Scheduler::activeInstance->Schedule(cpu);
+                esp = (uint32_t)cpu;
+                return esp;
+            }
+            break;
+
         case sys_read:
             return_val = SyscallHandlers::Handle_sys_read(cpu->ebx, (char*)cpu->ecx, cpu->edx);
+            break;
+
+        case sys_write:
+            return_val =
+                SyscallHandlers::Handle_sys_write(cpu->ebx, (const char*)cpu->ecx, cpu->edx);
             break;
 
         case sys_open:
@@ -238,32 +315,38 @@ int32_t SyscallHandlers::Handle_sys_exit(uint32_t status) {
 
     // Clean up GUI resources only if the entire process was terminated
     if (processKilled && pid) {
-        if (Desktop::activeInstance) Desktop::activeInstance->RemoveAppByPID(pid);
-        if (HguiHandler::activeInstance) HguiHandler::activeInstance->RemoveAppByPID(pid);
-
-        // Restore Desktop rendering if the owner exits
-        if (g_stop_gui_rendering && g_gui_owner_pid == (int)pid) {
-            KDBG1("sys_exit: Releasing GUI lock from PID %d", pid);
-            g_stop_gui_rendering = false;
-            g_gui_owner_pid = -1;
-            // Force redraw of desktop
-            if (Desktop::activeInstance) Desktop::activeInstance->MarkDirty();
-        }
-
-        KDBG1("sys_exit: Process PID %d terminated with status %d", pid, status);
+        CleanupExitedProcessGui(pid, status, "sys_exit");
     }
     return 0;  // Technically never returns
 }
 
+int32_t SyscallHandlers::Handle_sys_exit_group(uint32_t status) {
+    Scheduler* sched = Scheduler::activeInstance;
+    if (!sched) return -1;
+
+    ProcessControlBlock* process = sched->GetCurrentProcess();
+    uint32_t pid = process ? process->pid : 0;
+    if (!pid) return -1;
+
+    if (!sched->KillProcess(pid)) {
+        return -1;
+    }
+
+    CleanupExitedProcessGui(pid, status, "sys_exit_group");
+    return 0;
+}
+
 int32_t SyscallHandlers::Handle_sys_read(uint32_t fd, char* buf, uint32_t count) {
-    if (fd <= 2 || !buf || count == 0) return -1;
+    if (!buf) return -1;
+    if (count == 0) return 0;
+
+    if (!Scheduler::activeInstance) return -1;
     ProcessControlBlock* process = Scheduler::activeInstance->GetCurrentProcess();
-    File* file = GetFileByFd(process, fd);
-    if (!file) return -1;
+    if (!process) return -1;
 
     // Validate Buffer is User Space
     uint32_t start = (uint32_t)buf;
-    if (start < USER_LOWER_BOUND || count == 0 || start > 0xFFFFFFFFu - count + 1) {
+    if (start < USER_LOWER_BOUND || start > 0xFFFFFFFFu - count + 1) {
         KDBG1("sys_read: SECURITY VIOLATION: Buffer invalid buf=0x%x count=%u", buf, count);
         return -1;
     }
@@ -272,6 +355,35 @@ int32_t SyscallHandlers::Handle_sys_read(uint32_t fd, char* buf, uint32_t count)
         KDBG1("sys_read: SECURITY VIOLATION: Buffer crosses kernel buf=0x%x count=%u", buf, count);
         return -1;
     }
+
+    // stdin: consume keyboard character queue (non-blocking).
+    if (fd == 0) {
+        // Cap the read to the queue size — no need to allocate more than 256 bytes.
+        uint32_t limit = count;
+        if (limit > ProcessControlBlock::STDIN_QUEUE_SIZE) {
+            limit = ProcessControlBlock::STDIN_QUEUE_SIZE;
+        }
+        char kbuf[ProcessControlBlock::STDIN_QUEUE_SIZE];
+
+        uint32_t bytesRead = 0;
+        char c = 0;
+        while (bytesRead < limit && PopProcessStdin(process, &c)) {
+            kbuf[bytesRead++] = c;
+
+            // Canonical-ish behavior for now: stop at newline.
+            if (c == '\n') {
+                break;
+            }
+        }
+
+        if (bytesRead == 0) return 0;
+        return CopyToUser(process, buf, kbuf, bytesRead) ? (int32_t)bytesRead : -1;
+    }
+
+    if (fd <= 2) return -1;
+
+    File* file = GetFileByFd(process, fd);
+    if (!file) return -1;
 
     // Read into a kernel buffer, then copy to user space
     uint8_t* kernelBuf = (uint8_t*)kmalloc(count);
@@ -285,6 +397,45 @@ int32_t SyscallHandlers::Handle_sys_read(uint32_t fd, char* buf, uint32_t count)
     }
     kfree(kernelBuf);
     return bytesRead;
+}
+
+int32_t SyscallHandlers::Handle_sys_write(uint32_t fd, const char* buf, uint32_t count) {
+    if (!buf) return -1;
+    if (count == 0) return 0;
+
+    // Validate buffer is entirely within valid user space
+    uint32_t start = (uint32_t)buf;
+    if (start < USER_LOWER_BOUND || start > 0xFFFFFFFFu - count + 1) {
+        KDBG1("sys_write: SECURITY VIOLATION: Buffer invalid buf=0x%x count=%u", buf, count);
+        return -1;
+    }
+    uint32_t end = start + count - 1;
+    if (end >= USER_UPPER_BOUND) {
+        KDBG1("sys_write: SECURITY VIOLATION: Buffer crosses kernel boundary buf=0x%x count=%u", buf, count);
+        return -1;
+    }
+
+    // stdout/stderr: write to serial sink for now.
+    if (fd == 1 || fd == 2) {
+        ProcessControlBlock* process = Scheduler::activeInstance->GetCurrentProcess();
+        char kbuf[256];
+        uint32_t remaining = count;
+        while (remaining > 0) {
+            uint32_t chunk = (remaining > sizeof(kbuf)) ? sizeof(kbuf) : remaining;
+            if (!CopyFromUser(process, kbuf, buf, chunk)) {
+                return -1;
+            }
+            for (uint32_t i = 0; i < chunk; i++) {
+                writeSerial(kbuf[i]);
+            }
+            buf += chunk;
+            remaining -= chunk;
+        }
+        return (int32_t)count;
+    }
+
+    // stdin and unknown/output-only FDs are not writable yet.
+    return -1;
 }
 
 int32_t SyscallHandlers::Handle_sys_open(const char* path, int32_t flags) {
@@ -328,11 +479,15 @@ int32_t SyscallHandlers::Handle_sys_close(uint32_t fd) {
 
 int32_t SyscallHandlers::Handle_sys_execve(const char* path, char* const argv[],
                                            char* const envp[]) {
+    (void)argv;
+    (void)envp;
     if (!path || !g_elfLoader) return -1;
 
-    ProcessControlBlock* proc = Scheduler::activeInstance->GetCurrentProcess();
+    ProcessControlBlock* current_process =
+        Scheduler::activeInstance ? Scheduler::activeInstance->GetCurrentProcess() : nullptr;
+    if (!current_process) return -1;
     char kpath[256];
-    if (!CopyUserString(proc, path, kpath, sizeof(kpath))) return -1;
+    if (!CopyUserString(current_process, path, kpath, sizeof(kpath))) return -1;
 
     extern MSDOSPartitionTable* g_PartitionTable;
     if (MSDOSPartitionTable::activeInstance && MSDOSPartitionTable::activeInstance->partitions[0]) {
@@ -348,15 +503,14 @@ int32_t SyscallHandlers::Handle_sys_execve(const char* path, char* const argv[],
                 delete f;
                 return -1;
             }
-            ProcessControlBlock* proc = Scheduler::activeInstance->GetCurrentProcess();
             bool argvFailed = false;
-            if (argv && proc) {
+            if (argv && current_process) {
                 const int MAX_ARGS = 5;
                 const int MAX_ARG_LEN = 512;
                 for (int i = 0; i < MAX_ARGS; i++) {
                     // Read pointer from user argv array
                     char* userPtr = nullptr;
-                    if (!CopyFromUser(proc, &userPtr, &argv[i], sizeof(void*))) {
+                    if (!CopyFromUser(current_process, &userPtr, &argv[i], sizeof(void*))) {
                         argvFailed = true;
                         break;
                     }
@@ -372,7 +526,7 @@ int32_t SyscallHandlers::Handle_sys_execve(const char* path, char* const argv[],
                     size_t read = 0;
                     while (read + 1 < (size_t)MAX_ARG_LEN) {
                         char c = 0;
-                        if (!CopyFromUser(proc, &c, (const void*)((uint32_t)userPtr + read), 1)) {
+                        if (!CopyFromUser(current_process, &c, (const void*)((uint32_t)userPtr + read), 1)) {
                             kfree(buf);
                             buf = nullptr;
                             break;
@@ -417,6 +571,16 @@ int32_t SyscallHandlers::Handle_sys_execve(const char* path, char* const argv[],
             delete f;
             if (child) {
                 child->programArgs = args;
+                if (current_process && current_process->isCliHost &&
+                    current_process->cliHostViewId != 0 && child->appType == APP_BINARY_CLI) {
+                    child->cliHostPid = current_process->pid;
+                    child->cliAttachedViewId = current_process->cliHostViewId;
+                    child->stdinAttached = true;
+                    ClearProcessStdin(child);
+
+                    KDBG1("sys_execve: Attached CLI PID %d to host PID %d (view %d)", child->pid,
+                          current_process->pid, current_process->cliHostViewId);
+                }
                 return child->pid;
             }
             FreeProgramArguments(args);
@@ -750,6 +914,7 @@ int32_t SyscallHandlers::Handle_sys_peek_memory(uint32_t address, uint32_t size,
 
 int32_t SyscallHandlers::Handle_sys_Hcall(uint32_t hcall_id, uint32_t arg1, uint32_t arg2,
                                           uint32_t arg3, uint32_t arg4) {
+    if (!Scheduler::activeInstance) return -1;
     ProcessControlBlock* current_process = Scheduler::activeInstance->GetCurrentProcess();
 
     if (hcall_id == Hsys_regEventH) {
@@ -846,6 +1011,67 @@ int32_t SyscallHandlers::Handle_sys_Hcall(uint32_t hcall_id, uint32_t arg1, uint
         } else {
             return -1;
         }
+    } else if (hcall_id == Hsys_initCli) {
+        if (!current_process) return -1;
+
+        current_process->stdinAttached = true;
+        ClearProcessStdin(current_process);
+
+        // Flush any stale launch keystrokes so new CLI sessions start with clean stdin.
+        if (KeyboardDriver::activeInstance) {
+            KeyboardDriver::activeInstance->ClearInputQueue();
+        }
+
+        // If this process previously acquired fullscreen framebuffer ownership,
+        // release it when switching to CLI mode.
+        if (g_stop_gui_rendering && g_gui_owner_pid == (int)current_process->pid) {
+            g_stop_gui_rendering = false;
+            g_gui_owner_pid = -1;
+
+            if (Desktop::activeInstance) {
+                Desktop::activeInstance->MarkDirty();
+            }
+        }
+
+        KDBG1("Hsys_initCli: PID %d initialized CLI mode", current_process->pid);
+        return 1;
+    } else if (hcall_id == Hsys_stdinPush) {
+        if (!Scheduler::activeInstance) return -1;
+        if (!current_process) return -1;
+
+        // arg1 == 0 means push to self (caller's own stdin)
+        ProcessControlBlock* target = (arg1 == 0) ? current_process
+                                                  : Scheduler::activeInstance->FindProcess(arg1);
+        if (!target) return -1;
+
+        // Only allow the CLI host or the target process itself to push stdin
+        if (current_process->pid != target->cliHostPid && current_process->pid != target->pid) {
+            return -1;
+        }
+
+        target->stdinAttached = true;
+        char c = (char)(arg2 & 0xFF);
+        return PushProcessStdin(target, c) ? 1 : -1;
+    } else if (hcall_id == Hsys_getAppMode) {
+        if (!current_process) return APP_BINARY_GUI;
+        return (int32_t)current_process->appType;
+    } else if (hcall_id == Hsys_setCliHostView) {
+        if (!current_process) return -1;
+
+        current_process->isCliHost = (arg1 != 0);
+        current_process->cliHostViewId = arg1;
+        return 1;
+    } else if (hcall_id == Hsys_getCliAttachedView) {
+        if (!current_process) return 0;
+        return (int32_t)current_process->cliAttachedViewId;
+    } else if (hcall_id == Hsys_isProcessAlive) {
+        if (!Scheduler::activeInstance || arg1 == 0) return 0;
+        ProcessControlBlock* target = Scheduler::activeInstance->FindProcess(arg1);
+        return target ? 1 : 0;
+    } else if (hcall_id == Hsys_getProcessAppMode) {
+        if (!Scheduler::activeInstance || arg1 == 0) return APP_BINARY_UNKNOWN;
+        ProcessControlBlock* target = Scheduler::activeInstance->FindProcess(arg1);
+        return target ? (int32_t)target->appType : APP_BINARY_UNKNOWN;
     } else if (hcall_id == Hsys_getInput) {
         struct InputState {
             uint8_t keyStates[128];

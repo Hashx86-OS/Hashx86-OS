@@ -11,6 +11,8 @@
 #include <Hx86/debug.h>
 #include <prog.h>
 
+HX86_DECLARE_APP(HX86_APP_GUI);
+
 Label* l1;
 
 #define TOP_PADDING 120

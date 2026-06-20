@@ -5,6 +5,12 @@
 #include <types.h>
 #include <utils/linkedList.h>
 
+enum AppBinaryType {
+    APP_BINARY_UNKNOWN = 0,
+    APP_BINARY_GUI = 1,
+    APP_BINARY_CLI = 2,
+};
+
 enum ThreadState {
     THREAD_STATE_NEW,
     THREAD_STATE_READY,
@@ -70,6 +76,8 @@ struct ThreadControlBlock {
 };
 
 struct ProcessControlBlock {
+    static const uint16_t STDIN_QUEUE_SIZE = 256;
+
     uint32_t pid;
 
     uint32_t* page_directory;
@@ -77,9 +85,22 @@ struct ProcessControlBlock {
     LinkedList<ThreadControlBlock*> threads;
     ProcessControlBlock* parent;
     bool isKernelProcess;
+    uint16_t appType;
     HeapSegment heap;
     File* fdTable[FD_MAX];
     ProgramArguments* programArgs;  // Owned by PCB, freed in KillProcess
+
+    // PTY-style stdin queue: input is routed per process instead of globally.
+    char stdinQueue[STDIN_QUEUE_SIZE];
+    uint16_t stdinHead;
+    uint16_t stdinTail;
+    bool stdinAttached;
+
+    // CLI host attachment metadata.
+    bool isCliHost;
+    uint32_t cliHostViewId;
+    uint32_t cliHostPid;
+    uint32_t cliAttachedViewId;
 };
 
 #endif  // PROCESS_TYPES_H

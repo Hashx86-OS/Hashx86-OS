@@ -214,6 +214,16 @@ void Desktop::RemoveAppByPID(uint32_t pid) {
     if (result) {
         this->RemoveChild(result);
         this->MarkDirty();  // Ensure screen clears the removed window
+
+        // Restore focus to the topmost remaining window so keyboard
+        // input continues to flow (e.g., Terminal that launched the app).
+        Widget* topmost = nullptr;
+        childrenList.ForEach([&](Widget* c) {
+            topmost = c;  // last one visited = topmost in Z-order
+        });
+        if (topmost) {
+            this->GetFocus(topmost);
+        }
     }
 
     // Remove corresponding taskbar tab

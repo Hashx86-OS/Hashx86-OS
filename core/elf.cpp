@@ -9,6 +9,109 @@
 #define KDBG_COMPONENT "ELFLOADER"
 #include <core/elf.h>
 
+namespace {
+
+bool SectionNameEquals(const char* namesTable, uint32_t tableSize, uint32_t nameOffset,
+                       const char* target) {
+    if (!namesTable || !target || nameOffset >= tableSize) return false;
+
+    uint32_t idx = 0;
+    while ((nameOffset + idx) < tableSize) {
+        char a = namesTable[nameOffset + idx];
+        char b = target[idx];
+        if (a != b) return false;
+        if (a == '\0') return true;
+        idx++;
+    }
+    return false;
+}
+
+uint16_t DetectELFAppType(File* elf, const elf_header& header) {
+    if (!elf) return APP_BINARY_GUI;
+    if (header.sh_offset == 0 || header.sh_entry_count == 0) return APP_BINARY_GUI;
+    if (header.sh_size != sizeof(elf_section_header)) return APP_BINARY_GUI;
+
+    uint32_t shTableSize = sizeof(elf_section_header) * header.sh_entry_count;
+    if (shTableSize > elf->size || header.sh_offset > elf->size - shTableSize) {
+        return APP_BINARY_GUI;
+    }
+    elf_section_header* shTable = new elf_section_header[header.sh_entry_count];
+    if (!shTable) return APP_BINARY_GUI;
+
+    elf->Seek(header.sh_offset);
+    if ((uint32_t)elf->Read((uint8_t*)shTable, shTableSize) != shTableSize) {
+        delete[] shTable;
+        return APP_BINARY_GUI;
+    }
+
+    if (header.sh_str_index >= header.sh_entry_count) {
+        delete[] shTable;
+        return APP_BINARY_GUI;
+    }
+
+    elf_section_header* shStr = &shTable[header.sh_str_index];
+    if (shStr->size == 0) {
+        delete[] shTable;
+        return APP_BINARY_GUI;
+    }
+
+    if (shStr->size > elf->size || shStr->offset > elf->size - shStr->size) {
+        delete[] shTable;
+        return APP_BINARY_GUI;
+    }
+
+    char* shNames = new char[shStr->size];
+    if (!shNames) {
+        delete[] shTable;
+        return APP_BINARY_GUI;
+    }
+
+    elf->Seek(shStr->offset);
+    if ((uint32_t)elf->Read((uint8_t*)shNames, shStr->size) != shStr->size) {
+        delete[] shNames;
+        delete[] shTable;
+        return APP_BINARY_GUI;
+    }
+
+    uint16_t appType = APP_BINARY_GUI;
+
+    for (uint32_t i = 0; i < header.sh_entry_count; i++) {
+        elf_section_header* sh = &shTable[i];
+
+        if (!SectionNameEquals(shNames, shStr->size, sh->name, ".hx86meta")) {
+            continue;
+        }
+
+        if (sh->size < sizeof(hx86_app_meta)) {
+            continue;
+        }
+        if (sh->offset > elf->size - sizeof(hx86_app_meta)) {
+            continue;
+        }
+
+        hx86_app_meta meta;
+        elf->Seek(sh->offset);
+        if ((uint32_t)elf->Read((uint8_t*)&meta, sizeof(meta)) != sizeof(meta)) {
+            continue;
+        }
+
+        if (meta.magic != HX86_APP_META_MAGIC || meta.version != HX86_APP_META_VERSION) {
+            continue;
+        }
+
+        if (meta.appType == APP_BINARY_CLI || meta.appType == APP_BINARY_GUI) {
+            appType = meta.appType;
+        }
+        break;
+    }
+
+    delete[] shNames;
+    delete[] shTable;
+    return appType;
+}
+
+}  // namespace
+
 ELFLoader::ELFLoader(Paging* pager, Scheduler* scheduler) {
     this->pager = pager;
     this->scheduler = scheduler;
@@ -33,6 +136,8 @@ ProcessControlBlock* ELFLoader::loadELF(File* elf, void* args) {
         return nullptr;
     }
 
+    uint16_t detectedType = DetectELFAppType(elf, header);
+
     // Create new PCB
     ProcessControlBlock* pELF =
         scheduler->CreateProcess(false, (void (*)(void*))header.entry, args);
@@ -41,6 +146,7 @@ ProcessControlBlock* ELFLoader::loadELF(File* elf, void* args) {
         KDBG1("Error: Failed to create process for ELF");
         return nullptr;
     }
+    pELF->appType = detectedType;
 
     auto cleanup_process = [&]() {
         if (pELF) {
@@ -192,7 +298,8 @@ ProcessControlBlock* ELFLoader::loadELF(File* elf, void* args) {
         pELF->heap.maxAddress = (uint32_t)maxAddr;
     }
 
-    KDBG1("ELF Loaded. Entry: 0x%x Heap start: 0x%x", header.entry, max_virt_end);
+    KDBG1("ELF Loaded. Entry: 0x%x Heap start: 0x%x Type: %s", header.entry, max_virt_end,
+           (pELF->appType == APP_BINARY_CLI) ? "CLI" : "GUI");
 
     return pELF;
 };

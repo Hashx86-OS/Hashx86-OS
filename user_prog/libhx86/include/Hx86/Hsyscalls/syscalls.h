@@ -30,7 +30,9 @@ struct linux_dirent {
 };
 
 void syscall_exit(uint32_t status);
+void syscall_exit_group(uint32_t status);
 int32_t syscall_read(uint32_t fd, char* buf, uint32_t count);
+int32_t syscall_write(uint32_t fd, const char* buf, uint32_t count);
 int32_t syscall_open(const char* path, int32_t flags);
 int32_t syscall_close(uint32_t fd);
 int32_t syscall_execve(const char* path, char* const argv[], char* const envp[]);
@@ -44,7 +46,18 @@ void syscall_nanosleep(struct timespec* req, struct timespec* rem);
 void syscall_debug(const char* str);
 uint32_t syscall_peek_memory(uint32_t address, uint32_t size);
 
-typedef enum { Hsys_regEventH = 1, Hsys_getFramebuffer = 2, Hsys_getInput = 3 } HSYSCALL;
+typedef enum {
+    Hsys_regEventH = 1,
+    Hsys_getFramebuffer = 2,
+    Hsys_getInput = 3,
+    Hsys_initCli = 4,
+    Hsys_stdinPush = 5,
+    Hsys_getAppMode = 6,
+    Hsys_setCliHostView = 7,
+    Hsys_getCliAttachedView = 8,
+    Hsys_isProcessAlive = 9,
+    Hsys_getProcessAppMode = 10,
+} HSYSCALL;
 
 // Input state structure for Hsys_getInput
 struct InputState {
@@ -63,6 +76,13 @@ struct FramebufferInfo {
 
 uint32_t syscall_Hgui(uint32_t element, uint32_t mode, void* data);
 uint32_t syscall_register_event_handler(void (*entrypoint)(void*), void* arg);
+int32_t syscall_init_cli();
+int32_t syscall_stdin_push(uint32_t pid, char c);
+int32_t syscall_get_app_mode();
+int32_t syscall_set_cli_host_view(uint32_t viewId);
+int32_t syscall_get_cli_attached_view();
+int32_t syscall_is_process_alive(uint32_t pid);
+int32_t syscall_get_process_app_mode(uint32_t pid);
 void syscall_get_input(InputState* state);
 FramebufferInfo syscall_get_framebuffer();
 #endif  // SYSCALLS_H

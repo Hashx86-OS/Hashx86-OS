@@ -17,6 +17,11 @@ SECTIONS
         *(.rodata*)
     }
 
+    .hx86meta : ALIGN(4)
+    {
+        KEEP(*(.hx86meta))
+    }
+
     .init_array : ALIGN(4)
     {
         start_ctors = .;
