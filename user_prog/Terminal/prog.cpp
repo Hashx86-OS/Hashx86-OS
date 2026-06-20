@@ -500,7 +500,7 @@ bool TerminalApp::ResolveExecutablePath(const char* input, char* outPath) const 
     if (hasSlash) {
         if (checkCandidate(cmd)) return true;
 
-        if (!hasDot) {
+        if (!hasDot && strlen(cmd) <= MAX_PATH_LEN - 5) {
             char withExt[MAX_PATH_LEN];
             withExt[0] = '\0';
             strcpy(withExt, cmd);
@@ -512,7 +512,7 @@ bool TerminalApp::ResolveExecutablePath(const char* input, char* outPath) const 
 
     if (checkCandidate(cmd)) return true;
 
-    if (!hasDot) {
+    if (!hasDot && strlen(cmd) <= MAX_PATH_LEN - 5) {
         char withExt[MAX_PATH_LEN];
         withExt[0] = '\0';
         strcpy(withExt, cmd);
@@ -520,6 +520,7 @@ bool TerminalApp::ResolveExecutablePath(const char* input, char* outPath) const 
         if (checkCandidate(withExt)) return true;
     }
 
+    if (strlen(cmd) > MAX_PATH_LEN - 8) return false;
     char sysPath[MAX_PATH_LEN];
     sysPath[0] = '\0';
     strcpy(sysPath, "/SYS32/");
@@ -530,7 +531,7 @@ bool TerminalApp::ResolveExecutablePath(const char* input, char* outPath) const 
         return true;
     }
 
-    if (!hasDot) {
+    if (!hasDot && strlen(cmd) <= MAX_PATH_LEN - 13) {
         char sysPathExt[MAX_PATH_LEN];
         sysPathExt[0] = '\0';
         strcpy(sysPathExt, "/SYS32/");
@@ -611,6 +612,7 @@ void TerminalApp::CommandLs(const char* args) {
 
                 char fullPath[MAX_PATH_LEN];
                 fullPath[0] = '\0';
+                if (strlen(target) + 1 + strlen(ent->d_name) >= MAX_PATH_LEN) continue;
                 strcpy(fullPath, target);
                 if (fullPath[strlen(fullPath) - 1] != '/') strcat(fullPath, "/");
                 strcat(fullPath, ent->d_name);

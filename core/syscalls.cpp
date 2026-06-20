@@ -337,13 +337,14 @@ int32_t SyscallHandlers::Handle_sys_exit_group(uint32_t status) {
 }
 
 int32_t SyscallHandlers::Handle_sys_read(uint32_t fd, char* buf, uint32_t count) {
-    if (!buf || count == 0) return -1;
+    if (!buf) return -1;
+    if (count == 0) return 0;
 
     ProcessControlBlock* process = Scheduler::activeInstance->GetCurrentProcess();
 
     // Validate Buffer is User Space
     uint32_t start = (uint32_t)buf;
-    if (start < USER_LOWER_BOUND || count == 0 || start > 0xFFFFFFFFu - count + 1) {
+    if (start < USER_LOWER_BOUND || start > 0xFFFFFFFFu - count + 1) {
         KDBG1("sys_read: SECURITY VIOLATION: Buffer invalid buf=0x%x count=%u", buf, count);
         return -1;
     }
@@ -365,17 +366,6 @@ int32_t SyscallHandlers::Handle_sys_read(uint32_t fd, char* buf, uint32_t count)
             // Canonical-ish behavior for now: stop at newline.
             if (c == '\n') {
                 break;
-            }
-        }
-
-        // Compatibility fallback: if this process is not attached to a terminal session,
-        // fall back to the legacy global keyboard queue.
-        if (bytesRead == 0 && !process->stdinAttached && KeyboardDriver::activeInstance) {
-            while (bytesRead < count && KeyboardDriver::activeInstance->PopInputChar(&c)) {
-                buf[bytesRead++] = c;
-                if (c == '\n') {
-                    break;
-                }
             }
         }
 
@@ -1037,7 +1027,9 @@ int32_t SyscallHandlers::Handle_sys_Hcall(uint32_t hcall_id, uint32_t arg1, uint
     } else if (hcall_id == Hsys_stdinPush) {
         if (!Scheduler::activeInstance) return -1;
 
-        ProcessControlBlock* target = Scheduler::activeInstance->FindProcess(arg1);
+        // arg1 == 0 means push to self (caller's own stdin)
+        ProcessControlBlock* target = (arg1 == 0) ? current_process
+                                                  : Scheduler::activeInstance->FindProcess(arg1);
         if (!target) return -1;
 
         // Only allow the CLI host or the target process itself to push stdin

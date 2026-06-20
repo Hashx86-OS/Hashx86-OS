@@ -31,10 +31,7 @@ extern "C" void _start(void* arg) {
             name[nameLen++] = ch;
             name[nameLen] = '\0';
 
-            char echoed[2];
-            echoed[0] = ch;
-            echoed[1] = '\0';
-            printf("%s", echoed);
+            printf("%c", ch);
         }
     }
 
