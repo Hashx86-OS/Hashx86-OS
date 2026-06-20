@@ -340,7 +340,9 @@ int32_t SyscallHandlers::Handle_sys_read(uint32_t fd, char* buf, uint32_t count)
     if (!buf) return -1;
     if (count == 0) return 0;
 
+    if (!Scheduler::activeInstance) return -1;
     ProcessControlBlock* process = Scheduler::activeInstance->GetCurrentProcess();
+    if (!process) return -1;
 
     // Validate Buffer is User Space
     uint32_t start = (uint32_t)buf;
@@ -356,12 +358,13 @@ int32_t SyscallHandlers::Handle_sys_read(uint32_t fd, char* buf, uint32_t count)
 
     // stdin: consume keyboard character queue (non-blocking).
     if (fd == 0) {
-        if (!process) return -1;
+        char* kbuf = (char*)kmalloc(count);
+        if (!kbuf) return -1;
 
         uint32_t bytesRead = 0;
         char c = 0;
         while (bytesRead < count && PopProcessStdin(process, &c)) {
-            buf[bytesRead++] = c;
+            kbuf[bytesRead++] = c;
 
             // Canonical-ish behavior for now: stop at newline.
             if (c == '\n') {
@@ -369,7 +372,14 @@ int32_t SyscallHandlers::Handle_sys_read(uint32_t fd, char* buf, uint32_t count)
             }
         }
 
-        return (int32_t)bytesRead;
+        int32_t ret = -1;
+        if (bytesRead > 0) {
+            ret = CopyToUser(process, buf, kbuf, bytesRead) ? (int32_t)bytesRead : -1;
+        } else {
+            ret = 0;
+        }
+        kfree(kbuf);
+        return ret;
     }
 
     if (fd <= 2) return -1;
@@ -1026,6 +1036,7 @@ int32_t SyscallHandlers::Handle_sys_Hcall(uint32_t hcall_id, uint32_t arg1, uint
         return 1;
     } else if (hcall_id == Hsys_stdinPush) {
         if (!Scheduler::activeInstance) return -1;
+        if (!current_process) return -1;
 
         // arg1 == 0 means push to self (caller's own stdin)
         ProcessControlBlock* target = (arg1 == 0) ? current_process

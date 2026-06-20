@@ -617,7 +617,7 @@ void TerminalApp::CommandLs(const char* args) {
                 if (fullPath[strlen(fullPath) - 1] != '/') strcat(fullPath, "/");
                 strcat(fullPath, ent->d_name);
 
-                if (IsDirectoryPath(fullPath)) {
+                if (IsDirectoryPath(fullPath) && strlen(line) + 1 < sizeof(line)) {
                     strcat(line, "/");
                 }
 
@@ -782,6 +782,7 @@ void TerminalApp::HandleScrollAction(int32_t scrollAction) {
     } else if (scrollAction > 0) {
         if (scrollAction >= 5) {
             scrollOffset = min_i(MaxScroll(), scrollOffset + VisibleRows());
+            MarkDirty();
         } else {
             ScrollUp();
         }
