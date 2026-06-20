@@ -52,6 +52,7 @@ private:
 public:
     FontFile();
     ~FontFile();
+    char filePath[128];  // source TTF path (empty if loaded from archive)
 };
 
 // -----------------------------
@@ -79,9 +80,18 @@ public:
     FontType fontType;  // chosen style
 
     uint32_t getStringLength(const char* str);
+    uint32_t MeasureString(const char* str);
     void setType(FontType type);
     void setSize(FontSize size);
     uint16_t getLineHeight();
+
+    static inline FontSize PixelToFontSlot(int32_t px) {
+        if (px <= 10) return TINY;
+        if (px <= 12) return SMALL;
+        if (px <= 14) return MEDIUM;
+        if (px <= 18) return LARGE;
+        return XLARGE;
+    }
 
 private:
     FontFile* sourceFile;  // reference to loaded data
@@ -98,11 +108,19 @@ public:
     static FontManager* activeInstance;
 
     void LoadFile(uint32_t mod_start, uint32_t mod_end);
-    void LoadFile(File* file);
+    void LoadFile(File* file, FontType style, const char* ttfPath = nullptr);
     Font* getNewFont(FontSize size = SMALL, FontType type = REGULAR);
+    Font* getFontByIndex(uint32_t index, FontSize size = SMALL, FontType type = REGULAR);
 
 private:
     LinkedList<FontFile*>* font_list;
+    bool LazyLoadStyle(FontFile* ff, FontType style);  // load TTF variant on demand
 };
 
 #endif  // FONT_H
+
+// TTF rasterizer interface used by FontManager
+// Returns true and fills outData on success. outData fields are heap-allocated.
+struct FontData;
+bool TTF_RasterizeFont(const uint8_t* ttfData, uint32_t ttfSize,
+                        int sizeSlot, int styleSlot, FontData* outData);

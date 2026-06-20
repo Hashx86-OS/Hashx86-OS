@@ -25,6 +25,10 @@ private:
     int selectedIndex;
     int hoveredIndex;
     char headerText[32];
+    int itemHeight = 18;
+    bool isDraggingThumb = false;
+    int dragStartY = 0;
+    int dragStartOffset = 0;
 
 public:
     ListView(Widget* parent, int32_t x, int32_t y, int32_t w, int32_t h);
@@ -33,6 +37,7 @@ public:
     void Clear();
     void AddItem(const char* name, uint32_t size, uint8_t type);
     void SetHeader(const char* text);
+    void SetItemHeight(int h);
     int GetSelectedIndex() const {
         return selectedIndex;
     }
@@ -50,6 +55,7 @@ public:
     void OnMouseDown(int32_t x, int32_t y, uint8_t button) override;
     void OnMouseUp(int32_t x, int32_t y, uint8_t button) override;
     void OnMouseMove(int32_t oldx, int32_t oldy, int32_t newx, int32_t newy) override;
+    void OnKeyDown(const char* key) override;
 };
 
 #endif  // LISTVIEW_H

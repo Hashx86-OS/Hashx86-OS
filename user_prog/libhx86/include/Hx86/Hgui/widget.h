@@ -31,6 +31,16 @@ typedef enum {
     XLARGE = 4,
 } FontSize;
 
+typedef enum {
+    FIXED = 0,
+    CONTENT = 1,
+    FILL = 2,
+} SizeMode;
+
+struct Padding {
+    uint8_t t, r, b, l;
+};
+
 class Widget {
 protected:
     int32_t pid;
@@ -54,6 +64,7 @@ public:
     void (*onKeyPressMemberPtr)(void*, uint8_t scancode, bool shiftPressed);
 
     Widget* FindWidgetByID(uint32_t searchID);
+    uint32_t MeasureText(const char* text, int32_t fontSizePx);
     virtual bool AddChild(Widget* child);
     virtual bool RemoveChild(Widget* child);
 
@@ -67,6 +78,8 @@ public:
 
     void OnKeyPress(void (*callback)(uint8_t scancode, bool shiftPressed));
     void OnKeyPress(void* instance, void (*callback)(void*, uint8_t scancode, bool shiftPressed));
+
+    bool setEnabled(bool en);
 };
 
 class CompositeWidget : public Widget {

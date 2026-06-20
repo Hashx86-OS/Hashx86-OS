@@ -24,8 +24,26 @@ bool Label::setText(const char* text) {
 
 bool Label::setSize(FontSize size) {
     this->fontSize = size;
-    WidgetData data = {ID, (uint32_t)fontSize};
+    WidgetData data = {ID, (int32_t)fontSize};
     return HguiAPI(LABEL, SET_FONT_SIZE, (void*)&data);
 }
 
-bool Label::setType(FontType type) {}
+bool Label::setType(FontType type) {
+    WidgetData data = {ID, (int32_t)type};
+    return HguiAPI(LABEL, SET_FONT_TYPE, (void*)&data);
+}
+
+bool Label::setColor(uint32_t argb) {
+    WidgetData data = {ID, (int32_t)argb};
+    return HguiAPI(LABEL, SET_COLOR, (void*)&data);
+}
+
+bool Label::setFontSize(int32_t px) {
+    WidgetData data = {ID, (int32_t)px};
+    return HguiAPI(LABEL, SET_FONT_SIZE, (void*)&data);
+}
+
+bool Label::setAlignment(HAlign ha, VAlign va) {
+    WidgetData data = {ID, (int32_t)ha, (int32_t)va};
+    return HguiAPI(LABEL, SET_ALIGNMENT, (void*)&data);
+}

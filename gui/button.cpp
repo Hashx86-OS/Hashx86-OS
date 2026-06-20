@@ -9,7 +9,7 @@
 #define KDBG_COMPONENT "GUI:BUTTON"
 #include <gui/button.h>
 
-Button::Button(Widget* parent, int32_t x, int32_t y, uint32_t w, uint32_t h, const char* label)
+Button::Button(Widget* parent, int32_t x, int32_t y, int32_t w, int32_t h, const char* label)
     : Widget(parent, x, y, w, h), isPressed(false) {
     this->font = FontManager::activeInstance ? FontManager::activeInstance->getNewFont() : nullptr;
 
@@ -73,9 +73,28 @@ void Button::RedrawToCache() {
         isDirty = false;
         return;
     }
-    uint32_t bgColor = isPressed ? BUTTON_BACKGROUND_COLOR_PRESSED : BUTTON_BACKGROUND_COLOR_NORMAL;
-    uint32_t borderColor = isPressed ? BUTTON_BORDER_COLOR_PRESSED : BUTTON_BORDER_COLOR_NORMAL;
-    uint32_t textColor = isPressed ? BUTTON_TEXT_COLOR_PRESSED : BUTTON_TEXT_COLOR_NORMAL;
+
+    uint32_t bgColor;
+    uint32_t borderColor;
+    uint32_t textColor;
+
+    if (!enabled) {
+        bgColor = BUTTON_BG_DISABLED;
+        borderColor = BUTTON_BORDER_DISABLED;
+        textColor = BUTTON_TEXT_DISABLED;
+    } else if (isPressed) {
+        bgColor = BUTTON_BG_PRESSED;
+        borderColor = BUTTON_BORDER_PRESSED;
+        textColor = BUTTON_TEXT_PRESSED;
+    } else if (isHovered) {
+        bgColor = BUTTON_BG_HOVER;
+        borderColor = BUTTON_BORDER_NORMAL;
+        textColor = BUTTON_TEXT_NORMAL;
+    } else {
+        bgColor = BUTTON_BG_NORMAL;
+        borderColor = BUTTON_BORDER_NORMAL;
+        textColor = BUTTON_TEXT_NORMAL;
+    }
 
     NINA::activeInstance->FillRoundedRectangle(cache, w, h, 0, 0, w, h, 3, bgColor);
     NINA::activeInstance->DrawRoundedRectangle(cache, w, h, 0, 0, w, h, 3, borderColor);
@@ -84,6 +103,10 @@ void Button::RedrawToCache() {
         int textX = (w - this->font->getStringLength(label)) / 2;
         int textY = (h - this->font->getLineHeight()) / 2;
         NINA::activeInstance->DrawString(cache, w, h, textX, textY, label, font, textColor);
+    }
+
+    if (isFocused && enabled) {
+        NINA::activeInstance->DrawRoundedRectangle(cache, w, h, 1, 1, w - 2, h - 2, 3, BUTTON_BORDER_FOCUS);
     }
 
     isDirty = false;
@@ -142,6 +165,37 @@ void Button::OnMouseMove(int32_t x, int32_t y, int32_t newx, int32_t newy) {
     if (isPressed && !inside) {
         isPressed = false;
         MarkDirty();
+    }
+
+    if (inside != isHovered) {
+        isHovered = inside;
+        MarkDirty();
+    }
+}
+
+void Button::SetFontSize(int32_t px) {
+    if (!FontManager::activeInstance) return;
+    FontSize slot = Font::PixelToFontSlot(px);
+    FontType type = this->font ? this->font->fontType : REGULAR;
+    Font* newFont = FontManager::activeInstance->getNewFont(slot, type);
+    if (!newFont) return;
+    delete this->font;
+    this->font = newFont;
+    MarkDirty();
+}
+
+void Button::OnKeyDown(const char* key) {
+    if (!enabled || !isVisible) return;
+    if (key && (key[0] == '\r' || key[0] == '\n' || key[0] == ' ')) {
+        Event* new_event = new Event{this->ID, ON_CLICK};
+        if (!new_event) return;
+        if (!Desktop::activeInstance) { delete new_event; return; }
+        EventHandler* handler = Desktop::activeInstance->getHandler(this->PID);
+        if (!handler) { delete new_event; return; }
+        handler->eventQueue.Add(new_event);
+        if (g_scheduler && handler->thread) {
+            g_scheduler->WakeThread(handler->thread);
+        }
     }
 }
 

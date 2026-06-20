@@ -7,25 +7,31 @@
 
 class Button : public Widget {
 public:
-    Button(Widget* parent, int32_t x, int32_t y, uint32_t w, uint32_t h, const char* label);
+    Button(Widget* parent, int32_t x, int32_t y, int32_t w, int32_t h, const char* label);
     ~Button();
     void update();
 
     void SetLabel(const char* label);
     void SetWidth(int32_t w);
     void SetHeight(int32_t h);
+    void SetFontSize(int32_t px);
 
     void RedrawToCache() override;
+    bool IsButton() const override {
+        return true;
+    }
 
     // Mouse event handlers
     void OnMouseDown(int32_t x, int32_t y, uint8_t button) override;
     void OnMouseUp(int32_t x, int32_t y, uint8_t button) override;
     void OnMouseMove(int32_t oldx, int32_t oldy, int32_t newx, int32_t newy) override;
+    void OnKeyDown(const char* key) override;
     bool IsPressed() const override;
 
 protected:
     char* label;
     bool isPressed;
+    bool isHovered = false;
 };
 
 #endif  // BUTTON_H

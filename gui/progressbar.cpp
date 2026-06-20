@@ -80,8 +80,8 @@ void ProgressBar::RedrawToCache() {
     memset(cache, 0, pixels * sizeof(uint32_t));
 
     // Use config colors by default, or custom colors if set
-    uint32_t bgColor = (backgroundColor != 0) ? backgroundColor : PROGRESSBAR_BACKGROUND_COLOR;
-    uint32_t fillColor = (barColor != 0) ? barColor : PROGRESSBAR_BAR_COLOR;
+    uint32_t bgColor = (backgroundColor != 0) ? backgroundColor : PROGRESSBAR_BG;
+    uint32_t fillColor = (barColor != 0) ? barColor : PROGRESSBAR_BAR;
 
     // Draw background rectangle
     NINA::activeInstance->FillRoundedRectangle(cache, w, h, 0, 0, w, h, 3, bgColor);

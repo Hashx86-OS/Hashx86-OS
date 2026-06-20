@@ -21,8 +21,8 @@ extern TaskStateSegment g_tss;
 
 #define KERNEL_STACK_SIZE (64 * 1024)
 
-// Number of pages per User-Mode stack (16KB)
-#define USER_STACK_PAGES 4
+// Number of pages per User-Mode stack
+#define USER_STACK_PAGES 128
 
 Scheduler* Scheduler::activeInstance = nullptr;
 void FlushSerial();

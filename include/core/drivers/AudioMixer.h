@@ -5,7 +5,7 @@
 #include <core/memory.h>
 #include <stdbool.h>
 #include <stdint.h>
-#include <utils/string.h>
+#include <string.h>
 
 class AudioDriver;
 

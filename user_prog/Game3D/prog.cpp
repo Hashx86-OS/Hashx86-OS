@@ -195,7 +195,7 @@ extern "C" void _start(void* arg) {
     uint32_t fileSize = 0;
     uint8_t* fileData = nullptr;
 
-    fileData = LoadFileData("ProgFile/Game3D/sky.bmp", &fileSize);
+    fileData = LoadFileData("apps/game3d/sky.bmp", &fileSize);
     if (fileData) {
         skyTexture = new Bitmap(fileData, fileSize);
         delete[] fileData;
@@ -205,7 +205,7 @@ extern "C" void _start(void* arg) {
         }
     }
 
-    fileData = LoadFileData("ProgFile/Game3D/map.bmp", &fileSize);
+    fileData = LoadFileData("apps/game3d/map.bmp", &fileSize);
     if (fileData) {
         stoneTexture = new Bitmap(fileData, fileSize);
         delete[] fileData;
@@ -216,14 +216,14 @@ extern "C" void _start(void* arg) {
     Mesh* wallMesh = nullptr;
     Mesh* floorMesh = nullptr;
 
-    fileData = LoadFileData("ProgFile/Game3D/obj.obj", &fileSize);
+    fileData = LoadFileData("apps/game3d/obj.obj", &fileSize);
     if (fileData) {
         wallMesh = renderer->LoadOBJ(fileData, fileSize);
         delete[] fileData;
         printf("[Game3D] Wall mesh loaded\n");
     }
 
-    fileData = LoadFileData("ProgFile/Game3D/floor.obj", &fileSize);
+    fileData = LoadFileData("apps/game3d/floor.obj", &fileSize);
     if (fileData) {
         floorMesh = renderer->LoadOBJ(fileData, fileSize);
         delete[] fileData;

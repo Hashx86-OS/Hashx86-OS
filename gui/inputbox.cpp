@@ -8,7 +8,7 @@
 
 #define KDBG_COMPONENT "GUI:INPUTBOX"
 #include <gui/inputbox.h>
-#include <utils/string.h>
+#include <string.h>
 
 // --- Minimal helpers since standard C library is not available ---
 static void memmove_local(char* dst, const char* src, uint32_t n) {
@@ -73,12 +73,12 @@ void InputBox::RedrawToCache() {
     // KDBG1("Widget %d: Updating", this->ID);
     NINA::activeInstance->FillRoundedRectangle(
         cache, w, h, 0, 0, w, h, 3,
-        isFocused ? INPUT_BACKGROUND_COLOR_ACTIVE : INPUT_BACKGROUND_COLOR_NORMAL);
+        isFocused ? INPUT_BG_ACTIVE : INPUT_BG_NORMAL);
     NINA::activeInstance->DrawRoundedRectangle(
         cache, w, h, 0, 0, w, h, 3,
-        isFocused ? INPUT_BORDER_COLOR_ACTIVE : INPUT_BORDER_COLOR_NORMAL);
+        isFocused ? INPUT_BORDER_ACTIVE : INPUT_BORDER_NORMAL);
     NINA::activeInstance->DrawString(cache, w, h, 2, 2, text, font,
-                                     isFocused ? INPUT_TEXT_COLOR_ACTIVE : INPUT_TEXT_COLOR_NORMAL);
+                                     isFocused ? INPUT_TEXT_ACTIVE : INPUT_TEXT_NORMAL);
 
     // Draw cursor at cursorPos
     // int cursorX = font->GetTextWidth(text, cursorPos);

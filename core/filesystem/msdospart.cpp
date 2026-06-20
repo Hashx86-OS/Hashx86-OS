@@ -8,9 +8,12 @@
 
 #define KDBG_COMPONENT "MSDOSPART"
 #include <core/filesystem/msdospart.h>
+#include <core/filesystem/FatFsWrapper.h>
+#include <core/filesystem/FatFs/diskio.h>
+#include <core/filesystem/FatFs/ff.h>
 #include <debug.h>
 
-FAT32* MSDOSPartitionTable::partitions[4] = {0, 0, 0, 0};
+FileSystem* MSDOSPartitionTable::partitions[4] = {0, 0, 0, 0};
 MSDOSPartitionTable* MSDOSPartitionTable::activeInstance = nullptr;
 
 MSDOSPartitionTable::MSDOSPartitionTable(AdvancedTechnologyAttachment* ata) {
@@ -79,9 +82,26 @@ void MSDOSPartitionTable::Initialize() {
     // Write MBR
     ata->Write28(0, (uint8_t*)&mbr, 512);
 
-    // 5. FORMAT Partitions
-    FAT32::FormatRaw(ata, p1_start, p1_size);
-    FAT32::FormatRaw(ata, p2_start, p2_size);
+    // FORMAT Partitions using FatFs f_mkfs (creates a valid FAT32 that FatFs recognizes)
+    {
+        MKFS_PARM opt;
+        memset(&opt, 0, sizeof(opt));
+        opt.fmt = FM_FAT32 | FM_SFD;
+        opt.au_size = 0;  /* auto-choose cluster size so small partitions work */
+        uint8_t work[4096];
+
+        // Partition 1 on pdrv=0
+        fatfs_init(0, ata, p1_start, p1_size);
+        FRESULT res = f_mkfs("0:", &opt, work, sizeof(work));
+        if (res != FR_OK)
+            KDBG1("f_mkfs(pdrv=0) failed: %d", res);
+
+        // Partition 2 on pdrv=1
+        fatfs_init(1, ata, p2_start, p2_size);
+        res = f_mkfs("1:", &opt, work, sizeof(work));
+        if (res != FR_OK)
+            KDBG1("f_mkfs(pdrv=1) failed: %d", res);
+    }
 
     KDBG1("Initialization Complete.");
 
@@ -147,11 +167,13 @@ void MSDOSPartitionTable::ReadPartitions() {
         // Mount FAT32
         if (mbr.primaryPartition[i].partition_id == 0x0C ||
             mbr.primaryPartition[i].partition_id == 0x0B) {
-            FAT32* fat32 = new FAT32(ata, mbr.primaryPartition[i].start_lba);
-            if (!fat32) {
-                HALT("CRITICAL: Failed to allocate FAT32 filesystem!\n");
+            FatFsWrapper* fs = new FatFsWrapper(ata, mbr.primaryPartition[i].start_lba,
+                                                (BYTE)partitionsCounter,
+                                                mbr.primaryPartition[i].length);
+            if (!fs) {
+                HALT("CRITICAL: Failed to allocate FatFsWrapper!\n");
             }
-            this->partitions[partitionsCounter++] = fat32;
+            this->partitions[partitionsCounter++] = fs;
         }
     }
 }

@@ -82,6 +82,16 @@ void Widget::OnKeyPress(void* instance,
     onKeyPressMemberPtr = callback;
 }
 
+uint32_t Widget::MeasureText(const char* text, int32_t fontSizePx) {
+    WidgetData data = {0, fontSizePx, 0, 0, 0, text};
+    return HguiAPI(FONT, MEASURE_TEXT, (void*)&data);
+}
+
+bool Widget::setEnabled(bool en) {
+    WidgetData data = {ID, en ? 1 : 0};
+    return HguiAPI(WIDGET, SET_ENABLED, (void*)&data);
+}
+
 CompositeWidget::CompositeWidget(Widget* parent, int32_t x, int32_t y, uint32_t w, uint32_t h)
     : Widget(parent, x, y, w, h) {}
 

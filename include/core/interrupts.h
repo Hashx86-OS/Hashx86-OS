@@ -13,7 +13,7 @@
 #include <gui/bmp.h>
 #include <gui/config/config.h>
 #include <types.h>
-#include <utils/string.h>
+#include <string.h>
 
 /**
  * @brief Forward declaration of the InterruptManager class.

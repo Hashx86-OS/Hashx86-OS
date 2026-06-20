@@ -8,6 +8,7 @@
 
 #define KDBG_COMPONENT "GUI"
 #include <core/globals.h>
+#include <gui/animation.h>
 #include <gui/Hgui.h>
 
 namespace {
@@ -150,6 +151,12 @@ uint32_t HguiHandler::HandleInterrupt(uint32_t esp) {
             break;
         case TERMINAL_VIEW:
             ret = HandleTerminalView(cpu, data_ptr);
+            break;
+        case FONT:
+            ret = HandleFont(cpu, data_ptr);
+            break;
+        case ANIMATION:
+            ret = HandleAnimation(cpu, data_ptr);
             break;
         case EVENT:
             ret = HandleEvent(cpu);
@@ -297,6 +304,95 @@ int32_t HguiHandler::HandleButton(CPUState* cpu, const WidgetData* _data) {
 
         HguiWidgets.Add(_widget);
         return (int32_t)_newID;
+    } else if ((uint32_t)cpu->ebx == SET_TEXT) {
+        Widget* w = this->FindWidgetByID(_data->param0);
+        if (!w || !w->IsButton()) return -1;
+        Button* widget = static_cast<Button*>(w);
+        if (!CopyUserString(proc, _data->param5, labelBuf, sizeof(labelBuf))) {
+            return -1;
+        }
+        widget->SetLabel(labelBuf);
+        return 1;
+    } else if ((uint32_t)cpu->ebx == SET_FONT_SIZE) {
+        Widget* w = this->FindWidgetByID(_data->param0);
+        if (!w || !w->IsButton()) return -1;
+        Button* widget = static_cast<Button*>(w);
+        widget->SetFontSize((int32_t)_data->param1);
+        return 1;
+    } else if ((uint32_t)cpu->ebx == SET_WIDTH) {
+        Widget* w = this->FindWidgetByID(_data->param0);
+        if (!w || !w->IsButton()) return -1;
+        Button* widget = static_cast<Button*>(w);
+        widget->SetWidth((int32_t)_data->param1);
+        return 1;
+    } else if ((uint32_t)cpu->ebx == SET_HEIGHT) {
+        Widget* w = this->FindWidgetByID(_data->param0);
+        if (!w || !w->IsButton()) return -1;
+        Button* widget = static_cast<Button*>(w);
+        widget->SetHeight((int32_t)_data->param1);
+        return 1;
+    }
+
+    return -1;
+}
+
+int32_t HguiHandler::HandleFont(CPUState* cpu, const WidgetData* _data) {
+    if (!cpu || !_data) return -1;
+    ProcessControlBlock* proc = GetCurrentProcSafe();
+    if (!proc) return -1;
+
+    if ((uint32_t)cpu->ebx == MEASURE_TEXT) {
+        int32_t fontSizePx = _data->param1;
+        FontSize slot = Font::PixelToFontSlot(fontSizePx);
+        if (!FontManager::activeInstance) return -1;
+        Font* f = FontManager::activeInstance->getNewFont(slot, REGULAR);
+        if (!f) return -1;
+        char textBuf[MAX_USER_TEXT];
+        if (!CopyUserString(proc, _data->param5, textBuf, sizeof(textBuf))) {
+            delete f;
+            return -1;
+        }
+        uint32_t result = f->MeasureString(textBuf);
+        delete f;
+        return (int32_t)result;
+    }
+
+    return -1;
+}
+
+int32_t HguiHandler::HandleAnimation(CPUState* cpu, const WidgetData* _data) {
+    if (!cpu || !_data) return -1;
+    ProcessControlBlock* proc = GetCurrentProcSafe();
+    if (!proc) return -1;
+
+    if (!AnimationManager::activeInstance) return -1;
+
+    if ((uint32_t)cpu->ebx == ANIM_START) {
+        Widget* w = this->FindWidgetByID(_data->param0);
+        if (!w) return -1;
+        uint32_t animId = AnimationManager::activeInstance->Animate(
+            w, (AnimProperty)_data->param1,
+            _data->param2, _data->param3,
+            _data->param4, EASE_LINEAR);
+        return (int32_t)animId;
+    } else if ((uint32_t)cpu->ebx == ANIM_START_EX) {
+        Widget* w = this->FindWidgetByID(_data->param0);
+        if (!w) return -1;
+        uint32_t duration = (uint32_t)_data->param4 >> 16;
+        uint32_t easing = (uint32_t)_data->param4 & 0xFFFF;
+        uint32_t animId = AnimationManager::activeInstance->Animate(
+            w, (AnimProperty)_data->param1,
+            _data->param2, _data->param3,
+            duration, (EaseType)easing);
+        return (int32_t)animId;
+    } else if ((uint32_t)cpu->ebx == ANIM_CANCEL) {
+        AnimationManager::activeInstance->Cancel((uint32_t)_data->param0);
+        return 1;
+    } else if ((uint32_t)cpu->ebx == ANIM_CANCEL_ALL) {
+        Widget* w = this->FindWidgetByID(_data->param0);
+        if (!w) return -1;
+        AnimationManager::activeInstance->CancelAll(w);
+        return 1;
     }
 
     return -1;
@@ -344,6 +440,38 @@ int32_t HguiHandler::HandleLabel(CPUState* cpu, const WidgetData* _data) {
         Label* widget = static_cast<Label*>(w);
 
         widget->setSize((FontSize)_data->param1);
+
+        return 1;
+    } else if ((uint32_t)cpu->ebx == SET_FONT_TYPE) {
+        Widget* w = this->FindWidgetByID(_data->param0);
+        if (!w || !w->IsLabel()) return -1;
+        Label* widget = static_cast<Label*>(w);
+
+        widget->setType((FontType)_data->param1);
+
+        return 1;
+    } else if ((uint32_t)cpu->ebx == SET_COLOR) {
+        Widget* w = this->FindWidgetByID(_data->param0);
+        if (!w || !w->IsLabel()) return -1;
+        Label* widget = static_cast<Label*>(w);
+
+        widget->SetColor((uint32_t)_data->param1);
+
+        return 1;
+    } else if ((uint32_t)cpu->ebx == SET_BACKGROUND) {
+        Widget* w = this->FindWidgetByID(_data->param0);
+        if (!w || !w->IsLabel()) return -1;
+        Label* widget = static_cast<Label*>(w);
+
+        widget->SetBackground((uint32_t)_data->param1);
+
+        return 1;
+    } else if ((uint32_t)cpu->ebx == SET_ALIGNMENT) {
+        Widget* w = this->FindWidgetByID(_data->param0);
+        if (!w || !w->IsLabel()) return -1;
+        Label* widget = static_cast<Label*>(w);
+
+        widget->SetAlignment((HAlign)_data->param1, (VAlign)_data->param2);
 
         return 1;
     }

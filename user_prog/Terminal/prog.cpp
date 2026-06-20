@@ -523,7 +523,7 @@ bool TerminalApp::ResolveExecutablePath(const char* input, char* outPath) const 
     if (strlen(cmd) > MAX_PATH_LEN - 8) return false;
     char sysPath[MAX_PATH_LEN];
     sysPath[0] = '\0';
-    strcpy(sysPath, "/SYS32/");
+    strcpy(sysPath, "/Hashx86/apps/");
     strcat(sysPath, cmd);
 
     if (ResolvePath(sysPath, candidate) && IsRegularPath(candidate)) {
@@ -534,7 +534,7 @@ bool TerminalApp::ResolveExecutablePath(const char* input, char* outPath) const 
     if (!hasDot && strlen(cmd) <= MAX_PATH_LEN - 13) {
         char sysPathExt[MAX_PATH_LEN];
         sysPathExt[0] = '\0';
-        strcpy(sysPathExt, "/SYS32/");
+        strcpy(sysPathExt, "/Hashx86/apps/");
         strcat(sysPathExt, cmd);
         strcat(sysPathExt, ".BIN");
 

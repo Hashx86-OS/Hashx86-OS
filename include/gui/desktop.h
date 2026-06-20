@@ -12,6 +12,7 @@
  * @class       Desktop
  * @brief       The Root Widget. Manages the wallpaper, cursor, and global window list.
  */
+class FileSystem;
 class Desktop : public CompositeWidget, public MouseEventHandler, public KeyboardEventHandler {
 protected:
     uint32_t MouseX;
@@ -71,12 +72,12 @@ public:
 struct DesktopArgs {
     GraphicsDriver* screen;
     Desktop* desktop;
-    FAT32* boot_partition;
+    FileSystem* boot_partition;
 };
 
 struct LoadProgArgs {
     ELFLoader* elfLoader;
-    FAT32* boot_partition;
+    FileSystem* boot_partition;
 };
 
 #endif  // DESKTOP_H

@@ -2,7 +2,7 @@
 #define FILE_SYSTEM_MSDOS
 
 #include <core/drivers/ata.h>
-#include <core/filesystem/FAT32.h>
+#include <core/filesystem/FileSystem.h>
 #include <types.h>
 
 struct PartitionTableEntry {
@@ -36,7 +36,7 @@ public:
     ~MSDOSPartitionTable();
     void Initialize();
     void ReadPartitions();
-    static FAT32* partitions[4];
+    static FileSystem* partitions[4];
     static MSDOSPartitionTable* activeInstance;
 
 private:

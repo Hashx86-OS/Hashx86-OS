@@ -4,7 +4,7 @@
 #include <debug.h>
 #include <types.h>
 
-class FAT32;
+class FileSystem;
 struct ProcessControlBlock;
 
 class File {
@@ -22,7 +22,7 @@ public:
     uint32_t position;  // Current cursor position in the file
 
     // The Driver that handles this file
-    FAT32* filesystem;
+    FileSystem* filesystem;
 
     // --- Operations ---
     // Reads 'length' bytes from current 'position' into buffer

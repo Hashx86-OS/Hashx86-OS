@@ -1,11 +1,11 @@
 #ifndef KERNELSYMBOLRESOLVER_H
 #define KERNELSYMBOLRESOLVER_H
 
-#include <core/filesystem/FAT32.h>
+#include <core/filesystem/FileSystem.h>
 #include <core/memory.h>
 #include <debug.h>
 #include <types.h>
-#include <utils/string.h>
+#include <string.h>
 
 struct StackFrame {
     struct StackFrame* ebp;  // Pointer to the previous stack frame
@@ -19,7 +19,7 @@ struct SymbolEntry {
 
 class KernelSymbolTable {
 public:
-    static void Load(FAT32* fs, const char* path);
+    static void Load(FileSystem* fs, const char* path);
     static const char* Lookup(uint32_t address, uint32_t* offset);
     static void PrintStackTrace(unsigned int maxFrames);
 };

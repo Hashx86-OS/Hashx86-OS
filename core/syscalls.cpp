@@ -228,6 +228,10 @@ uint32_t SyscallHandler::HandleInterrupt(uint32_t esp) {
                 SyscallHandlers::Handle_sys_write(cpu->ebx, (const char*)cpu->ecx, cpu->edx);
             break;
 
+        case sys_lseek:
+            return_val = SyscallHandlers::Handle_sys_lseek(cpu->ebx, cpu->ecx, cpu->edx);
+            break;
+
         case sys_open:
             return_val = SyscallHandlers::Handle_sys_open((const char*)cpu->ebx, cpu->ecx);
             break;
@@ -448,7 +452,7 @@ int32_t SyscallHandlers::Handle_sys_open(const char* path, int32_t flags) {
 
     extern MSDOSPartitionTable* g_PartitionTable;
     if (MSDOSPartitionTable::activeInstance && MSDOSPartitionTable::activeInstance->partitions[0]) {
-        FAT32* fs = MSDOSPartitionTable::activeInstance->partitions[0];
+        FileSystem* fs = MSDOSPartitionTable::activeInstance->partitions[0];
 
         File* f = fs->Open(kpath);
         if (!f) return -1;
@@ -477,6 +481,28 @@ int32_t SyscallHandlers::Handle_sys_close(uint32_t fd) {
     return 0;
 }
 
+int32_t SyscallHandlers::Handle_sys_lseek(uint32_t fd, int32_t offset, int32_t whence) {
+    if (fd <= 2) return -1;
+
+    ProcessControlBlock* process = Scheduler::activeInstance->GetCurrentProcess();
+    File* file = GetFileByFd(process, fd);
+    if (!file) return -1;
+
+    uint32_t newPos;
+    if (whence == 0) {       // SEEK_SET
+        newPos = (uint32_t)offset;
+    } else if (whence == 1) { // SEEK_CUR
+        newPos = file->position + offset;
+    } else if (whence == 2) { // SEEK_END
+        newPos = file->size + offset;    // offset should be negative for SEEK_END
+    } else {
+        return -1;
+    }
+
+    file->Seek(newPos);
+    return (int32_t)newPos;
+}
+
 int32_t SyscallHandlers::Handle_sys_execve(const char* path, char* const argv[],
                                            char* const envp[]) {
     (void)argv;
@@ -491,7 +517,7 @@ int32_t SyscallHandlers::Handle_sys_execve(const char* path, char* const argv[],
 
     extern MSDOSPartitionTable* g_PartitionTable;
     if (MSDOSPartitionTable::activeInstance && MSDOSPartitionTable::activeInstance->partitions[0]) {
-        FAT32* fs = MSDOSPartitionTable::activeInstance->partitions[0];
+        FileSystem* fs = MSDOSPartitionTable::activeInstance->partitions[0];
         File* f = fs->Open(kpath);
         if (f && f->size > 0) {
             // Hashx86 native loading spins up a new process rather than replacing context.
@@ -681,7 +707,7 @@ int32_t SyscallHandlers::Handle_sys_stat(const char* path, struct stat* statbuf)
 
     extern MSDOSPartitionTable* g_PartitionTable;
     if (MSDOSPartitionTable::activeInstance && MSDOSPartitionTable::activeInstance->partitions[0]) {
-        FAT32* fs = MSDOSPartitionTable::activeInstance->partitions[0];
+        FileSystem* fs = MSDOSPartitionTable::activeInstance->partitions[0];
 
         // Handling Root Drive Stat Check
         if (kpath[0] == '/' && kpath[1] == '\0') {
@@ -748,80 +774,67 @@ int32_t SyscallHandlers::Handle_sys_getdents(uint32_t fd, struct linux_dirent* d
     if (!dirFile || !dirFile->filesystem) return -1;
     if ((dirFile->flags & 1) == 0) return -1;
 
-    // We are streaming raw directory entries 512 bytes at a time
-    // DirectoryEntryFat32 is 32 bytes each. We buffer enough for a few.
+    // Read stream of KernelDirentHeader entries
     uint8_t buffer[512];
     int bytesRead = dirFile->Read(buffer, 512);
 
     if (bytesRead <= 0) return 0;  // EOF
 
     uint32_t offsetWritten = 0;
-    DirectoryEntryFat32* entries = (DirectoryEntryFat32*)buffer;
+    uint32_t bufOff = 0;
 
-    for (int i = 0; i < (bytesRead / 32); i++) {
-        DirectoryEntryFat32* e = &entries[i];
+    while (bufOff + sizeof(KernelDirentHeader) <= (uint32_t)bytesRead) {
+        KernelDirentHeader* hdr = (KernelDirentHeader*)(buffer + bufOff);
+        if (hdr->d_reclen == 0 || hdr->d_reclen > (uint32_t)bytesRead - bufOff) break;
 
-        if (e->name[0] == 0x00) {
-            return offsetWritten;  // End of directory structure completely
+        // Calculate name length from record
+        uint32_t nameLen = hdr->d_reclen - sizeof(KernelDirentHeader);
+        if (nameLen == 0) break;
+        nameLen--;  // exclude null terminator
+
+        const char* name = hdr->d_name;
+        // Skip . and .. entries
+        if (name[0] == '.' && (name[1] == 0 || (name[1] == '.' && name[2] == 0))) {
+            bufOff += hdr->d_reclen;
+            continue;
         }
-        if (e->name[0] == 0xE5) continue;                                           // Deleted Entry
-        if (e->name[0] == '.' && e->name[1] == ' ' && e->name[2] == ' ') continue;  // Root dots
 
-        // VFAT Long File Names Flag (0x0F)
-        if ((e->attributes & 0x0F) == 0x0F) continue;
-
-        // Calculate needed spacing for dynamic string
-        // Ex: "GAME3D" + "." + "BIN" + \0
-        char parsedName[13];
-        int j = 0, nameIdx = 0;
-        for (j = 0; j < 8 && e->name[j] != ' '; j++) {
-            parsedName[nameIdx++] = e->name[j];
-        }
-        if (e->ext[0] != ' ') {
-            parsedName[nameIdx++] = '.';
-            for (j = 0; j < 3 && e->ext[j] != ' '; j++) {
-                parsedName[nameIdx++] = e->ext[j];
-            }
-        }
-        parsedName[nameIdx] = '\0';
-
-        uint32_t reclen = sizeof(struct linux_dirent) + nameIdx + 1;
-        // Align length to 4-byte boundaries roughly
+        uint32_t reclen = sizeof(struct linux_dirent) + nameLen + 1;
         reclen = (reclen + 3) & ~3;
 
         if (offsetWritten + reclen > count) {
-            // Buffer full, rollback file position up to here so we catch it next request!
-            dirFile->position -= (bytesRead - (i * 32));
+            // Roll back file position to re-read this entry next time
+            dirFile->position -= (bytesRead - bufOff);
             return offsetWritten;
         }
 
         // Build dirent in kernel memory, then copy to user space
-        // Use a temporary byte buffer sized to reclen (flexible d_name trailing member)
         uint8_t* direntBuffer = (uint8_t*)kmalloc(reclen);
         if (!direntBuffer) {
-            dirFile->position -= (bytesRead - (i * 32));
+            dirFile->position -= (bytesRead - bufOff);
             return offsetWritten;
         }
         memset(direntBuffer, 0, reclen);
         struct linux_dirent* k_dirent = (struct linux_dirent*)direntBuffer;
-        k_dirent->d_ino = ((uint32_t)e->firstClusterHi << 16) | e->firstClusterLow;
+        k_dirent->d_ino = hdr->d_ino;
         k_dirent->d_off = dirFile->position;
         k_dirent->d_reclen = reclen;
 
-        // Copy the name string into the buffer at the flexible array offset
-        for (j = 0; j <= nameIdx; j++) {
-            k_dirent->d_name[j] = parsedName[j];
+        // Copy name into the flexible array
+        for (uint32_t j = 0; j <= nameLen; j++) {
+            k_dirent->d_name[j] = name[j];
         }
 
         bool copyOk = CopyToUser(process, (uint8_t*)dirp + offsetWritten, direntBuffer, reclen);
         kfree(direntBuffer);
 
         if (!copyOk) {
-            dirFile->position -= (bytesRead - (i * 32));
+            dirFile->position -= (bytesRead - bufOff);
             return offsetWritten;
         }
 
         offsetWritten += reclen;
+        bufOff += hdr->d_reclen;
     }
 
     return offsetWritten;

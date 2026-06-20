@@ -1,6 +1,6 @@
 
-#ifndef HGUI_SYSCALLS_H
-#define HGUI_SYSCALLS_H
+#ifndef HGUI_H
+#define HGUI_H
 
 #include <core/interrupts.h>
 #include <core/memory.h>
@@ -21,6 +21,8 @@ typedef enum {
     LABEL = 0x5,
     LISTVIEW = 0x6,
     TERMINAL_VIEW = 0x7,
+    FONT = 0x8,
+    ANIMATION = 0x9,
 } REQ_Element;
 
 typedef enum {
@@ -36,11 +38,25 @@ typedef enum {
     GET_SELECTED = 0x9,
     SET_SCROLL_META = 0xA,
     GET_SCROLL_ACTION = 0xB,
+    MEASURE_TEXT = 0xC,
+    SET_FONT_TYPE = 0xD,
+    SET_COLOR = 0xE,
+    SET_BACKGROUND = 0xF,
+    SET_ALIGNMENT = 0x10,
+    SET_WIDTH = 0x11,
+    SET_HEIGHT = 0x12,
+    SET_ITEM_HEIGHT = 0x13,
+    SET_ENABLED = 0x14,
+    ANIM_START = 0x15,
+    ANIM_START_EX = 0x16,
+    ANIM_CANCEL = 0x17,
+    ANIM_CANCEL_ALL = 0x18,
+    ANIM_CHAIN = 0x19,
 } REQ_MODE;
 
 struct WidgetData {
     uint32_t param0;
-    uint32_t param1;
+    int32_t param1;
     uint32_t param2;
     uint32_t param3;
     uint32_t param4;
@@ -66,10 +82,12 @@ public:
     virtual int32_t HandleLabel(CPUState* cpu, const WidgetData* data);
     virtual int32_t HandleListView(CPUState* cpu, const WidgetData* data);
     virtual int32_t HandleTerminalView(CPUState* cpu, const WidgetData* data);
+    virtual int32_t HandleFont(CPUState* cpu, const WidgetData* data);
+    virtual int32_t HandleAnimation(CPUState* cpu, const WidgetData* data);
     virtual int32_t HandleEvent(CPUState* cpu);
     void RemoveAppByPID(uint32_t PID);
     Widget* FindWidgetByID(uint32_t searchID);
     uint32_t getNewID();
 };
 
-#endif  // HGUI_SYSCALLS_H
+#endif  // HGUI_H

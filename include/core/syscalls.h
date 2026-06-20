@@ -64,6 +64,7 @@ public:
     static int32_t Handle_sys_write(uint32_t fd, const char* buf, uint32_t count);
     static int32_t Handle_sys_open(const char* path, int32_t flags);
     static int32_t Handle_sys_close(uint32_t fd);
+    static int32_t Handle_sys_lseek(uint32_t fd, int32_t offset, int32_t whence);
     static int32_t Handle_sys_execve(const char* path, char* const argv[], char* const envp[]);
     static int32_t Handle_sys_brk(uint32_t brk);
     static int32_t Handle_sys_stat(const char* path, struct stat* statbuf);

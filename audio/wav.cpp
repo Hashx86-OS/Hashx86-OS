@@ -33,7 +33,7 @@ Wav::Wav(char* path) {
         return;
     }
 
-    FAT32* fs = MSDOSPartitionTable::activeInstance->partitions[0];
+    FileSystem* fs = MSDOSPartitionTable::activeInstance->partitions[0];
     File* file = fs->Open(path);
 
     if (file == 0) {

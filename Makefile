@@ -1,7 +1,7 @@
 KDBG_ENABLE ?= 1
 KDBG_LEVEL ?= 1
 
-GPP_PARAMS = -m32 -g -ffreestanding -Iinclude -fno-use-cxa-atexit -nostdlib -fno-builtin -fno-rtti -fno-exceptions -fno-common -fno-omit-frame-pointer -DKDBG_ENABLE=$(KDBG_ENABLE) -DKDBG_LEVEL=$(KDBG_LEVEL)
+GPP_PARAMS = -m32 -g -ffreestanding -Iinclude -I. -fno-use-cxa-atexit -nostdlib -fno-builtin -fno-rtti -fno-exceptions -fno-common -fno-omit-frame-pointer -DKDBG_ENABLE=$(KDBG_ENABLE) -DKDBG_LEVEL=$(KDBG_LEVEL)
 ASM_PARAMS = --32 -g
 ASM_NASM_PARAMS = -f elf32
 BUILD_DIR = build
@@ -23,9 +23,12 @@ objects = \
 	$(BUILD_DIR)/obj/core/drivers/SymbolTable.o \
 	$(BUILD_DIR)/obj/core/drivers/vbe.o \
 	$(BUILD_DIR)/obj/core/elf.o \
-	$(BUILD_DIR)/obj/core/filesystem/FAT32.o \
 	$(BUILD_DIR)/obj/core/filesystem/File.o \
 	$(BUILD_DIR)/obj/core/filesystem/msdospart.o \
+	$(BUILD_DIR)/obj/core/filesystem/FatFs/ff.o \
+	$(BUILD_DIR)/obj/core/filesystem/FatFs/ffunicode.o \
+	$(BUILD_DIR)/obj/core/filesystem/FatFs/diskio.o \
+	$(BUILD_DIR)/obj/core/filesystem/FatFs/FatFsWrapper.o \
 	$(BUILD_DIR)/obj/core/CrashReporter.o \
 	$(BUILD_DIR)/obj/core/constructors.o \
 	$(BUILD_DIR)/obj/core/gdt.o \
@@ -46,7 +49,9 @@ objects = \
 	$(BUILD_DIR)/obj/gui/elements/window_action_button.o \
 	$(BUILD_DIR)/obj/gui/elements/window_action_button_round.o \
 	$(BUILD_DIR)/obj/gui/fonts/font.o \
+	$(BUILD_DIR)/obj/core/fonts/ttf_render.o \
 	$(BUILD_DIR)/obj/gui/Hgui.o \
+	$(BUILD_DIR)/obj/gui/animation.o \
 	$(BUILD_DIR)/obj/gui/infodialog.o \
 	$(BUILD_DIR)/obj/gui/label.o \
 	$(BUILD_DIR)/obj/gui/listview.o \
@@ -58,8 +63,44 @@ objects = \
 	$(BUILD_DIR)/obj/gui/window.o \
 	$(BUILD_DIR)/obj/kernel.o \
 	$(BUILD_DIR)/obj/stdlib.o \
-	$(BUILD_DIR)/obj/stdlib/math.o \
-	$(BUILD_DIR)/obj/utils/string.o
+	$(BUILD_DIR)/obj/stdlib/math/w_sqrt.o \
+	$(BUILD_DIR)/obj/stdlib/math/e_sqrt.o \
+	$(BUILD_DIR)/obj/stdlib/math/e_atan2.o \
+	$(BUILD_DIR)/obj/stdlib/math/e_pow.o \
+	$(BUILD_DIR)/obj/stdlib/math/w_fmod.o \
+	$(BUILD_DIR)/obj/stdlib/math/w_pow.o \
+	$(BUILD_DIR)/obj/stdlib/math/w_cos.o \
+	$(BUILD_DIR)/obj/stdlib/math/w_acos.o \
+	$(BUILD_DIR)/obj/stdlib/math/e_fmod.o \
+	$(BUILD_DIR)/obj/stdlib/math/k_rem_pio2.o \
+	$(BUILD_DIR)/obj/stdlib/math/k_sin.o \
+	$(BUILD_DIR)/obj/stdlib/math/k_cos.o \
+	$(BUILD_DIR)/obj/stdlib/math/k_tan.o \
+	$(BUILD_DIR)/obj/stdlib/math/s_scalbn.o \
+	$(BUILD_DIR)/obj/stdlib/math/s_copysign.o \
+	$(BUILD_DIR)/obj/stdlib/math/s_fabs.o \
+	$(BUILD_DIR)/obj/stdlib/math/s_atan.o \
+	$(BUILD_DIR)/obj/stdlib/math/s_floor.o \
+	$(BUILD_DIR)/obj/stdlib/string/strlen.o \
+	$(BUILD_DIR)/obj/stdlib/string/strcmp.o \
+	$(BUILD_DIR)/obj/stdlib/string/strncmp.o \
+	$(BUILD_DIR)/obj/stdlib/string/strcpy.o \
+	$(BUILD_DIR)/obj/stdlib/string/strncpy.o \
+	$(BUILD_DIR)/obj/stdlib/string/strcat.o \
+	$(BUILD_DIR)/obj/stdlib/string/strncat.o \
+	$(BUILD_DIR)/obj/stdlib/string/strchr.o \
+	$(BUILD_DIR)/obj/stdlib/string/strrchr.o \
+	$(BUILD_DIR)/obj/stdlib/string/strstr.o \
+	$(BUILD_DIR)/obj/stdlib/string/strtok.o \
+	$(BUILD_DIR)/obj/stdlib/string/strspn.o \
+	$(BUILD_DIR)/obj/stdlib/string/strcspn.o \
+	$(BUILD_DIR)/obj/stdlib/string/strpbrk.o \
+	$(BUILD_DIR)/obj/stdlib/string/memmove.o \
+	$(BUILD_DIR)/obj/stdlib/string/memchr.o \
+	$(BUILD_DIR)/obj/stdlib/string/memcmp.o \
+	$(BUILD_DIR)/obj/stdlib/string/memcpy.o \
+	$(BUILD_DIR)/obj/stdlib/string/memset.o \
+	$(BUILD_DIR)/obj/stdlib/string/HexStrToInt.o
 
 LD_PARAMS = -melf_i386
 KERNEL_BIN = $(BUILD_DIR)/kernel.bin
@@ -134,42 +175,46 @@ hdd:
 	sudo mount /dev/nbd0p1 /mnt/vdi_p1
 
 # 	4. Copy Files
-	-sudo mkdir -p /mnt/vdi_p1/bin
-	-sudo mkdir -p /mnt/vdi_p1/fonts
-	-sudo mkdir -p /mnt/vdi_p1/bitmaps
-	-sudo mkdir -p /mnt/vdi_p1/drivers
-	-sudo mkdir -p /mnt/vdi_p1/audio
-	-sudo mkdir -p /mnt/vdi_p1/SYS32
-	-sudo mkdir -p /mnt/vdi_p1/ProgFile/Game3D
+	-sudo mkdir -p /mnt/vdi_p1/apps/game3d
+	-sudo mkdir -p /mnt/vdi_p1/Hashx86/apps
+	-sudo mkdir -p /mnt/vdi_p1/Hashx86/gfx
+	-sudo mkdir -p /mnt/vdi_p1/Hashx86/fonts
+	-sudo mkdir -p /mnt/vdi_p1/Hashx86/audio
+	-sudo mkdir -p /mnt/vdi_p1/Hashx86/drivers
 
 	-sudo cp $(KERNEL_MAP) /mnt/vdi_p1/kernel.map
 
-	-sudo cp bin/audio/boot.wav /mnt/vdi_p1/audio/boot.wav
-	-sudo cp bin/bitmaps/boot.bmp /mnt/vdi_p1/bitmaps/boot.bmp
-	-sudo cp bin/bitmaps/icon.bmp /mnt/vdi_p1/bitmaps/icon.bmp
-	-sudo cp bin/bitmaps/cursor.bmp /mnt/vdi_p1/bitmaps/cursor.bmp
-	-sudo cp bin/bitmaps/desktop.bmp /mnt/vdi_p1/bitmaps/desktop.bmp
-	-sudo cp bin/bitmaps/panic.bmp /mnt/vdi_p1/bitmaps/panic.bmp
+	-sudo cp bin/audio/boot.wav /mnt/vdi_p1/Hashx86/audio/boot.wav
+	-sudo cp bin/bitmaps/boot.bmp /mnt/vdi_p1/Hashx86/gfx/boot.bmp
+	-sudo cp bin/bitmaps/icon.bmp /mnt/vdi_p1/Hashx86/gfx/icon.bmp
+	-sudo cp bin/bitmaps/cursor.bmp /mnt/vdi_p1/Hashx86/gfx/cursor.bmp
+	-sudo cp bin/bitmaps/desktop.bmp /mnt/vdi_p1/Hashx86/gfx/desktop.bmp
+	-sudo cp bin/bitmaps/panic.bmp /mnt/vdi_p1/Hashx86/gfx/panic.bmp
 
-	-sudo cp bin/ProgFile/Game3D/obj.obj /mnt/vdi_p1/ProgFile/Game3D/obj.obj
-	-sudo cp bin/ProgFile/Game3D/floor.obj /mnt/vdi_p1/ProgFile/Game3D/floor.obj
-	-sudo cp bin/ProgFile/Game3D/map.bmp /mnt/vdi_p1/ProgFile/Game3D/map.bmp
-	-sudo cp bin/ProgFile/Game3D/sky.bmp /mnt/vdi_p1/ProgFile/Game3D/sky.bmp
+	-sudo cp bin/ProgFile/Game3D/obj.obj /mnt/vdi_p1/apps/game3d/obj.obj
+	-sudo cp bin/ProgFile/Game3D/floor.obj /mnt/vdi_p1/apps/game3d/floor.obj
+	-sudo cp bin/ProgFile/Game3D/map.bmp /mnt/vdi_p1/apps/game3d/map.bmp
+	-sudo cp bin/ProgFile/Game3D/sky.bmp /mnt/vdi_p1/apps/game3d/sky.bmp
 
-#	-sudo cp bin/sound.wav /mnt/vdi_p1/sound.wav
-#	-sudo rm -f /mnt/vdi_p1/drivers/ac97.sys
+	-sudo cp $(BUILD_DIR)/drivers/bga.sys /mnt/vdi_p1/Hashx86/drivers/bga.sys
+	-sudo cp $(BUILD_DIR)/drivers/ac97.sys /mnt/vdi_p1/Hashx86/drivers/ac97.sys
 
-	-sudo cp $(BUILD_DIR)/drivers/bga.sys /mnt/vdi_p1/drivers/bga.sys
-	-sudo cp $(BUILD_DIR)/drivers/ac97.sys /mnt/vdi_p1/drivers/ac97.sys
+	-sudo cp bin/fonts/segoeui.ttf /mnt/vdi_p1/Hashx86/fonts/segoeui.ttf
+	-sudo cp bin/fonts/segoeuib.ttf /mnt/vdi_p1/Hashx86/fonts/segoeuib.ttf
+	-sudo cp bin/fonts/segoeuii.ttf /mnt/vdi_p1/Hashx86/fonts/segoeuii.ttf
+	-sudo cp bin/fonts/segoeuiz.ttf /mnt/vdi_p1/Hashx86/fonts/segoeuiz.ttf
+	-sudo cp bin/fonts/CascadiaMono-Regular.ttf /mnt/vdi_p1/Hashx86/fonts/CascadiaMono-Regular.ttf
+	-sudo cp bin/fonts/CascadiaMono-Bold.ttf /mnt/vdi_p1/Hashx86/fonts/CascadiaMono-Bold.ttf
+	-sudo cp bin/fonts/CascadiaMono-Italic.ttf /mnt/vdi_p1/Hashx86/fonts/CascadiaMono-Italic.ttf
+	-sudo cp bin/fonts/CascadiaMono-BoldItalic.ttf /mnt/vdi_p1/Hashx86/fonts/CascadiaMono-BoldItalic.ttf
 
-	-sudo cp bin/fonts/segoeui.bin /mnt/vdi_p1/fonts/segoeui.bin
-
-	-sudo cp $(BUILD_DIR)/user/MeMView.bin /mnt/vdi_p1/SYS32/MeMView.bin
-	-sudo cp $(BUILD_DIR)/user/test.bin /mnt/vdi_p1/SYS32/test.bin
-	-sudo cp $(BUILD_DIR)/user/Explorer.bin /mnt/vdi_p1/SYS32/Explorer.bin
-	-sudo cp $(BUILD_DIR)/user/Terminal.bin /mnt/vdi_p1/SYS32/TERMINAL.BIN
-	-sudo cp $(BUILD_DIR)/user/CLIHello.bin /mnt/vdi_p1/SYS32/CLIHELLO.BIN
-	-sudo cp $(BUILD_DIR)/user/Game3D.bin /mnt/vdi_p1/ProgFile/Game3D/Game3D.bin
+	-sudo cp $(BUILD_DIR)/user/MeMView.bin /mnt/vdi_p1/Hashx86/apps/MeMView.bin
+	-sudo cp $(BUILD_DIR)/user/test.bin /mnt/vdi_p1/apps/test.bin
+	-sudo cp $(BUILD_DIR)/user/Explorer.bin /mnt/vdi_p1/Hashx86/apps/Explorer.bin
+	-sudo cp $(BUILD_DIR)/user/Terminal.bin /mnt/vdi_p1/Hashx86/apps/Terminal.bin
+	-sudo cp $(BUILD_DIR)/user/CLIHello.bin /mnt/vdi_p1/Hashx86/apps/CLIHello.bin
+	-sudo cp $(BUILD_DIR)/user/Game3D.bin /mnt/vdi_p1/apps/game3d/Game3D.bin
+	-sudo cp $(BUILD_DIR)/user/Notepad.bin /mnt/vdi_p1/Hashx86/apps/Notepad.bin
 
 # 	5. Cleanup
 	sudo umount /mnt/vdi_p1
@@ -204,7 +249,7 @@ prog:
 	@sleep $(RUNQ_DELAY)
 	make runq
 
-.PHONY: clean build hdd check runq run prog runvb iso check-style check-bugs check-headers check-eof fix-style install
+.PHONY: clean build hdd check runq run prog runvb iso check-style check-bugs check-headers check-eof fix-style install newapp
 
 # -----------------------------------
 # CODE QUALITY TOOLS
@@ -239,3 +284,6 @@ fix-style:
 	@echo "--- Applying Auto-Formatting ---"
 	@find . -name "*.cpp" -o -name "*.c" -o -name "*.h" | xargs clang-format -i -style=file
 	@echo "Code formatted."
+
+newapp:
+	@bash newapp.sh

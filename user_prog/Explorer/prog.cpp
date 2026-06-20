@@ -163,9 +163,9 @@ int ExplorerApp::loadDirectory(const char* path) {
 bool ExplorerApp::isExecutable(const char* name) {
     int len = strlen(name);
     if (len < 5) return false;
-    // Check for .BIN extension (Only need to check for Capital letters)
-    if ((name[len - 4] == '.') && (name[len - 3] == 'B') && (name[len - 2] == 'I') &&
-        (name[len - 1] == 'N')) {
+    // Check for .BIN extension (case-insensitive)
+    char c1 = name[len - 3] | 0x20, c2 = name[len - 2] | 0x20, c3 = name[len - 1] | 0x20;
+    if ((name[len - 4] == '.') && (c1 == 'b') && (c2 == 'i') && (c3 == 'n')) {
         return true;
     }
     return false;

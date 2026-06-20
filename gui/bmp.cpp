@@ -7,7 +7,6 @@
  */
 
 #define KDBG_COMPONENT "GUI:BMP"
-#include <core/filesystem/FAT32.h>
 #include <core/filesystem/msdospart.h>
 #include <gui/bmp.h>
 
@@ -31,7 +30,7 @@ Bitmap::Bitmap(char* path) {
         return;
     }
 
-    FAT32* fs = MSDOSPartitionTable::activeInstance->partitions[0];
+    FileSystem* fs = MSDOSPartitionTable::activeInstance->partitions[0];
     if (!fs) return;
 
     File* file = fs->Open(path);

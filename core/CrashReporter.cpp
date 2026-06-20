@@ -6,12 +6,13 @@
  * @version     1.0.0
  */
 
+#include <core/filesystem/Paths.h>
 #include <core/CrashReporter.h>
 
 #include <gui/desktop.h>
 #include <gui/infodialog.h>
 #include <stdlib.h>
-#include <utils/string.h>
+#include <string.h>
 
 namespace {
 InfoDialog* g_crashDialog = nullptr;
@@ -51,7 +52,7 @@ void CrashReporter::ShowUserCrashDialog(uint32_t pid, uint32_t tid, uint8_t exce
         }
 
         g_crashDialog->SetTitleText("Crash Diagnostics");
-        g_crashDialog->SetIconBitmap("BITMAPS/ICON.BMP");
+        g_crashDialog->SetIconBitmap(PATH_ICON_BMP);
         desktop->AddChild(g_crashDialog);
     }
 

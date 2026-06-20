@@ -7,6 +7,7 @@
  */
 
 #define KDBG_COMPONENT "GUI:WIDGET"
+#include <gui/animation.h>
 #include <gui/widget.h>
 
 // Widget Base Class
@@ -32,6 +33,9 @@ Widget::Widget(Widget* parent, int32_t x, int32_t y, int32_t w, int32_t h) {
 }
 
 Widget::~Widget() {
+    if (AnimationManager::activeInstance) {
+        AnimationManager::activeInstance->CancelAll(this);
+    }
     if (cache) delete[] cache;
 }
 
@@ -41,6 +45,32 @@ void Widget::MarkDirty() {
     // Propagate dirty flag upward
     if (this->parent != nullptr) {
         this->parent->MarkDirty();
+    }
+}
+
+void Widget::Recalc() {
+    int32_t newW = w, newH = h;
+    switch (sizeMode) {
+        case CONTENT:
+            // Subclasses with text (e.g. Label) override Recalc for text measurement
+            break;
+            if (newW < (int32_t)minWidth) newW = (int32_t)minWidth;
+            if (newH < (int32_t)minHeight) newH = (int32_t)minHeight;
+            break;
+        case FILL:
+            if (parent) {
+                newW = parent->w;
+                newH = parent->h;
+            }
+            break;
+        case FIXED:
+            return;
+    }
+    if (newW != w || newH != h) {
+        w = newW; h = newH;
+        if (cache) delete[] cache;
+        cache = (w > 0 && h > 0) ? new uint32_t[w * h]() : nullptr;
+        MarkDirty();
     }
 }
 
@@ -85,7 +115,11 @@ void Widget::GetFocus(Widget* widget) {
 
 void Widget::SetFocus(bool result) {
     this->isFocused = result;
-    // Redraw with focus indicator
+    if (result) {
+        OnFocusGained();
+    } else {
+        OnFocusLost();
+    }
     this->MarkDirty();
 }
 
@@ -163,6 +197,10 @@ void Widget::OnMouseDown(int32_t, int32_t, uint8_t) {
 }
 void Widget::OnMouseUp(int32_t, int32_t, uint8_t) {}
 void Widget::OnMouseMove(int32_t, int32_t, int32_t, int32_t) {}
+void Widget::OnMouseEnter() {}
+void Widget::OnMouseLeave() {}
+void Widget::OnFocusGained() {}
+void Widget::OnFocusLost() {}
 void Widget::OnKeyDown(const char*) {}
 void Widget::OnSpecialKeyDown(uint8_t) {}
 void Widget::OnKeyUp(const char*) {}
@@ -300,6 +338,12 @@ void CompositeWidget::OnMouseMove(int32_t oldx, int32_t oldy, int32_t newx, int3
 
         if (inOld || inNew || child->IsMouseCaptured() || child->IsPressed()) {
             child->OnMouseMove(localOldX, localOldY, localNewX, localNewY);
+        }
+
+        if (!inOld && inNew) {
+            child->OnMouseEnter();
+        } else if (inOld && !inNew) {
+            child->OnMouseLeave();
         }
     });
 }

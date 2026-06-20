@@ -24,6 +24,7 @@ public:
     void OnClose();
     void setVisible(bool val);
     void setWindowTitle(const char* title);
+    void SetTitleFontSize(int32_t px);
     const char* getWindowTitle() const {
         return windowTitle;
     }

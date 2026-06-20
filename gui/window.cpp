@@ -64,6 +64,17 @@ void Window::OnClose() {
     }
 }
 
+void Window::SetTitleFontSize(int32_t px) {
+    if (!FontManager::activeInstance) return;
+    FontSize slot = Font::PixelToFontSlot(px);
+    FontType type = this->font ? this->font->fontType : REGULAR;
+    Font* newFont = FontManager::activeInstance->getNewFont(slot, type);
+    if (!newFont) return;
+    delete this->font;
+    this->font = newFont;
+    MarkDirty();
+}
+
 void Window::setWindowTitle(const char* title) {
     if (!title) title = "";
     if (windowTitle) delete[] windowTitle;
@@ -106,12 +117,12 @@ void Window::Draw(GraphicsDriver* gc) {
 }
 
 void Window::RedrawToCache() {
-    uint32_t borderColor = isFocused ? WINDOW_BORDER_COLOR_PRESSED : WINDOW_BORDER_COLOR_NORMAL;
-    NINA::activeInstance->FillRoundedRectangle(cache, w, h, 0, 0, w, h, 6, WINDOW_BACKGROUND_COLOR);
+    uint32_t borderColor = isFocused ? WINDOW_BORDER_PRESSED : WINDOW_BORDER_NORMAL;
+    NINA::activeInstance->FillRoundedRectangle(cache, w, h, 0, 0, w, h, 6, WINDOW_BG);
     NINA::activeInstance->DrawRoundedRectangle(cache, w, h, 0, 0, w, h, 6, borderColor);
     NINA::activeInstance->DrawBitmap(cache, w, h, 4, 2, (const uint32_t*)icon_main_20x20, 20, 20);
     if (font) {
-        NINA::activeInstance->DrawString(cache, w, h, 28, 3, windowTitle, font, WINDOW_TITLE_COLOR);
+        NINA::activeInstance->DrawString(cache, w, h, 28, 3, windowTitle, font, WINDOW_TITLE);
     }
 
     for (auto& child : childrenList) {

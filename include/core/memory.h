@@ -1,6 +1,7 @@
 #ifndef MEMORY_MANAGER_H
 #define MEMORY_MANAGER_H
 
+#include <string.h>
 #include <core/Iguard.h>
 #include <core/globals.h>
 #include <debug.h>
@@ -11,17 +12,8 @@ namespace std {
 enum class align_val_t : size_t;
 }
 
-// Memory manipulation functions
-extern "C" {
-void* memset(void* ptr, int value, size_t num);
-void* memcpy(void* dest, const void* src, size_t num);
-int memcmp(const void* ptr1, const void* ptr2, size_t num);
-}
-
 // Internal optimization helpers
 void init_memory_optimizations();
-extern bool g_sse_active;
-
 // a singly linked list heap block
 typedef struct _kheap_block {
     struct {

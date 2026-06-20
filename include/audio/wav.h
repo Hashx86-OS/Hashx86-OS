@@ -2,13 +2,13 @@
 #define WAV_H
 
 #include <core/drivers/AudioMixer.h>
-#include <core/filesystem/FAT32.h>
+#include <core/filesystem/FileSystem.h>
 #include <core/filesystem/File.h>
 #include <core/filesystem/msdospart.h>
 #include <core/memory.h>
 #include <debug.h>
 #include <stdint.h>
-#include <utils/string.h>
+#include <string.h>
 
 // WAV File Structures
 struct WavHeader {

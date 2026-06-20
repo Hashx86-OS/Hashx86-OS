@@ -3,7 +3,7 @@
 
 #include <debug.h>
 #include <types.h>
-#include <utils/string.h>
+#include <string.h>
 
 struct KernelSymbol {
     const char* name;

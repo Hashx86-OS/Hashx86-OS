@@ -185,6 +185,14 @@ uint32_t KeyboardDriver::HandleInterrupt(uint32_t esp) {
 
     if (isExtendedScancode) {
         isExtendedScancode = false;
+        
+        if (key < 0x80) {
+            keyStates[key] = 1;
+        } else {
+            uint8_t releaseScancode = key & 0x7F;
+            if (releaseScancode < 128) keyStates[releaseScancode] = 0;
+        }
+
         // Always update modifier state
         switch (key) {
             case 0x1D:

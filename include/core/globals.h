@@ -13,7 +13,7 @@ class InterruptManager;
 class Scheduler;
 class SyscallHandler;
 class DriverManager;
-class FAT32;
+class FileSystem;
 class ELFLoader;
 
 // Kernel Utils
@@ -23,7 +23,6 @@ extern char Buffer[32];
 extern uint64_t timerTicks;
 
 // Config
-extern bool g_sse_active;
 extern bool g_scheduler_preserves_fpu;
 extern bool g_stop_gui_rendering;
 extern int g_gui_owner_pid;
@@ -38,7 +37,7 @@ extern DriverManager* g_driverManager;
 extern AudioMixer* g_AudioMixer;
 extern GraphicsDriver* g_GraphicsDriver;
 extern AudioDriver* g_AudioDriver;
-extern FAT32* g_bootPartition;
+extern FileSystem* g_bootPartition;
 extern ELFLoader* g_elfLoader;
 
 #endif  // GLOBALS_H
