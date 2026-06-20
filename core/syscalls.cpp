@@ -358,12 +358,16 @@ int32_t SyscallHandlers::Handle_sys_read(uint32_t fd, char* buf, uint32_t count)
 
     // stdin: consume keyboard character queue (non-blocking).
     if (fd == 0) {
-        char* kbuf = (char*)kmalloc(count);
-        if (!kbuf) return -1;
+        // Cap the read to the queue size — no need to allocate more than 256 bytes.
+        uint32_t limit = count;
+        if (limit > ProcessControlBlock::STDIN_QUEUE_SIZE) {
+            limit = ProcessControlBlock::STDIN_QUEUE_SIZE;
+        }
+        char kbuf[ProcessControlBlock::STDIN_QUEUE_SIZE];
 
         uint32_t bytesRead = 0;
         char c = 0;
-        while (bytesRead < count && PopProcessStdin(process, &c)) {
+        while (bytesRead < limit && PopProcessStdin(process, &c)) {
             kbuf[bytesRead++] = c;
 
             // Canonical-ish behavior for now: stop at newline.
@@ -372,14 +376,8 @@ int32_t SyscallHandlers::Handle_sys_read(uint32_t fd, char* buf, uint32_t count)
             }
         }
 
-        int32_t ret = -1;
-        if (bytesRead > 0) {
-            ret = CopyToUser(process, buf, kbuf, bytesRead) ? (int32_t)bytesRead : -1;
-        } else {
-            ret = 0;
-        }
-        kfree(kbuf);
-        return ret;
+        if (bytesRead == 0) return 0;
+        return CopyToUser(process, buf, kbuf, bytesRead) ? (int32_t)bytesRead : -1;
     }
 
     if (fd <= 2) return -1;
@@ -420,16 +418,19 @@ int32_t SyscallHandlers::Handle_sys_write(uint32_t fd, const char* buf, uint32_t
     // stdout/stderr: write to serial sink for now.
     if (fd == 1 || fd == 2) {
         ProcessControlBlock* process = Scheduler::activeInstance->GetCurrentProcess();
-        char* kbuf = (char*)kmalloc(count);
-        if (!kbuf) return -1;
-        if (!CopyFromUser(process, kbuf, buf, count)) {
-            kfree(kbuf);
-            return -1;
+        char kbuf[256];
+        uint32_t remaining = count;
+        while (remaining > 0) {
+            uint32_t chunk = (remaining > sizeof(kbuf)) ? sizeof(kbuf) : remaining;
+            if (!CopyFromUser(process, kbuf, buf, chunk)) {
+                return -1;
+            }
+            for (uint32_t i = 0; i < chunk; i++) {
+                writeSerial(kbuf[i]);
+            }
+            buf += chunk;
+            remaining -= chunk;
         }
-        for (uint32_t i = 0; i < count; i++) {
-            writeSerial(kbuf[i]);
-        }
-        kfree(kbuf);
         return (int32_t)count;
     }
 

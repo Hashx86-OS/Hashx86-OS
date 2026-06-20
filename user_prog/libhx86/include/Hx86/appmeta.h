@@ -19,7 +19,7 @@ struct Hx86AppMeta {
 } __attribute__((packed));
 
 #define HX86_DECLARE_APP(appTypeValue)                                                \
-    extern "C" __attribute__((used, section(".hx86meta"))) const Hx86AppMeta        \
+    __attribute__((used, section(".hx86meta"))) static const Hx86AppMeta            \
         g_hx86_app_meta = {HX86_APP_META_MAGIC, HX86_APP_META_VERSION, (appTypeValue)}
 
 #endif  // HX86_APPMETA_H
