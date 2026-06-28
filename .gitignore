@@ -1,7 +1,5 @@
 *.o
 /.vscode
-/user_prog/Quake/
-/bin/ProgFile/Quake/
 *.pak
 *.sys
 *.bin

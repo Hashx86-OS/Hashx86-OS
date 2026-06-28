@@ -186,8 +186,6 @@ This project wouldn’t have been possible without the help, guidance and inspir
 
 * **PDCLib:** Public Domain C Library by **the PDCLib contributors** (CC0) — [github.com/DevSolar/pdclib](https://github.com/DevSolar/pdclib)
 
-* **Desktop Wallpaper:** "Iceland, Beach, Ice image" by **Elisabetta_Miele** on [Pixabay](https://pixabay.com/photos/iceland-beach-ice-frost-sunset-9056229/)
-
 * **BootUp Sound:** "New Notification 09" by **Universfield** on [Pixabay](https://pixabay.com/sound-effects/film-special-effects-new-notification-09-352705/)
 
 ---

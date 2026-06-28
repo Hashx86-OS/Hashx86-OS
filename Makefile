@@ -156,6 +156,15 @@ runq: iso
 	qemu-system-i386 -cdrom $(KERNEL_ISO) -boot d -vga std -serial stdio -m 1G \
 	-drive file=$(QEMU_DISK),format=vdi
 
+# Run with GDB debug
+rungdb: iso
+	qemu-system-i386 -cdrom $(KERNEL_ISO) -boot d -vga std -serial stdio -m 1G \
+	-drive file=$(QEMU_DISK),format=vdi -s -S
+
+# Connect GDB to the running QEMU instance
+gdb:
+	gdb -ex "target remote localhost:1234" -ex "continue" $(KERNEL_BIN)
+
 run:
 	make clean
 	make
