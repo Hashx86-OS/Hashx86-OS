@@ -2,3 +2,6 @@ reviews:
   profile: assertive
   path_filters:
     - "!bin/**"
+    - "!stdlib/**"
+    - "!include/stb/**"
+    - "!include/stdlib/**"
