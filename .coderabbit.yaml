@@ -5,3 +5,4 @@ reviews:
     - "!stdlib/**"
     - "!include/stb/**"
     - "!include/stdlib/**"
+    - "!include/etl/**"
