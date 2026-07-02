@@ -28,6 +28,11 @@ extern TaskStateSegment g_tss;
 // instead of always growing tid-based offsets.
 static LinkedList<uint32_t> g_freeStackOffsets;
 
+// Dedicated counter for allocating new stack slots when the free list is empty.
+// Advances only when a new slot is actually claimed, so _tidCounter bumps from
+// clone or failed threads don't burn through the virtual address range.
+static uint32_t g_nextStackSlotIdx = 0;
+
 Scheduler* Scheduler::activeInstance = nullptr;
 void FlushSerial();
 
@@ -248,27 +253,35 @@ ThreadControlBlock* Scheduler::CreateThread(ProcessControlBlock* parent, void (*
         // Allocate USER-MODE stack (USER_STACK_PAGES pages)
         // Must be in identity-mapped range (<256MB) because kernel writes arg/retaddr to it
         uint32_t user_stack_size = USER_STACK_PAGES * PAGE_SIZE;
+        bool slotFromFreeList = false;
         if (!g_freeStackOffsets.IsEmpty()) {
             tcb->stackSlotIdx = g_freeStackOffsets.PopFront();
+            slotFromFreeList = true;
         } else {
-            // Check that next tid-based slot fits within the user stack region
-            uint32_t nextOffset = _tidCounter * user_stack_size;
-            if (nextOffset / user_stack_size != (uint32_t)_tidCounter ||
+            uint32_t nextOffset = g_nextStackSlotIdx * user_stack_size;
+            if (nextOffset / user_stack_size != g_nextStackSlotIdx ||
                 nextOffset >= USER_STACK_VIRT_TOP - USER_STACK_VIRT_BOTTOM - user_stack_size) {
                 kfree(tcb->stack);
                 delete tcb;
                 return nullptr;
             }
-            tcb->stackSlotIdx = _tidCounter;
+            tcb->stackSlotIdx = g_nextStackSlotIdx++;
         }
+
+        auto recycleSlot = [&]() {
+            if (slotFromFreeList) g_freeStackOffsets.Add(tcb->stackSlotIdx);
+        };
+
         uint64_t stack_offset64 = (uint64_t)tcb->stackSlotIdx * (uint64_t)user_stack_size;
         if (stack_offset64 > (uint64_t)USER_STACK_VIRT_TOP - user_stack_size) {
+            recycleSlot();
             kfree(tcb->stack);
             delete tcb;
             return nullptr;
         }
         uint32_t user_stack_base = USER_STACK_VIRT_TOP - (uint32_t)stack_offset64 - user_stack_size;
         if (user_stack_base < USER_STACK_VIRT_BOTTOM) {
+            recycleSlot();
             kfree(tcb->stack);
             delete tcb;
             return nullptr;
@@ -280,12 +293,10 @@ ThreadControlBlock* Scheduler::CreateThread(ProcessControlBlock* parent, void (*
             if (!phys) {
                 KDBG1("CreateThread: Failed to allocate user stack page %d! Low Memory Exhausted?",
                       p);
-                // Free previously allocated pages
                 for (uint32_t q = 0; q < p; q++) {
                     uint32_t va = user_stack_base + q * PAGE_SIZE;
                     uint32_t pf = _pager->GetPhysicalAddress(parent->page_directory, va);
                     if (pf != 0xFFFFFFFF) {
-                        // Unmap before freeing to leave clean page tables
                         uint32_t pd_idx = va >> 22;
                         uint32_t pt_idx = (va >> 12) & 0x3FF;
                         uint32_t* pt = (uint32_t*)(parent->page_directory[pd_idx] & 0xFFFFF000);
@@ -294,6 +305,7 @@ ThreadControlBlock* Scheduler::CreateThread(ProcessControlBlock* parent, void (*
                         pmm_free_block((void*)pf);
                     }
                 }
+                recycleSlot();
                 kfree(tcb->stack);
                 delete tcb;
                 return nullptr;
@@ -308,7 +320,6 @@ ThreadControlBlock* Scheduler::CreateThread(ProcessControlBlock* parent, void (*
                     uint32_t va = user_stack_base + q * PAGE_SIZE;
                     uint32_t pf = _pager->GetPhysicalAddress(parent->page_directory, va);
                     if (pf != 0xFFFFFFFF) {
-                        // Unmap before freeing to leave clean page tables
                         uint32_t pd_idx = va >> 22;
                         uint32_t pt_idx = (va >> 12) & 0x3FF;
                         uint32_t* pt = (uint32_t*)(parent->page_directory[pd_idx] & 0xFFFFF000);
@@ -317,6 +328,7 @@ ThreadControlBlock* Scheduler::CreateThread(ProcessControlBlock* parent, void (*
                         pmm_free_block((void*)pf);
                     }
                 }
+                recycleSlot();
                 kfree(tcb->stack);
                 delete tcb;
                 return nullptr;
@@ -396,26 +408,35 @@ ThreadControlBlock* Scheduler::CloneCurrentThread(CPUState* parentContext, uint3
         tcb->stackSlotIdx = UINT32_MAX;
     } else {
         uint32_t user_stack_size = USER_STACK_PAGES * PAGE_SIZE;
+        bool slotFromFreeList = false;
         if (!g_freeStackOffsets.IsEmpty()) {
             tcb->stackSlotIdx = g_freeStackOffsets.PopFront();
+            slotFromFreeList = true;
         } else {
-            uint32_t nextOffset = _tidCounter * user_stack_size;
-            if (nextOffset / user_stack_size != (uint32_t)_tidCounter ||
+            uint32_t nextOffset = g_nextStackSlotIdx * user_stack_size;
+            if (nextOffset / user_stack_size != g_nextStackSlotIdx ||
                 nextOffset >= USER_STACK_VIRT_TOP - USER_STACK_VIRT_BOTTOM - user_stack_size) {
                 kfree(tcb->stack);
                 delete tcb;
                 return nullptr;
             }
-            tcb->stackSlotIdx = _tidCounter;
+            tcb->stackSlotIdx = g_nextStackSlotIdx++;
         }
+
+        auto recycleSlot = [&]() {
+            if (slotFromFreeList) g_freeStackOffsets.Add(tcb->stackSlotIdx);
+        };
+
         uint64_t stack_offset64 = (uint64_t)tcb->stackSlotIdx * (uint64_t)user_stack_size;
         if (stack_offset64 > (uint64_t)USER_STACK_VIRT_TOP - user_stack_size) {
+            recycleSlot();
             kfree(tcb->stack);
             delete tcb;
             return nullptr;
         }
         uint32_t user_stack_base = USER_STACK_VIRT_TOP - (uint32_t)stack_offset64 - user_stack_size;
         if (user_stack_base < USER_STACK_VIRT_BOTTOM) {
+            recycleSlot();
             kfree(tcb->stack);
             delete tcb;
             return nullptr;
@@ -436,6 +457,7 @@ ThreadControlBlock* Scheduler::CloneCurrentThread(CPUState* parentContext, uint3
                         pmm_free_block((void*)pf);
                     }
                 }
+                recycleSlot();
                 kfree(tcb->stack);
                 delete tcb;
                 return nullptr;
@@ -457,6 +479,7 @@ ThreadControlBlock* Scheduler::CloneCurrentThread(CPUState* parentContext, uint3
                         pmm_free_block((void*)pf);
                     }
                 }
+                recycleSlot();
                 kfree(tcb->stack);
                 delete tcb;
                 return nullptr;
