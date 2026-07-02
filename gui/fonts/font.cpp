@@ -497,10 +497,12 @@ bool FontManager::LazyLoadStyle(FontFile* ff, FontType style) {
     }
 
     // Rasterize all 5 sizes into this FontFile's style slot
+    bool anyRasterized = false;
     for (int slot = 0; slot < 5; slot++) {
         FontData* data = new FontData{};
         if (TTF_RasterizeFont(buffer, fileSz, slot, (int)style, data)) {
             ff->font_data_list[slot][(int)style] = data;
+            anyRasterized = true;
             KDBG1("LazyLoad: slot=%d style=%d from %s", slot, (int)style, variantPath);
         } else {
             delete data;
@@ -508,7 +510,7 @@ bool FontManager::LazyLoadStyle(FontFile* ff, FontType style) {
     }
 
     delete[] buffer;
-    return true;
+    return anyRasterized;
 }
 
 Font* FontManager::getNewFont(FontSize size, FontType type) {

@@ -375,8 +375,6 @@ ThreadControlBlock* Scheduler::CloneCurrentThread(CPUState* parentContext, uint3
     tcb->parent = parent;
     tcb->pid = parent->pid;
     tcb->wakeTime = 0;
-    tcb->stackSlotIdx = UINT32_MAX;
-
     // Each thread still needs its own kernel stack for IRQ/syscall context switches.
     tcb->stack = (uint8_t*)kmalloc(KERNEL_STACK_SIZE);
     if (!tcb->stack) {
@@ -391,42 +389,86 @@ ThreadControlBlock* Scheduler::CloneCurrentThread(CPUState* parentContext, uint3
     // Linux clone contract: child returns 0 from clone.
     tcb->context->eax = 0;
 
-    // When child_stack is null, allocate a distinct user stack for the child
-    // so both threads do not share one user stack.
+    // When child_stack is null, allocate a user stack from the slot pool
+    // so the address range does not collide with CreateThread's allocations.
     if (child_stack) {
         tcb->context->esp = (uint32_t)child_stack;
+        tcb->stackSlotIdx = UINT32_MAX;
     } else {
-        // Allocate a small user stack for the child thread
-        uint32_t user_stack_size = 4096;
-        uint32_t user_stack_phys = (uint32_t)pmm_alloc_block_low(256 * 1024 * 1024);
-        if (!user_stack_phys) {
+        uint32_t user_stack_size = USER_STACK_PAGES * PAGE_SIZE;
+        if (!g_freeStackOffsets.IsEmpty()) {
+            tcb->stackSlotIdx = g_freeStackOffsets.PopFront();
+        } else {
+            uint32_t nextOffset = _tidCounter * user_stack_size;
+            if (nextOffset / user_stack_size != (uint32_t)_tidCounter ||
+                nextOffset >= USER_STACK_VIRT_TOP - USER_STACK_VIRT_BOTTOM - user_stack_size) {
+                kfree(tcb->stack);
+                delete tcb;
+                return nullptr;
+            }
+            tcb->stackSlotIdx = _tidCounter;
+        }
+        uint64_t stack_offset64 = (uint64_t)tcb->stackSlotIdx * (uint64_t)user_stack_size;
+        if (stack_offset64 > (uint64_t)USER_STACK_VIRT_TOP - user_stack_size) {
             kfree(tcb->stack);
             delete tcb;
             return nullptr;
         }
-        memset((void*)user_stack_phys, 0, 4096);
-        // Map it at a fixed high user address (just below 3GB) unique per thread
-        uint64_t stack_virt64 = (uint64_t)0xBFFF0000 - ((uint64_t)tcb->tid * 4096ULL);
-        if (stack_virt64 < 0x10000000ULL || stack_virt64 > 0xFFFFFFFFULL) {
-            pmm_free_block((void*)user_stack_phys);
+        uint32_t user_stack_base = USER_STACK_VIRT_TOP - (uint32_t)stack_offset64 - user_stack_size;
+        if (user_stack_base < USER_STACK_VIRT_BOTTOM) {
             kfree(tcb->stack);
             delete tcb;
             return nullptr;
         }
-        uint32_t user_stack_virt = (uint32_t)stack_virt64;
-        if (!_pager->MapPage(parent->page_directory, user_stack_virt, user_stack_phys,
-                             PAGE_PRESENT | PAGE_RW | PAGE_USER)) {
-            pmm_free_block((void*)user_stack_phys);
-            kfree(tcb->stack);
-            delete tcb;
-            return nullptr;
+        uint32_t top_page_phys = 0;
+        for (uint32_t p = 0; p < USER_STACK_PAGES; p++) {
+            uint32_t phys = (uint32_t)pmm_alloc_block_low(256 * 1024 * 1024);
+            if (!phys) {
+                for (uint32_t q = 0; q < p; q++) {
+                    uint32_t va = user_stack_base + q * PAGE_SIZE;
+                    uint32_t pf = _pager->GetPhysicalAddress(parent->page_directory, va);
+                    if (pf != 0xFFFFFFFF) {
+                        uint32_t pd_idx = va >> 22;
+                        uint32_t pt_idx = (va >> 12) & 0x3FF;
+                        uint32_t* pt = (uint32_t*)(parent->page_directory[pd_idx] & 0xFFFFF000);
+                        pt[pt_idx] = 0;
+                        asm volatile("invlpg %0" : : "m"(*(uint8_t*)va) : "memory");
+                        pmm_free_block((void*)pf);
+                    }
+                }
+                kfree(tcb->stack);
+                delete tcb;
+                return nullptr;
+            }
+            memset((void*)phys, 0, PAGE_SIZE);
+            uint32_t virt = user_stack_base + p * PAGE_SIZE;
+            if (!_pager->MapPage(parent->page_directory, virt, phys,
+                                 PAGE_PRESENT | PAGE_RW | PAGE_USER)) {
+                pmm_free_block((void*)phys);
+                for (uint32_t q = 0; q < p; q++) {
+                    uint32_t va = user_stack_base + q * PAGE_SIZE;
+                    uint32_t pf = _pager->GetPhysicalAddress(parent->page_directory, va);
+                    if (pf != 0xFFFFFFFF) {
+                        uint32_t pd_idx = va >> 22;
+                        uint32_t pt_idx = (va >> 12) & 0x3FF;
+                        uint32_t* pt = (uint32_t*)(parent->page_directory[pd_idx] & 0xFFFFF000);
+                        pt[pt_idx] = 0;
+                        asm volatile("invlpg %0" : : "m"(*(uint8_t*)va) : "memory");
+                        pmm_free_block((void*)pf);
+                    }
+                }
+                kfree(tcb->stack);
+                delete tcb;
+                return nullptr;
+            }
+            if (p == USER_STACK_PAGES - 1) top_page_phys = phys;
         }
-        // Set esp to top of the allocated page
-        tcb->context->esp = user_stack_virt + 4096 - 8;
-        // Write a return address to the exit trampoline (bottom of stack)
-        uint32_t* stack_top_phys = (uint32_t*)(user_stack_phys + 4096);
-        stack_top_phys[-1] = 0;  // Argument
-        stack_top_phys[-2] = USER_EXIT_TRAMPOLINE_VIRT;
+        // Set esp to top of the allocated stack
+        tcb->context->esp = user_stack_base + user_stack_size - 8;
+        // Write arg and return address to the TOP of the stack (last page, last 8 bytes)
+        uint32_t* user_stack_top_phys = (uint32_t*)(top_page_phys + PAGE_SIZE);
+        user_stack_top_phys[-2] = USER_EXIT_TRAMPOLINE_VIRT;
+        user_stack_top_phys[-1] = 0;
     }
 
     // Best-effort handling for common TID reporting flags.
