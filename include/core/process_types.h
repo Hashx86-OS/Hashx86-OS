@@ -73,6 +73,7 @@ struct ThreadControlBlock {
     CPUState* context;
     ProcessControlBlock* parent;
     uint32_t wakeTime;
+    uint32_t stackSlotIdx;  // slot index for user-stack virtual address reuse
 };
 
 struct ProcessControlBlock {

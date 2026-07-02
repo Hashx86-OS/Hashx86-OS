@@ -84,7 +84,10 @@ void Widget::OnKeyPress(void* instance,
 
 uint32_t Widget::MeasureText(const char* text, int32_t fontSizePx) {
     WidgetData data = {0, fontSizePx, 0, 0, 0, text};
-    return HguiAPI(FONT, MEASURE_TEXT, (void*)&data);
+    uint32_t result = HguiAPI(FONT, MEASURE_TEXT, (void*)&data);
+    // HguiAPI returns (int32_t)-1 on failure, which becomes 0xFFFFFFFF as uint32_t
+    if (result == 0xFFFFFFFF) return 0;
+    return result;
 }
 
 bool Widget::setEnabled(bool en) {

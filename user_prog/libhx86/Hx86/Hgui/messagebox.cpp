@@ -18,18 +18,16 @@ MessageBox::MessageBox(Widget* parent, const char* title, const char* message, T
     if (type == YES_NO) {
         Button* yesBtn = new Button(this, MSGBOXWIDTH / 2 - 80, MSGBOXHEIGHT - 40, 70, 25, "Yes");
         Button* noBtn = new Button(this, MSGBOXWIDTH / 2 + 10, MSGBOXHEIGHT - 40, 70, 25, "No");
-        if (resultPtr) {
-            yesBtn->OnClick(this, [](void* inst) {
-                MessageBox* mb = static_cast<MessageBox*>(inst);
-                if (mb->resultPtr) *mb->resultPtr = 1;
-                mb->Close();
-            });
-            noBtn->OnClick(this, [](void* inst) {
-                MessageBox* mb = static_cast<MessageBox*>(inst);
-                if (mb->resultPtr) *mb->resultPtr = 0;
-                mb->Close();
-            });
-        }
+        yesBtn->OnClick(this, [](void* inst) {
+            MessageBox* mb = static_cast<MessageBox*>(inst);
+            if (mb->resultPtr) *mb->resultPtr = 1;
+            mb->Close();
+        });
+        noBtn->OnClick(this, [](void* inst) {
+            MessageBox* mb = static_cast<MessageBox*>(inst);
+            if (mb->resultPtr) *mb->resultPtr = 0;
+            mb->Close();
+        });
         this->AddChild(yesBtn);
         this->AddChild(noBtn);
     } else {

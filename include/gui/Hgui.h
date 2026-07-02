@@ -1,6 +1,6 @@
 
-#ifndef HGUI_H
-#define HGUI_H
+#ifndef HGUI_KERNEL_H
+#define HGUI_KERNEL_H
 
 #include <core/interrupts.h>
 #include <core/memory.h>
@@ -22,7 +22,6 @@ typedef enum {
     LISTVIEW = 0x6,
     TERMINAL_VIEW = 0x7,
     FONT = 0x8,
-    ANIMATION = 0x9,
 } REQ_Element;
 
 typedef enum {
@@ -47,11 +46,6 @@ typedef enum {
     SET_HEIGHT = 0x12,
     SET_ITEM_HEIGHT = 0x13,
     SET_ENABLED = 0x14,
-    ANIM_START = 0x15,
-    ANIM_START_EX = 0x16,
-    ANIM_CANCEL = 0x17,
-    ANIM_CANCEL_ALL = 0x18,
-    ANIM_CHAIN = 0x19,
 } REQ_MODE;
 
 struct WidgetData {
@@ -83,11 +77,11 @@ public:
     virtual int32_t HandleListView(CPUState* cpu, const WidgetData* data);
     virtual int32_t HandleTerminalView(CPUState* cpu, const WidgetData* data);
     virtual int32_t HandleFont(CPUState* cpu, const WidgetData* data);
-    virtual int32_t HandleAnimation(CPUState* cpu, const WidgetData* data);
     virtual int32_t HandleEvent(CPUState* cpu);
     void RemoveAppByPID(uint32_t PID);
     Widget* FindWidgetByID(uint32_t searchID);
     uint32_t getNewID();
+    static void RemoveWidget(Widget* w);
 };
 
-#endif  // HGUI_H
+#endif  // HGUI_KERNEL_H

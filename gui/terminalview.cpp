@@ -75,6 +75,7 @@ void TerminalView::SetFontSize(int32_t px) {
     if (!newFont) return;
     delete this->font;
     this->font = newFont;
+    this->fontSize = slot;
     MarkDirty();
 }
 
@@ -222,6 +223,10 @@ void TerminalView::DrawScrollBar() {
 
 void TerminalView::RedrawToCache() {
     if (!cache || w <= 0 || h <= 0) return;
+    if (!NINA::activeInstance) {
+        isDirty = false;
+        return;
+    }
     memset(cache, 0, sizeof(uint32_t) * w * h);
 
     NINA::activeInstance->FillRectangle(cache, w, h, 0, 0, w, h, LISTVIEW_BG);
@@ -229,7 +234,7 @@ void TerminalView::RedrawToCache() {
 
     DrawScrollBar();
 
-    if (!text || !font || !NINA::activeInstance) {
+    if (!text || !font) {
         isDirty = false;
         return;
     }

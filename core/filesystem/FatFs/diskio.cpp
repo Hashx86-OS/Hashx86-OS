@@ -38,6 +38,7 @@ DSTATUS disk_status(BYTE pdrv) {
 
 DRESULT disk_read(BYTE pdrv, BYTE* buff, LBA_t sector, UINT count) {
     if (pdrv >= FF_VOLUMES || !g_ata[pdrv]) return RES_PARERR;
+    if ((uint32_t)sector + count > g_partSize[pdrv]) return RES_PARERR;
     AdvancedTechnologyAttachment* ata = g_ata[pdrv];
     uint32_t start = g_partLBA[pdrv] + (uint32_t)sector;
 
@@ -49,6 +50,7 @@ DRESULT disk_read(BYTE pdrv, BYTE* buff, LBA_t sector, UINT count) {
 
 DRESULT disk_write(BYTE pdrv, const BYTE* buff, LBA_t sector, UINT count) {
     if (pdrv >= FF_VOLUMES || !g_ata[pdrv]) return RES_PARERR;
+    if ((uint32_t)sector + count > g_partSize[pdrv]) return RES_PARERR;
     AdvancedTechnologyAttachment* ata = g_ata[pdrv];
     uint32_t start = g_partLBA[pdrv] + (uint32_t)sector;
 

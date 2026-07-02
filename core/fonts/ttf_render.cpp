@@ -117,8 +117,9 @@ int16_t* BuildGlyphArray(const RasterizedFont* src, int* outCount) {
     return glyphs;
 }
 
-int16_t* BuildKerningArray(stbtt_fontinfo* font, int* outCount) {
+int16_t* BuildKerningArray(stbtt_fontinfo* font, int pixelSize, int* outCount) {
     if (!font) return nullptr;
+    float scale = stbtt_ScaleForPixelHeight(font, (float)pixelSize);
     int count = 0;
     for (int i = 0; i < TTF_NUM_CHARS; i++) {
         int g1 = stbtt_FindGlyphIndex(font, TTF_FIRST_CHAR + i);
@@ -137,7 +138,7 @@ int16_t* BuildKerningArray(stbtt_fontinfo* font, int* outCount) {
             if (kern != 0) {
                 kernings[idx * 3 + 0] = (int16_t)(TTF_FIRST_CHAR + i);
                 kernings[idx * 3 + 1] = (int16_t)(TTF_FIRST_CHAR + j);
-                kernings[idx * 3 + 2] = (int16_t)kern;
+                kernings[idx * 3 + 2] = (int16_t)((float)kern * scale + 0.5f);
                 idx++;
             }
         }
@@ -176,7 +177,7 @@ bool TTF_RasterizeFont(const uint8_t* ttfData, uint32_t ttfSize,
     if (!glyphs) { delete[] argb; delete[] raster.atlasBuf; return false; }
 
     int kerningCount = 0;
-    int16_t* kernings = BuildKerningArray(&font, &kerningCount);
+    int16_t* kernings = BuildKerningArray(&font, TTF_PIXEL_SIZES[sizeSlot], &kerningCount);
 
     outData->magic = 0x464E5432;
     outData->size = (uint16_t)sizeSlot;

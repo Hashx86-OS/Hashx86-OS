@@ -5,17 +5,17 @@
 
 // System applications (OS tools)
 #define PATH_HASHX86_APPS    "Hashx86/apps/"
+#define PATH_CALCULATOR      "Hashx86/apps/test.bin"
 #define PATH_MEMVIEW         "Hashx86/apps/MeMView.bin"
 #define PATH_EXPLORER        "Hashx86/apps/Explorer.bin"
 #define PATH_TERMINAL        "Hashx86/apps/Terminal.bin"
 #define PATH_CLIHELLO        "Hashx86/apps/CLIHello.bin"
 
 // User applications
-#define PATH_APPS            "apps/"
-#define PATH_CALCULATOR      "apps/test.bin"
+#define PATH_APPS            "Hashx86/apps/"
 
 // Game3D (user app with assets)
-#define PATH_GAME3D          "apps/game3d/Game3D.bin"
+#define PATH_GAME3D          "Hashx86/apps/Game3D/Game3D.bin"
 
 // System drivers
 #define PATH_DRIVERS         "Hashx86/drivers/"

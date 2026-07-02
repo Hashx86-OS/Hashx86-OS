@@ -24,6 +24,10 @@ extern TaskStateSegment g_tss;
 // Number of pages per User-Mode stack
 #define USER_STACK_PAGES 128
 
+// Free-list of reclaimed user-stack offsets so exited threads recycle virtual slots
+// instead of always growing tid-based offsets.
+static LinkedList<uint32_t> g_freeStackOffsets;
+
 Scheduler* Scheduler::activeInstance = nullptr;
 void FlushSerial();
 
@@ -194,6 +198,7 @@ ThreadControlBlock* Scheduler::CreateThread(ProcessControlBlock* parent, void (*
     tcb->tid = _tidCounter++;
     tcb->parent = parent;
     tcb->pid = parent ? parent->pid : 0;
+    tcb->stackSlotIdx = 0;
 
     // Allocate 64KB kernel stack
     tcb->stack = (uint8_t*)kmalloc(KERNEL_STACK_SIZE);
@@ -243,7 +248,20 @@ ThreadControlBlock* Scheduler::CreateThread(ProcessControlBlock* parent, void (*
         // Allocate USER-MODE stack (USER_STACK_PAGES pages)
         // Must be in identity-mapped range (<256MB) because kernel writes arg/retaddr to it
         uint32_t user_stack_size = USER_STACK_PAGES * PAGE_SIZE;
-        uint64_t stack_offset64 = (uint64_t)tcb->tid * (uint64_t)user_stack_size;
+        if (!g_freeStackOffsets.IsEmpty()) {
+            tcb->stackSlotIdx = g_freeStackOffsets.PopFront();
+        } else {
+            // Check that next tid-based slot fits within the user stack region
+            uint32_t nextOffset = _tidCounter * user_stack_size;
+            if (nextOffset / user_stack_size != (uint32_t)_tidCounter ||
+                nextOffset >= USER_STACK_VIRT_TOP - USER_STACK_VIRT_BOTTOM - user_stack_size) {
+                kfree(tcb->stack);
+                delete tcb;
+                return nullptr;
+            }
+            tcb->stackSlotIdx = _tidCounter;
+        }
+        uint64_t stack_offset64 = (uint64_t)tcb->stackSlotIdx * (uint64_t)user_stack_size;
         if (stack_offset64 > (uint64_t)USER_STACK_VIRT_TOP - user_stack_size) {
             kfree(tcb->stack);
             delete tcb;
@@ -357,6 +375,7 @@ ThreadControlBlock* Scheduler::CloneCurrentThread(CPUState* parentContext, uint3
     tcb->parent = parent;
     tcb->pid = parent->pid;
     tcb->wakeTime = 0;
+    tcb->stackSlotIdx = 0;
 
     // Each thread still needs its own kernel stack for IRQ/syscall context switches.
     tcb->stack = (uint8_t*)kmalloc(KERNEL_STACK_SIZE);
@@ -559,6 +578,7 @@ ThreadControlBlock* Scheduler::CloneCurrentProcess(CPUState* parentContext, uint
     tcb->parent = childProc;
     tcb->pid = childProc->pid;
     tcb->wakeTime = 0;
+    tcb->stackSlotIdx = 0;
     tcb->stack = (uint8_t*)kmalloc(KERNEL_STACK_SIZE);
     if (!tcb->stack) {
         delete tcb;
@@ -757,6 +777,12 @@ void Scheduler::TerminateThread(ThreadControlBlock* thread) {
     // iterating over a dangling pointer later.
     if (thread->parent) {
         thread->parent->threads.Remove([thread](ThreadControlBlock* t) { return t == thread; });
+    }
+
+    // If this thread used a user stack, reclaim its slot for reuse
+    // (The physical user-stack pages are freed separately in KillProcess page-table sweep.)
+    if (thread->parent && !thread->parent->isKernelProcess) {
+        g_freeStackOffsets.Add(thread->stackSlotIdx);
     }
 
     if (thread == currentThread) {

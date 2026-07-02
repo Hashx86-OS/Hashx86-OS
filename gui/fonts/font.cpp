@@ -433,10 +433,12 @@ void FontManager::LoadFile(File* file, FontType style, const char* ttfPath) {
 bool FontManager::LazyLoadStyle(FontFile* ff, FontType style) {
     if (style == REGULAR || !ff || ff->filePath[0] == '\0') return false;
 
-    // Already loaded?
-    for (int s = 0; s < 10; s++) {
-        if (ff->font_data_list[s][style]) return true;
+    // Already loaded? (all sizes populated for this style)
+    bool anyLoaded = false;
+    for (int s = 0; s < 5; s++) {
+        if (ff->font_data_list[s][style]) anyLoaded = true;
     }
+    if (anyLoaded) return true;
 
     // Construct variant path
     char variantPath[128];
@@ -459,7 +461,8 @@ bool FontManager::LazyLoadStyle(FontFile* ff, FontType style) {
         const char* dot = strrchr(ff->filePath, '.');
         if (!dot || dot == ff->filePath) return false;
         size_t baseLen = (size_t)(dot - ff->filePath);
-        if (baseLen + 2 >= sizeof(ff->filePath)) return false;
+        // Need space for: base + 1 char + extension + null
+        if (baseLen + 1 + strlen(dot) >= sizeof(variantPath)) return false;
         memcpy(variantPath, ff->filePath, baseLen);
         variantPath[baseLen] = "biz"[style - 1];  // BOLD=1→b, ITALIC=2→i, BOLD_ITALIC=3→z
         strcpy(variantPath + baseLen + 1, dot);
@@ -532,7 +535,7 @@ Font* FontManager::getNewFont(FontSize size, FontType type) {
             FontFile* ff = *it;
             // Only attempt if this FontFile has REGULAR data (valid family) and a known path
             if (ff && ff->filePath[0] && ff->font_data_list[size][REGULAR]) {
-                if (LazyLoadStyle(ff, type)) {
+                if (LazyLoadStyle(ff, type) && ff->font_data_list[size][type]) {
                     Font* sysFont = new Font(ff, size, type);
                     if (!sysFont) {
                         HALT("CRITICAL: Failed to allocate Font object!\n");
@@ -560,7 +563,7 @@ Font* FontManager::getFontByIndex(uint32_t index, FontSize size, FontType type) 
                 return new Font(ff, size, type);
             }
             if (type != REGULAR && ff->filePath[0] && ff->font_data_list[size][REGULAR]) {
-                if (LazyLoadStyle(ff, type)) {
+                if (LazyLoadStyle(ff, type) && ff->font_data_list[size][type]) {
                     return new Font(ff, size, type);
                 }
             }

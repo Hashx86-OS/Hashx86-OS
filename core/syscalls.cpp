@@ -488,18 +488,20 @@ int32_t SyscallHandlers::Handle_sys_lseek(uint32_t fd, int32_t offset, int32_t w
     File* file = GetFileByFd(process, fd);
     if (!file) return -1;
 
-    uint32_t newPos;
+    int64_t newPos;
     if (whence == 0) {       // SEEK_SET
-        newPos = (uint32_t)offset;
+        newPos = (int64_t)offset;
     } else if (whence == 1) { // SEEK_CUR
-        newPos = file->position + offset;
+        newPos = (int64_t)file->position + offset;
     } else if (whence == 2) { // SEEK_END
-        newPos = file->size + offset;    // offset should be negative for SEEK_END
+        newPos = (int64_t)file->size + offset;    // offset should be negative for SEEK_END
     } else {
         return -1;
     }
 
-    file->Seek(newPos);
+    if (newPos < 0) return -1;
+
+    file->Seek((uint32_t)newPos);
     return (int32_t)newPos;
 }
 

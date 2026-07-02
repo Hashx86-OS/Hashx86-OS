@@ -209,7 +209,7 @@ else
     awk -v line="$HDD_LINE" '
     {
         print
-        if ($0 ~ /^[ \t]*#[ \t]*5\./) {
+        if ($0 ~ /^[ \t]*sudo umount/) {
             printf "%s\n\n", line
         }
     }

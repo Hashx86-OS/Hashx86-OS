@@ -167,6 +167,11 @@ void MSDOSPartitionTable::ReadPartitions() {
         // Mount FAT32
         if (mbr.primaryPartition[i].partition_id == 0x0C ||
             mbr.primaryPartition[i].partition_id == 0x0B) {
+            if (partitionsCounter >= FF_VOLUMES) {
+                KDBG1("Warning: Reached FatFs volume limit (%d), skipping remaining partitions",
+                      FF_VOLUMES);
+                break;
+            }
             FatFsWrapper* fs = new FatFsWrapper(ata, mbr.primaryPartition[i].start_lba,
                                                 (BYTE)partitionsCounter,
                                                 mbr.primaryPartition[i].length);

@@ -9,7 +9,6 @@
 #define KDBG_COMPONENT "KERNEL"
 #include <kernel.h>
 #include <core/filesystem/Paths.h>
-#include <gui/animation.h>
 
 #define DEBUG_ENABLED TRUE;
 #define PIT_COMMAND_PORT 0x43
@@ -552,11 +551,6 @@ void pDesktop(void* arg) {
         // Only swap buffers if something actually changed
         uint32_t start = timerTicks;
 
-        // Tick animations before drawing
-        if (AnimationManager::activeInstance) {
-            AnimationManager::activeInstance->Tick(timerTicks);
-        }
-
         // If a fullscreen app is running, skip desktop drawing
         if (g_stop_gui_rendering) {
             screen->Flush();
@@ -758,11 +752,6 @@ extern "C" void kernelMain(void* multiboot_structure, uint32_t magicnumber) {
     HguiHandler* guiCalls = new HguiHandler(0x81, g_interrupts);  // Needs desktop initialized
     if (!guiCalls) {
         HALT("CRITICAL: Failed to allocate HguiHandler!\n");
-    }
-
-    AnimationManager* animMgr = new AnimationManager();
-    if (!animMgr) {
-        HALT("CRITICAL: Failed to allocate AnimationManager!\n");
     }
 
     g_driverManager = new DriverManager();

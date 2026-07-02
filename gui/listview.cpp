@@ -80,7 +80,17 @@ const ListViewItem* ListView::GetItem(int index) const {
 
 void ListView::SetItemHeight(int h) {
     if (h < 10) h = 10;
+    int contentH = this->h - LISTVIEW_HEADER_HEIGHT - 2;
+    if (contentH > 0 && h > contentH) h = contentH;
     itemHeight = h;
+    int visibleItems = contentH > 0 ? contentH / itemHeight : 0;
+    if (visibleItems < 1 && itemCount > 0) {
+        itemHeight = contentH > 0 ? contentH : 10;
+        visibleItems = 1;
+    }
+    int maxOff = itemCount - (visibleItems > 0 ? visibleItems : 1);
+    if (maxOff < 0) maxOff = 0;
+    if (scrollOffset > maxOff) scrollOffset = maxOff;
     MarkDirty();
 }
 

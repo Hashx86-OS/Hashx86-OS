@@ -520,7 +520,7 @@ bool TerminalApp::ResolveExecutablePath(const char* input, char* outPath) const 
         if (checkCandidate(withExt)) return true;
     }
 
-    if (strlen(cmd) > MAX_PATH_LEN - 8) return false;
+    if (strlen(cmd) > MAX_PATH_LEN - 15) return false;
     char sysPath[MAX_PATH_LEN];
     sysPath[0] = '\0';
     strcpy(sysPath, "/Hashx86/apps/");
@@ -531,7 +531,7 @@ bool TerminalApp::ResolveExecutablePath(const char* input, char* outPath) const 
         return true;
     }
 
-    if (!hasDot && strlen(cmd) <= MAX_PATH_LEN - 13) {
+    if (!hasDot && strlen(cmd) <= MAX_PATH_LEN - 19) {
         char sysPathExt[MAX_PATH_LEN];
         sysPathExt[0] = '\0';
         strcpy(sysPathExt, "/Hashx86/apps/");

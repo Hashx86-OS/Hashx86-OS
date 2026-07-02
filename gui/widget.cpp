@@ -7,7 +7,7 @@
  */
 
 #define KDBG_COMPONENT "GUI:WIDGET"
-#include <gui/animation.h>
+#include <gui/Hgui.h>
 #include <gui/widget.h>
 
 // Widget Base Class
@@ -33,9 +33,7 @@ Widget::Widget(Widget* parent, int32_t x, int32_t y, int32_t w, int32_t h) {
 }
 
 Widget::~Widget() {
-    if (AnimationManager::activeInstance) {
-        AnimationManager::activeInstance->CancelAll(this);
-    }
+    HguiHandler::RemoveWidget(this);
     if (cache) delete[] cache;
 }
 
@@ -54,9 +52,6 @@ void Widget::Recalc() {
         case CONTENT:
             // Subclasses with text (e.g. Label) override Recalc for text measurement
             break;
-            if (newW < (int32_t)minWidth) newW = (int32_t)minWidth;
-            if (newH < (int32_t)minHeight) newH = (int32_t)minHeight;
-            break;
         case FILL:
             if (parent) {
                 newW = parent->w;
@@ -66,6 +61,8 @@ void Widget::Recalc() {
         case FIXED:
             return;
     }
+    if (newW < (int32_t)minWidth) newW = (int32_t)minWidth;
+    if (newH < (int32_t)minHeight) newH = (int32_t)minHeight;
     if (newW != w || newH != h) {
         w = newW; h = newH;
         if (cache) delete[] cache;
@@ -114,6 +111,7 @@ void Widget::GetFocus(Widget* widget) {
 }
 
 void Widget::SetFocus(bool result) {
+    if (result == this->isFocused) return;
     this->isFocused = result;
     if (result) {
         OnFocusGained();

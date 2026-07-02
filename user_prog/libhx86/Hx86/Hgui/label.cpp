@@ -38,8 +38,17 @@ bool Label::setColor(uint32_t argb) {
     return HguiAPI(LABEL, SET_COLOR, (void*)&data);
 }
 
+// Convert pixel size to FontSize enum (matches Font::PixelToFontSlot)
+static FontSize PxToFontSlot(int32_t px) {
+    if (px <= 17) return TINY;
+    if (px <= 22) return SMALL;
+    if (px <= 27) return MEDIUM;
+    if (px <= 34) return LARGE;
+    return XLARGE;
+}
+
 bool Label::setFontSize(int32_t px) {
-    WidgetData data = {ID, (int32_t)px};
+    WidgetData data = {ID, (int32_t)PxToFontSlot(px)};
     return HguiAPI(LABEL, SET_FONT_SIZE, (void*)&data);
 }
 

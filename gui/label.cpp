@@ -57,6 +57,7 @@ void Label::setType(FontType type) {
     if (!newFont) return;
     delete this->font;
     this->font = newFont;
+    if (sizeMode == CONTENT) Recalc();
     MarkDirty();
 }
 
@@ -127,6 +128,20 @@ void Label::Recalc() {
             if (parent) {
                 w = parent->w - padding.l - padding.r;
                 h = parent->h - padding.t - padding.b;
+            }
+            if (newW != w || newH != h) {
+                if (cache) delete[] cache;
+                cache = nullptr;
+                if (w > 0 && h > 0) {
+                    size_t count = (size_t)w * (size_t)h;
+                    if (count / (size_t)w != (size_t)h || count > (0xFFFFFFFFu / sizeof(uint32_t))) {
+                        HALT("CRITICAL: Label dimensions overflow in Recalc!\n");
+                    }
+                    cache = new uint32_t[count]();
+                    if (!cache) {
+                        HALT("CRITICAL: Failed to allocate label cache in Recalc!\n");
+                    }
+                }
             }
             break;
         case FIXED:

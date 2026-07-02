@@ -51,7 +51,6 @@ objects = \
 	$(BUILD_DIR)/obj/gui/fonts/font.o \
 	$(BUILD_DIR)/obj/core/fonts/ttf_render.o \
 	$(BUILD_DIR)/obj/gui/Hgui.o \
-	$(BUILD_DIR)/obj/gui/animation.o \
 	$(BUILD_DIR)/obj/gui/infodialog.o \
 	$(BUILD_DIR)/obj/gui/label.o \
 	$(BUILD_DIR)/obj/gui/listview.o \
@@ -97,10 +96,7 @@ objects = \
 	$(BUILD_DIR)/obj/stdlib/string/strpbrk.o \
 	$(BUILD_DIR)/obj/stdlib/string/memmove.o \
 	$(BUILD_DIR)/obj/stdlib/string/memchr.o \
-	$(BUILD_DIR)/obj/stdlib/string/memcmp.o \
-	$(BUILD_DIR)/obj/stdlib/string/memcpy.o \
-	$(BUILD_DIR)/obj/stdlib/string/memset.o \
-	$(BUILD_DIR)/obj/stdlib/string/HexStrToInt.o
+	$(BUILD_DIR)/obj/stdlib/string/HexStrToInt.o \
 
 LD_PARAMS = -melf_i386
 KERNEL_BIN = $(BUILD_DIR)/kernel.bin
@@ -184,7 +180,7 @@ hdd:
 	sudo mount /dev/nbd0p1 /mnt/vdi_p1
 
 # 	4. Copy Files
-	-sudo mkdir -p /mnt/vdi_p1/apps/game3d
+	-sudo mkdir -p /mnt/vdi_p1/Hashx86/apps/Game3D
 	-sudo mkdir -p /mnt/vdi_p1/Hashx86/apps
 	-sudo mkdir -p /mnt/vdi_p1/Hashx86/gfx
 	-sudo mkdir -p /mnt/vdi_p1/Hashx86/fonts
@@ -200,10 +196,10 @@ hdd:
 	-sudo cp bin/bitmaps/desktop.bmp /mnt/vdi_p1/Hashx86/gfx/desktop.bmp
 	-sudo cp bin/bitmaps/panic.bmp /mnt/vdi_p1/Hashx86/gfx/panic.bmp
 
-	-sudo cp bin/ProgFile/Game3D/obj.obj /mnt/vdi_p1/apps/game3d/obj.obj
-	-sudo cp bin/ProgFile/Game3D/floor.obj /mnt/vdi_p1/apps/game3d/floor.obj
-	-sudo cp bin/ProgFile/Game3D/map.bmp /mnt/vdi_p1/apps/game3d/map.bmp
-	-sudo cp bin/ProgFile/Game3D/sky.bmp /mnt/vdi_p1/apps/game3d/sky.bmp
+	-sudo cp bin/ProgFile/Game3D/obj.obj /mnt/vdi_p1/apps/Game3D/obj.obj
+	-sudo cp bin/ProgFile/Game3D/floor.obj /mnt/vdi_p1/apps/Game3D/floor.obj
+	-sudo cp bin/ProgFile/Game3D/map.bmp /mnt/vdi_p1/apps/Game3D/map.bmp
+	-sudo cp bin/ProgFile/Game3D/sky.bmp /mnt/vdi_p1/apps/Game3D/sky.bmp
 
 	-sudo cp $(BUILD_DIR)/drivers/bga.sys /mnt/vdi_p1/Hashx86/drivers/bga.sys
 	-sudo cp $(BUILD_DIR)/drivers/ac97.sys /mnt/vdi_p1/Hashx86/drivers/ac97.sys
@@ -218,11 +214,11 @@ hdd:
 	-sudo cp bin/fonts/CascadiaMono-BoldItalic.ttf /mnt/vdi_p1/Hashx86/fonts/CascadiaMono-BoldItalic.ttf
 
 	-sudo cp $(BUILD_DIR)/user/MeMView.bin /mnt/vdi_p1/Hashx86/apps/MeMView.bin
-	-sudo cp $(BUILD_DIR)/user/test.bin /mnt/vdi_p1/apps/test.bin
+	-sudo cp $(BUILD_DIR)/user/test.bin /mnt/vdi_p1/Hashx86/apps/test.bin
 	-sudo cp $(BUILD_DIR)/user/Explorer.bin /mnt/vdi_p1/Hashx86/apps/Explorer.bin
 	-sudo cp $(BUILD_DIR)/user/Terminal.bin /mnt/vdi_p1/Hashx86/apps/Terminal.bin
 	-sudo cp $(BUILD_DIR)/user/CLIHello.bin /mnt/vdi_p1/Hashx86/apps/CLIHello.bin
-	-sudo cp $(BUILD_DIR)/user/Game3D.bin /mnt/vdi_p1/apps/game3d/Game3D.bin
+	-sudo cp $(BUILD_DIR)/user/Game3D.bin /mnt/vdi_p1/Hashx86/apps/Game3D/Game3D.bin
 	-sudo cp $(BUILD_DIR)/user/Notepad.bin /mnt/vdi_p1/Hashx86/apps/Notepad.bin
 
 # 	5. Cleanup
