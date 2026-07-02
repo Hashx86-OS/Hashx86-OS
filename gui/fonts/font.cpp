@@ -37,7 +37,7 @@ Font::~Font() {}
 
 uint32_t Font::getStringLength(const char* str) {
     if (!str || !font_glyphs) return 0;
-    uint32_t length = 0;
+    int32_t length = 0;
     uint32_t prevChar = 0;
 
     while (*str) {
@@ -72,7 +72,7 @@ uint32_t Font::getStringLength(const char* str) {
         str++;
     }
 
-    return length;
+    return length < 0 ? 0 : (uint32_t)length;
 }
 
 uint32_t Font::MeasureString(const char* str) {
@@ -431,7 +431,7 @@ void FontManager::LoadFile(File* file, FontType style, const char* ttfPath) {
 }
 
 bool FontManager::LazyLoadStyle(FontFile* ff, FontType style) {
-    if (style == REGULAR || !ff || ff->filePath[0] == '\0') return false;
+    if (style <= REGULAR || style > BOLD_ITALIC || !ff || ff->filePath[0] == '\0') return false;
 
     // Already loaded? (all sizes populated for this style)
     bool anyLoaded = false;
@@ -480,6 +480,7 @@ bool FontManager::LazyLoadStyle(FontFile* ff, FontType style) {
     // Read entire TTF into buffer
     uint32_t fileSz = f->size;
     uint8_t* buffer = new uint8_t[fileSz];
+    if (!buffer) { f->Close(); delete f; return false; }
     f->Seek(0);
     uint32_t totalRead = 0;
     while (totalRead < fileSz) {

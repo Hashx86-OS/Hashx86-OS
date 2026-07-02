@@ -15,7 +15,7 @@
 #define PATH_APPS            "Hashx86/apps/"
 
 // Game3D (user app with assets)
-#define PATH_GAME3D          "Hashx86/apps/Game3D/Game3D.bin"
+#define PATH_GAME3D          "Apps/Game3D/Game3D.bin"
 
 // System drivers
 #define PATH_DRIVERS         "Hashx86/drivers/"

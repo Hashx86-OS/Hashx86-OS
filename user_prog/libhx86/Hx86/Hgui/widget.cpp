@@ -92,7 +92,7 @@ uint32_t Widget::MeasureText(const char* text, int32_t fontSizePx) {
 
 bool Widget::setEnabled(bool en) {
     WidgetData data = {ID, en ? 1 : 0};
-    return HguiAPI(WIDGET, SET_ENABLED, (void*)&data);
+    return HguiAPI(WIDGET, SET_ENABLED, (void*)&data) == 1;
 }
 
 CompositeWidget::CompositeWidget(Widget* parent, int32_t x, int32_t y, uint32_t w, uint32_t h)

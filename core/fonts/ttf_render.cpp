@@ -138,7 +138,7 @@ int16_t* BuildKerningArray(stbtt_fontinfo* font, int pixelSize, int* outCount) {
             if (kern != 0) {
                 kernings[idx * 3 + 0] = (int16_t)(TTF_FIRST_CHAR + i);
                 kernings[idx * 3 + 1] = (int16_t)(TTF_FIRST_CHAR + j);
-                kernings[idx * 3 + 2] = (int16_t)((float)kern * scale + 0.5f);
+                kernings[idx * 3 + 2] = (int16_t)((float)kern * scale + (kern >= 0 ? 0.5f : -0.5f));
                 idx++;
             }
         }

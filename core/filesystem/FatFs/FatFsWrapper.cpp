@@ -199,6 +199,12 @@ uint32_t FatFsWrapper::ReadStream(File* file, uint8_t* buffer, uint32_t length) 
         /* Directory: return entries in KernelDirent format */
         uint32_t total = 0;
 
+        /* Rewind directory cursor to the beginning before fast-forward, because
+         * subsequent ReadStream calls resume from where f_readdir left off after the
+         * previous batch — without rewind, the skip loop would advance past entries
+         * that were never returned to the caller. */
+        f_readdir(&slot->u.dir, NULL);
+
         /* Fast-forward to correct entry position using accumulated d_reclen byte offset.
          * file->position holds the byte offset from the start of the directory stream,
          * matching what the caller advanced via d_reclen. */

@@ -180,7 +180,6 @@ hdd:
 	sudo mount /dev/nbd0p1 /mnt/vdi_p1
 
 # 	4. Copy Files
-	-sudo mkdir -p /mnt/vdi_p1/Hashx86/apps/Game3D
 	-sudo mkdir -p /mnt/vdi_p1/Hashx86/apps
 	-sudo mkdir -p /mnt/vdi_p1/Hashx86/gfx
 	-sudo mkdir -p /mnt/vdi_p1/Hashx86/fonts
@@ -196,10 +195,11 @@ hdd:
 	-sudo cp bin/bitmaps/desktop.bmp /mnt/vdi_p1/Hashx86/gfx/desktop.bmp
 	-sudo cp bin/bitmaps/panic.bmp /mnt/vdi_p1/Hashx86/gfx/panic.bmp
 
-	-sudo cp bin/ProgFile/Game3D/obj.obj /mnt/vdi_p1/apps/Game3D/obj.obj
-	-sudo cp bin/ProgFile/Game3D/floor.obj /mnt/vdi_p1/apps/Game3D/floor.obj
-	-sudo cp bin/ProgFile/Game3D/map.bmp /mnt/vdi_p1/apps/Game3D/map.bmp
-	-sudo cp bin/ProgFile/Game3D/sky.bmp /mnt/vdi_p1/apps/Game3D/sky.bmp
+	-sudo mkdir -p /mnt/vdi_p1/Apps/Game3D
+	-sudo cp bin/ProgFile/Game3D/obj.obj /mnt/vdi_p1/Apps/Game3D/obj.obj
+	-sudo cp bin/ProgFile/Game3D/floor.obj /mnt/vdi_p1/Apps/Game3D/floor.obj
+	-sudo cp bin/ProgFile/Game3D/map.bmp /mnt/vdi_p1/Apps/Game3D/map.bmp
+	-sudo cp bin/ProgFile/Game3D/sky.bmp /mnt/vdi_p1/Apps/Game3D/sky.bmp
 
 	-sudo cp $(BUILD_DIR)/drivers/bga.sys /mnt/vdi_p1/Hashx86/drivers/bga.sys
 	-sudo cp $(BUILD_DIR)/drivers/ac97.sys /mnt/vdi_p1/Hashx86/drivers/ac97.sys
@@ -218,7 +218,7 @@ hdd:
 	-sudo cp $(BUILD_DIR)/user/Explorer.bin /mnt/vdi_p1/Hashx86/apps/Explorer.bin
 	-sudo cp $(BUILD_DIR)/user/Terminal.bin /mnt/vdi_p1/Hashx86/apps/Terminal.bin
 	-sudo cp $(BUILD_DIR)/user/CLIHello.bin /mnt/vdi_p1/Hashx86/apps/CLIHello.bin
-	-sudo cp $(BUILD_DIR)/user/Game3D.bin /mnt/vdi_p1/Hashx86/apps/Game3D/Game3D.bin
+	-sudo cp $(BUILD_DIR)/user/Game3D.bin /mnt/vdi_p1/Apps/Game3D/Game3D.bin
 	-sudo cp $(BUILD_DIR)/user/Notepad.bin /mnt/vdi_p1/Hashx86/apps/Notepad.bin
 
 # 	5. Cleanup

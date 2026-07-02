@@ -499,7 +499,7 @@ int32_t SyscallHandlers::Handle_sys_lseek(uint32_t fd, int32_t offset, int32_t w
         return -1;
     }
 
-    if (newPos < 0) return -1;
+    if (newPos < 0 || newPos > 0x7FFFFFFF) return -1;
 
     file->Seek((uint32_t)newPos);
     return (int32_t)newPos;

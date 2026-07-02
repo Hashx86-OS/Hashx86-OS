@@ -375,7 +375,7 @@ ThreadControlBlock* Scheduler::CloneCurrentThread(CPUState* parentContext, uint3
     tcb->parent = parent;
     tcb->pid = parent->pid;
     tcb->wakeTime = 0;
-    tcb->stackSlotIdx = 0;
+    tcb->stackSlotIdx = UINT32_MAX;
 
     // Each thread still needs its own kernel stack for IRQ/syscall context switches.
     tcb->stack = (uint8_t*)kmalloc(KERNEL_STACK_SIZE);
@@ -578,7 +578,7 @@ ThreadControlBlock* Scheduler::CloneCurrentProcess(CPUState* parentContext, uint
     tcb->parent = childProc;
     tcb->pid = childProc->pid;
     tcb->wakeTime = 0;
-    tcb->stackSlotIdx = 0;
+    tcb->stackSlotIdx = UINT32_MAX;
     tcb->stack = (uint8_t*)kmalloc(KERNEL_STACK_SIZE);
     if (!tcb->stack) {
         delete tcb;
@@ -781,7 +781,7 @@ void Scheduler::TerminateThread(ThreadControlBlock* thread) {
 
     // If this thread used a user stack, reclaim its slot for reuse
     // (The physical user-stack pages are freed separately in KillProcess page-table sweep.)
-    if (thread->parent && !thread->parent->isKernelProcess) {
+    if (thread->parent && !thread->parent->isKernelProcess && thread->stackSlotIdx != UINT32_MAX) {
         g_freeStackOffsets.Add(thread->stackSlotIdx);
     }
 
