@@ -45,6 +45,7 @@ objects = \
 	$(BUILD_DIR)/obj/debug.o \
 	$(BUILD_DIR)/obj/gui/bmp.o \
 	$(BUILD_DIR)/obj/gui/button.o \
+	$(BUILD_DIR)/obj/gui/iconbutton.o \
 	$(BUILD_DIR)/obj/gui/desktop.o \
 	$(BUILD_DIR)/obj/gui/elements/window_action_button.o \
 	$(BUILD_DIR)/obj/gui/elements/window_action_button_round.o \
@@ -212,6 +213,7 @@ hdd:
 	-sudo cp bin/fonts/CascadiaMono-Bold.ttf /mnt/vdi_p1/Hashx86/fonts/CascadiaMono-Bold.ttf
 	-sudo cp bin/fonts/CascadiaMono-Italic.ttf /mnt/vdi_p1/Hashx86/fonts/CascadiaMono-Italic.ttf
 	-sudo cp bin/fonts/CascadiaMono-BoldItalic.ttf /mnt/vdi_p1/Hashx86/fonts/CascadiaMono-BoldItalic.ttf
+	-sudo cp bin/fonts/fa-solid-900.ttf /mnt/vdi_p1/Hashx86/fonts/fa-solid-900.ttf
 
 	-sudo cp $(BUILD_DIR)/user/MeMView.bin /mnt/vdi_p1/Hashx86/apps/MeMView.bin
 	-sudo cp $(BUILD_DIR)/user/test.bin /mnt/vdi_p1/Hashx86/apps/test.bin

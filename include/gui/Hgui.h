@@ -22,6 +22,7 @@ typedef enum {
     LISTVIEW = 0x6,
     TERMINAL_VIEW = 0x7,
     FONT = 0x8,
+    ICON_BUTTON = 0x9,
 } REQ_Element;
 
 typedef enum {
@@ -46,6 +47,8 @@ typedef enum {
     SET_HEIGHT = 0x12,
     SET_ITEM_HEIGHT = 0x13,
     SET_ENABLED = 0x14,
+    SET_ICON = 0x15,
+    SET_ICON_FONT_SIZE = 0x16,
 } REQ_MODE;
 
 struct WidgetData {
@@ -73,6 +76,7 @@ public:
     virtual int32_t HandleWidget(CPUState* cpu, const WidgetData* data);
     virtual int32_t HandleWindow(CPUState* cpu, const WidgetData* data);
     virtual int32_t HandleButton(CPUState* cpu, const WidgetData* data);
+    virtual int32_t HandleIconButton(CPUState* cpu, const WidgetData* data);
     virtual int32_t HandleLabel(CPUState* cpu, const WidgetData* data);
     virtual int32_t HandleListView(CPUState* cpu, const WidgetData* data);
     virtual int32_t HandleTerminalView(CPUState* cpu, const WidgetData* data);

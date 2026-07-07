@@ -2,6 +2,7 @@
 #define GUI_H
 
 #include <gui/button.h>
+#include <gui/iconbutton.h>
 #include <gui/desktop.h>
 #include <gui/icons.h>
 #include <gui/infodialog.h>

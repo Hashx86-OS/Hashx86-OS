@@ -31,36 +31,46 @@ namespace {
 constexpr int TTF_FIRST_CHAR = 32;
 constexpr int TTF_NUM_CHARS = 95;
 constexpr int TTF_PIXEL_SIZES[5] = {16, 20, 24, 30, 38};
+constexpr int TTF_MAX_ICON_CHARS = 128;
 constexpr int TTF_MAX_ATLAS_W = 512;
 constexpr int TTF_MAX_ATLAS_H = 512;
 constexpr int TTF_GLYPH_PAD = 2;
 
 struct RasterizedFont {
     int pixelSize;
+    int firstChar;
+    int numChars;
     uint8_t* atlasBuf;
     int atlasW;
     int atlasH;
-    stbtt_bakedchar chardata[TTF_NUM_CHARS];
+    stbtt_bakedchar* chardata;
     bool valid;
 
-    RasterizedFont() : pixelSize(0), atlasBuf(nullptr), atlasW(0), atlasH(0), valid(false) {
-        for (int i = 0; i < TTF_NUM_CHARS; i++) chardata[i] = stbtt_bakedchar{};
-    }
+    RasterizedFont() : pixelSize(0), firstChar(32), numChars(95), atlasBuf(nullptr),
+                       atlasW(0), atlasH(0), chardata(nullptr), valid(false) {}
+
+    ~RasterizedFont() { delete[] chardata; }
 };
 
-bool RasterizeSize(stbtt_fontinfo* font, int pixelSize, RasterizedFont* out) {
-    if (!font || !out) return false;
+bool RasterizeSize(stbtt_fontinfo* font, int pixelSize, int firstChar, int numChars,
+                   RasterizedFont* out) {
+    if (!font || !out || numChars <= 0) return false;
     out->pixelSize = pixelSize;
+    out->firstChar = firstChar;
+    out->numChars = numChars;
     out->atlasBuf = new uint8_t[TTF_MAX_ATLAS_W * TTF_MAX_ATLAS_H];
     if (!out->atlasBuf) return false;
     memset(out->atlasBuf, 0, TTF_MAX_ATLAS_W * TTF_MAX_ATLAS_H);
+    out->chardata = new stbtt_bakedchar[numChars]();
+    if (!out->chardata) { delete[] out->atlasBuf; out->atlasBuf = nullptr; return false; }
+
     int baked = stbtt_BakeFontBitmap((const unsigned char*)font->data, 0,
                                       (float)pixelSize, out->atlasBuf,
                                       TTF_MAX_ATLAS_W, TTF_MAX_ATLAS_H,
-                                      TTF_FIRST_CHAR, TTF_NUM_CHARS, out->chardata);
-    if (baked <= 0) { delete[] out->atlasBuf; out->atlasBuf = nullptr; return false; }
+                                      firstChar, numChars, out->chardata);
+    if (baked <= 0) { delete[] out->chardata; out->chardata = nullptr; delete[] out->atlasBuf; out->atlasBuf = nullptr; return false; }
     int maxX = 0, maxY = 0;
-    for (int i = 0; i < TTF_NUM_CHARS; i++) {
+    for (int i = 0; i < numChars; i++) {
         int x1 = out->chardata[i].x1 + TTF_GLYPH_PAD;
         int y1 = out->chardata[i].y1 + TTF_GLYPH_PAD;
         if (x1 > maxX) maxX = x1;
@@ -88,7 +98,8 @@ uint32_t* GrayscaleToARGB(const RasterizedFont* src, int* outW, int* outH) {
 
 int16_t* BuildGlyphArray(const RasterizedFont* src, int* outCount) {
     if (!src || !src->valid) return nullptr;
-    int count = TTF_NUM_CHARS;
+    int count = src->numChars;
+    int firstChar = src->firstChar;
     int16_t* glyphs = new int16_t[count * 8];
     if (!glyphs) return nullptr;
 
@@ -104,7 +115,7 @@ int16_t* BuildGlyphArray(const RasterizedFont* src, int* outCount) {
         int idx = i * 8;
         int16_t ch = (int16_t)(src->chardata[i].y1 - src->chardata[i].y0);
         int16_t yo = (int16_t)src->chardata[i].yoff - minYoff;
-        glyphs[idx + 0] = (int16_t)(TTF_FIRST_CHAR + i);
+        glyphs[idx + 0] = (int16_t)(firstChar + i);
         glyphs[idx + 1] = (int16_t)src->chardata[i].x0;
         glyphs[idx + 2] = (int16_t)src->chardata[i].y0;
         glyphs[idx + 3] = (int16_t)(src->chardata[i].x1 - src->chardata[i].x0);
@@ -117,27 +128,28 @@ int16_t* BuildGlyphArray(const RasterizedFont* src, int* outCount) {
     return glyphs;
 }
 
-int16_t* BuildKerningArray(stbtt_fontinfo* font, int pixelSize, int* outCount) {
+int16_t* BuildKerningArray(stbtt_fontinfo* font, int pixelSize, int firstChar, int numChars,
+                           int* outCount) {
     if (!font) return nullptr;
     float scale = stbtt_ScaleForPixelHeight(font, (float)pixelSize);
     int count = 0;
-    for (int i = 0; i < TTF_NUM_CHARS; i++) {
-        int g1 = stbtt_FindGlyphIndex(font, TTF_FIRST_CHAR + i);
-        for (int j = 0; j < TTF_NUM_CHARS; j++)
-            if (stbtt_GetGlyphKernAdvance(font, g1, stbtt_FindGlyphIndex(font, TTF_FIRST_CHAR + j)) != 0) count++;
+    for (int i = 0; i < numChars; i++) {
+        int g1 = stbtt_FindGlyphIndex(font, firstChar + i);
+        for (int j = 0; j < numChars; j++)
+            if (stbtt_GetGlyphKernAdvance(font, g1, stbtt_FindGlyphIndex(font, firstChar + j)) != 0) count++;
     }
     if (count == 0) { *outCount = 0; return nullptr; }
     int16_t* kernings = new int16_t[count * 3];
     if (!kernings) { *outCount = 0; return nullptr; }
     int idx = 0;
-    for (int i = 0; i < TTF_NUM_CHARS && idx < count; i++) {
-        int g1 = stbtt_FindGlyphIndex(font, TTF_FIRST_CHAR + i);
-        for (int j = 0; j < TTF_NUM_CHARS && idx < count; j++) {
-            int g2 = stbtt_FindGlyphIndex(font, TTF_FIRST_CHAR + j);
+    for (int i = 0; i < numChars && idx < count; i++) {
+        int g1 = stbtt_FindGlyphIndex(font, firstChar + i);
+        for (int j = 0; j < numChars && idx < count; j++) {
+            int g2 = stbtt_FindGlyphIndex(font, firstChar + j);
             int kern = stbtt_GetGlyphKernAdvance(font, g1, g2);
             if (kern != 0) {
-                kernings[idx * 3 + 0] = (int16_t)(TTF_FIRST_CHAR + i);
-                kernings[idx * 3 + 1] = (int16_t)(TTF_FIRST_CHAR + j);
+                kernings[idx * 3 + 0] = (int16_t)(firstChar + i);
+                kernings[idx * 3 + 1] = (int16_t)(firstChar + j);
                 kernings[idx * 3 + 2] = (int16_t)((float)kern * scale + (kern >= 0 ? 0.5f : -0.5f));
                 idx++;
             }
@@ -150,11 +162,13 @@ int16_t* BuildKerningArray(stbtt_fontinfo* font, int pixelSize, int* outCount) {
 }  // namespace
 
 bool TTF_RasterizeFont(const uint8_t* ttfData, uint32_t ttfSize,
-                        int sizeSlot, int styleSlot, FontData* outData) {
+                        int sizeSlot, int styleSlot, FontData* outData,
+                        int firstChar, int numChars) {
     (void)ttfSize;
     if (!ttfData || !outData) return false;
     if (sizeSlot < 0 || sizeSlot > 4) return false;
     if (styleSlot < 0 || styleSlot > 3) return false;
+    if (numChars <= 0) return false;
 
     stbtt_fontinfo font;
     if (!stbtt_InitFont(&font, ttfData, stbtt_GetFontOffsetForIndex(ttfData, 0))) {
@@ -163,7 +177,7 @@ bool TTF_RasterizeFont(const uint8_t* ttfData, uint32_t ttfSize,
     }
 
     RasterizedFont raster;
-    if (!RasterizeSize(&font, TTF_PIXEL_SIZES[sizeSlot], &raster)) {
+    if (!RasterizeSize(&font, TTF_PIXEL_SIZES[sizeSlot], firstChar, numChars, &raster)) {
         KDBG1("TTF: Failed to rasterize %dpx", TTF_PIXEL_SIZES[sizeSlot]);
         return false;
     }
@@ -177,7 +191,8 @@ bool TTF_RasterizeFont(const uint8_t* ttfData, uint32_t ttfSize,
     if (!glyphs) { delete[] argb; delete[] raster.atlasBuf; return false; }
 
     int kerningCount = 0;
-    int16_t* kernings = BuildKerningArray(&font, TTF_PIXEL_SIZES[sizeSlot], &kerningCount);
+    int16_t* kernings = BuildKerningArray(&font, TTF_PIXEL_SIZES[sizeSlot],
+                                          firstChar, numChars, &kerningCount);
 
     outData->magic = 0x464E5432;
     outData->size = (uint16_t)sizeSlot;
@@ -186,6 +201,7 @@ bool TTF_RasterizeFont(const uint8_t* ttfData, uint32_t ttfSize,
     outData->atlas_height = (uint16_t)atlasH;
     outData->glyph_count = (uint16_t)glyphCount;
     outData->kerning_count = (uint16_t)kerningCount;
+    outData->firstChar = (uint32_t)firstChar;
     outData->atlas = argb;
     outData->glyphs = glyphs;
     outData->kernings = kernings;

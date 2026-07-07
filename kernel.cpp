@@ -717,6 +717,20 @@ extern "C" void kernelMain(void* multiboot_structure, uint32_t magicnumber) {
     loadFontStyle((char*)PATH_SEGOEUI_FONT, REGULAR, true);
     loadFontStyle((char*)PATH_CASCADIA_FONT, REGULAR, false);
 
+    // Load icon font (FontAwesome) — icon codepoints start in Unicode PUA range
+    {
+        File* f = g_bootPartition->Open((char*)PATH_ICON_FONT);
+        if (f && f->size > 0) {
+            g_fManager->LoadFile(f, REGULAR, PATH_ICON_FONT, 0xF000, 128);
+            f->Close();
+            delete f;
+            KDBG1("Loaded icon font from %s", (char*)PATH_ICON_FONT);
+        } else {
+            if (f) { f->Close(); delete f; }
+            KDBG1("Icon font not found: %s", (char*)PATH_ICON_FONT);
+        }
+    }
+
     Font* BOOT = g_fManager->getNewFont();
     if (BOOT != nullptr) {
         BOOT->setSize(XLARGE);

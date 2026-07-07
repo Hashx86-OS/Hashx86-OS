@@ -365,10 +365,10 @@ void NINA::DrawVerticalLine(uint32_t* buffer, int32_t bufferWidth, int32_t buffe
 }
 
 void NINA::DrawCharacter(uint32_t* buffer, int32_t bufferWidth, int32_t bufferHeight, int32_t x,
-                         int32_t y, char c, Font* font, uint32_t colorIndex) {
+                         int32_t y, uint32_t codepoint, Font* font, uint32_t colorIndex) {
     if (!buffer || !font || !font->font_glyphs || !font->font_atlas) return;
-    int idx = (uint8_t)c - 32;
-    if (idx < 0 || idx >= 95) return;          // Only standard ASCII printable range (0-94)
+    int idx = (int)(codepoint - font->firstChar);
+    if (idx < 0 || idx >= (int)font->glyph_count) return;
     int16_t* g = &font->font_glyphs[idx * 8];  // each glyph = 8 values
 
     int charID = g[0];
@@ -426,7 +426,7 @@ void NINA::DrawString(uint32_t* buffer, int32_t bufferWidth, int32_t bufferHeigh
     int penY = y;
 
     for (int i = 0; str[i] != '\0'; ++i) {
-        char c = str[i];
+        uint32_t c = (uint8_t)str[i];
 
         // Handle newline
         if (c == '\n') {
@@ -435,22 +435,21 @@ void NINA::DrawString(uint32_t* buffer, int32_t bufferWidth, int32_t bufferHeigh
             continue;
         }
 
-        char next = str[i + 1];
-
         // Clamp unsupported characters
-        if (c < 32 || c > 126) {
-            c = '?';
+        uint32_t next_c = (uint8_t)str[i + 1];
+        if (c < font->firstChar || c >= font->firstChar + font->glyph_count) {
+            c = (font->firstChar <= '?' && '?' < font->firstChar + font->glyph_count) ? '?' : font->firstChar;
         }
 
-        int16_t* g = &font->font_glyphs[((uint8_t)c - 32) * 8];
+        int16_t* g = &font->font_glyphs[(c - font->firstChar) * 8];
         int xadvance = g[7];
 
         // Kerning lookup
         int kernAdjust = 0;
-        if (next >= 32 && font->font_kernings) {
+        if (font->font_kernings) {
             for (int k = 0; k < font->font_kerning_count; k++) {
                 int16_t* kdata = &font->font_kernings[k * 3];
-                if (kdata[0] == (uint8_t)c && kdata[1] == (uint8_t)next) {
+                if (kdata[0] == (int16_t)c && kdata[1] == (int16_t)next_c) {
                     kernAdjust = kdata[2];
                     break;
                 }

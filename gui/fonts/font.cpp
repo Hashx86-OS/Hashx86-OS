@@ -29,6 +29,7 @@ Font::Font(FontFile* file, FontSize fontSize, FontType fontType) {
     this->font_glyphs = nullptr;
     this->font_kernings = nullptr;
     this->font_kerning_count = 0;
+    this->firstChar = 32;
 
     this->update();
 }
@@ -43,14 +44,13 @@ uint32_t Font::getStringLength(const char* str) {
     while (*str) {
         uint32_t c = (uint8_t)(*str);
 
-        // Clamp to supported range
-        if (c < 32 || c > 126) {
-            c = '?';  // fallback glyph
+        // Clamp unsupported characters to fallback
+        if (c < firstChar || c >= firstChar + glyph_count) {
+            c = (firstChar <= '?' && '?' < firstChar + glyph_count) ? '?' : firstChar;
         }
 
-        // Find glyph index (assuming glyphs are stored in order for ASCII)
-        int glyph_index = c - 32;
-        // Validate glyph index against the actual number of glyphs
+        // Find glyph index using firstChar base
+        int glyph_index = c - firstChar;
         if (glyph_index < 0 || glyph_index >= (int)this->glyph_count) break;
         int16_t xadvance = this->font_glyphs[glyph_index * 8 + 7];
         length += xadvance;
@@ -131,6 +131,7 @@ void Font::update() {
     this->font_kernings = data->kernings;
     this->font_kerning_count = data->kerning_count;
     this->glyph_count = data->glyph_count;
+    this->firstChar = data->firstChar;
 }
 
 uint16_t Font::getLineHeight() {
@@ -332,6 +333,7 @@ void FontManager::LoadFile(uint32_t mod_start, uint32_t mod_end) {
         new_font->atlas_height = atlas_height;
         new_font->glyph_count = glyph_count;
         new_font->kerning_count = kerning_count;
+        new_font->firstChar = 32;  // FNT2 format uses ASCII range by default
 
         // ---- Atlas ----
         size_t atlasSize = (size_t)atlas_elems;
@@ -369,7 +371,8 @@ void FontManager::LoadFile(uint32_t mod_start, uint32_t mod_end) {
     font_list->Add(new_font_file);
 }
 
-void FontManager::LoadFile(File* file, FontType style, const char* ttfPath) {
+void FontManager::LoadFile(File* file, FontType style, const char* ttfPath,
+                           int firstChar, int numChars) {
     if (!file || file->size == 0) {
         KDBG1("Font error: file is null or empty");
         return;
@@ -401,6 +404,8 @@ void FontManager::LoadFile(File* file, FontType style, const char* ttfPath) {
             new_font_file->font_data_list[s][t] = nullptr;
         }
     }
+    new_font_file->firstChar = firstChar;
+    new_font_file->numChars = numChars;
 
     // Store source path so on-demand loading can find the variant files
     if (ttfPath) {
@@ -416,7 +421,8 @@ void FontManager::LoadFile(File* file, FontType style, const char* ttfPath) {
         if (!data) {
             HALT("CRITICAL: Failed to allocate FontData!\n");
         }
-        if (TTF_RasterizeFont(buffer, file->size, slot, (int)style, data)) {
+        if (TTF_RasterizeFont(buffer, file->size, slot, (int)style, data,
+                              firstChar, numChars)) {
             new_font_file->font_data_list[slot][(int)style] = data;
             KDBG1("TTF font loaded: slot=%d, style=%d, atlas=%dx%d, glyphs=%d, kernings=%d",
                    slot, (int)style, data->atlas_width, data->atlas_height,
@@ -573,6 +579,28 @@ Font* FontManager::getFontByIndex(uint32_t index, FontSize size, FontType type) 
             return nullptr;
         }
         i++;
+        ++it;
+    }
+    return nullptr;
+}
+
+Font* FontManager::getFontByFilePath(const char* path, FontSize size, FontType type) {
+    if ((uint32_t)size > 9 || (uint32_t)type > BOLD_ITALIC || !path) return nullptr;
+    auto it = font_list->begin();
+    auto end = font_list->end();
+    while (it != end) {
+        FontFile* ff = *it;
+        if (ff && strcmp(ff->filePath, path) == 0) {
+            if (ff->font_data_list[size][type]) {
+                return new Font(ff, size, type);
+            }
+            if (type != REGULAR && ff->filePath[0] && ff->font_data_list[size][REGULAR]) {
+                if (LazyLoadStyle(ff, type) && ff->font_data_list[size][type]) {
+                    return new Font(ff, size, type);
+                }
+            }
+            return nullptr;
+        }
         ++it;
     }
     return nullptr;

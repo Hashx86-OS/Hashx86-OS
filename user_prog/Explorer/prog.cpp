@@ -30,9 +30,9 @@ private:
     Label* pathLabel;
     Label* statusLabel;
     HListView* fileList;
-    Button* btnUp;
-    Button* btnRefresh;
-    Button* btnOpen;
+    IconButton* btnUp;
+    IconButton* btnRefresh;
+    IconButton* btnOpen;
 
 public:
     ExplorerApp();
@@ -64,14 +64,18 @@ ExplorerApp::ExplorerApp() {
     mainWindow = new Window(desktop, 120, 300, winW, winH);
     mainWindow->setWindowTitle("Explorer");
 
-    // Path bar spanning content width, inside toolbar row
-    pathLabel = new Label(mainWindow, pad + 260, toolbarY + 2, contentW - 260, 20, "/");
-    pathLabel->setSize(SMALL);
-
     // Toolbar buttons - left side
-    btnUp = new Button(mainWindow, pad, toolbarY, 70, toolbarH, "Up");
-    btnRefresh = new Button(mainWindow, pad + 78, toolbarY, 90, toolbarH, "Refresh");
-    btnOpen = new Button(mainWindow, pad + 176, toolbarY, 70, toolbarH, "Open");
+    btnUp = new IconButton(mainWindow, pad, toolbarY, 64, toolbarH, "fa-arrow-left", "");
+    btnUp->setIconFontSize(TINY);
+    btnRefresh = new IconButton(mainWindow, pad + 72, toolbarY, 64, toolbarH, "fa-refresh", "");
+    btnRefresh->setIconFontSize(TINY);
+    btnOpen = new IconButton(mainWindow, pad + 144, toolbarY, 64, toolbarH, "fa-folder-open", "");
+    btnOpen->setIconFontSize(TINY);
+
+    // Path label spans beside the buttons
+    const int32_t btnEnd = pad + 144 + 64 + 6;
+    pathLabel = new Label(mainWindow, btnEnd, toolbarY + 2, contentW - (btnEnd - pad), 20, "/");
+    pathLabel->setSize(SMALL);
 
     // File list view - fills the main content area
     fileList = new HListView(mainWindow, pad, listY, contentW, listH);

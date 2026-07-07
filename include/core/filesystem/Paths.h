@@ -40,6 +40,7 @@
 #define PATH_CASCADIA_BOLD_FONT        "Hashx86/fonts/CascadiaMono-Bold.ttf"
 #define PATH_CASCADIA_ITALIC_FONT      "Hashx86/fonts/CascadiaMono-Italic.ttf"
 #define PATH_CASCADIA_BOLD_ITALIC_FONT "Hashx86/fonts/CascadiaMono-BoldItalic.ttf"
+#define PATH_ICON_FONT                 "Hashx86/fonts/fa-solid-900.ttf"
 
 // Audio
 #define PATH_AUDIO           "Hashx86/audio/"

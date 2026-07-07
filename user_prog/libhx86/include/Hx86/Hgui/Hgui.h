@@ -2,6 +2,7 @@
 #define HGUI_H
 
 #include <Hx86/Hgui/button.h>
+#include <Hx86/Hgui/iconbutton.h>
 #include <Hx86/Hgui/desktop.h>
 #include <Hx86/Hgui/label.h>
 #include <Hx86/Hgui/listview.h>

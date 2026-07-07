@@ -53,7 +53,7 @@ public:
                           int32_t y, int32_t length, uint32_t colorIndex);
 
     void DrawCharacter(uint32_t* buffer, int32_t bufferWidth, int32_t bufferHeight, int32_t x,
-                       int32_t y, char c, Font* font, uint32_t colorIndex);
+                       int32_t y, uint32_t codepoint, Font* font, uint32_t colorIndex);
 
     void DrawString(uint32_t* buffer, int32_t bufferWidth, int32_t bufferHeight, int32_t x,
                     int32_t y, const char* str, Font* font, uint32_t colorIndex);

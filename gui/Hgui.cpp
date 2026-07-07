@@ -142,6 +142,9 @@ uint32_t HguiHandler::HandleInterrupt(uint32_t esp) {
         case BUTTON:
             ret = HandleButton(cpu, data_ptr);
             break;
+        case ICON_BUTTON:
+            ret = HandleIconButton(cpu, data_ptr);
+            break;
         case LABEL:
             ret = HandleLabel(cpu, data_ptr);
             break;
@@ -351,6 +354,82 @@ int32_t HguiHandler::HandleFont(CPUState* cpu, const WidgetData* _data) {
         uint32_t result = f->MeasureString(textBuf);
         delete f;
         return (int32_t)result;
+    }
+
+    return -1;
+}
+
+int32_t HguiHandler::HandleIconButton(CPUState* cpu, const WidgetData* _data) {
+    if (!cpu || !_data) return -1;
+    ProcessControlBlock* proc = GetCurrentProcSafe();
+    if (!proc) return -1;
+    char iconBuf[MAX_USER_TEXT];
+    char labelBuf[MAX_USER_TEXT];
+
+    if ((uint32_t)cpu->ebx == CREATE) {
+        Widget* parentBase = this->FindWidgetByID(_data->param0);
+        if (!parentBase || !parentBase->IsComposite()) return -1;
+        CompositeWidget* parentWidget = static_cast<CompositeWidget*>(parentBase);
+        if (parentWidget->ID == 0) return -1;
+
+        if (!CopyUserString(proc, _data->param5, iconBuf, sizeof(iconBuf))) return -1;
+        if (!CopyUserString(proc, _data->param6, labelBuf, sizeof(labelBuf))) return -1;
+
+        uint32_t _newID = this->getNewID();
+        Widget* _widget;
+        if (labelBuf[0] != '\0') {
+            _widget = new IconButton(parentWidget, _data->param1, _data->param2,
+                                     _data->param3, _data->param4, iconBuf, labelBuf);
+        } else {
+            _widget = new IconButton(parentWidget, _data->param1, _data->param2,
+                                     _data->param3, _data->param4, iconBuf);
+        }
+        if (!_widget) {
+            HALT("CRITICAL: Failed to allocate IconButton widget!\n");
+        }
+        _widget->SetPID(Scheduler::activeInstance->GetCurrentProcess()->pid);
+        _widget->SetID(_newID);
+
+        HguiWidgets.Add(_widget);
+        return (int32_t)_newID;
+    } else if ((uint32_t)cpu->ebx == SET_ICON) {
+        Widget* w = this->FindWidgetByID(_data->param0);
+        if (!w || !w->IsButton() || w->PID != proc->pid) return -1;
+        IconButton* widget = static_cast<IconButton*>(w);
+        if (!CopyUserString(proc, _data->param5, iconBuf, sizeof(iconBuf))) return -1;
+        widget->SetIcon(iconBuf);
+        return 1;
+    } else if ((uint32_t)cpu->ebx == SET_TEXT) {
+        Widget* w = this->FindWidgetByID(_data->param0);
+        if (!w || !w->IsButton() || w->PID != proc->pid) return -1;
+        IconButton* widget = static_cast<IconButton*>(w);
+        if (!CopyUserString(proc, _data->param5, labelBuf, sizeof(labelBuf))) return -1;
+        widget->SetLabel(labelBuf);
+        return 1;
+    } else if ((uint32_t)cpu->ebx == SET_FONT_SIZE) {
+        Widget* w = this->FindWidgetByID(_data->param0);
+        if (!w || !w->IsButton() || w->PID != proc->pid) return -1;
+        IconButton* widget = static_cast<IconButton*>(w);
+        widget->SetFontSize((int32_t)_data->param1);
+        return 1;
+    } else if ((uint32_t)cpu->ebx == SET_ICON_FONT_SIZE) {
+        Widget* w = this->FindWidgetByID(_data->param0);
+        if (!w || !w->IsButton() || w->PID != proc->pid) return -1;
+        IconButton* widget = static_cast<IconButton*>(w);
+        widget->SetIconFontSize((int32_t)_data->param1);
+        return 1;
+    } else if ((uint32_t)cpu->ebx == SET_WIDTH) {
+        Widget* w = this->FindWidgetByID(_data->param0);
+        if (!w || !w->IsButton() || w->PID != proc->pid) return -1;
+        IconButton* widget = static_cast<IconButton*>(w);
+        widget->SetIconWidth((int32_t)_data->param1);
+        return 1;
+    } else if ((uint32_t)cpu->ebx == SET_HEIGHT) {
+        Widget* w = this->FindWidgetByID(_data->param0);
+        if (!w || !w->IsButton() || w->PID != proc->pid) return -1;
+        IconButton* widget = static_cast<IconButton*>(w);
+        widget->SetIconHeight((int32_t)_data->param1);
+        return 1;
     }
 
     return -1;
