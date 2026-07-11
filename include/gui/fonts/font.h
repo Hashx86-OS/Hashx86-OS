@@ -54,7 +54,7 @@ private:
 public:
     FontFile();
     ~FontFile();
-    char filePath[128];  // source TTF path (empty if loaded from archive)
+    char filePath[128] = {};  // source TTF path (empty if loaded from archive)
     int firstChar = 32;  // starting codepoint for this font's glyph range
     int numChars = 95;   // number of glyphs loaded
 };
@@ -91,10 +91,10 @@ public:
     uint16_t getLineHeight();
 
     static inline FontSize PixelToFontSlot(int32_t px) {
-        if (px <= 10) return TINY;
-        if (px <= 12) return SMALL;
-        if (px <= 14) return MEDIUM;
-        if (px <= 18) return LARGE;
+        if (px <= 18) return TINY;
+        if (px <= 22) return SMALL;
+        if (px <= 27) return MEDIUM;
+        if (px <= 34) return LARGE;
         return XLARGE;
     }
 

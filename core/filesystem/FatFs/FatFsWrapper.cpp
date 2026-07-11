@@ -51,9 +51,7 @@ FatFsWrapper::FatFsWrapper(AdvancedTechnologyAttachment* hd, uint32_t partitionO
 }
 
 FatFsWrapper::~FatFsWrapper() {
-    char mountPath[4] = "0:";
-    mountPath[0] = '0' + pdrv;
-    f_mount(nullptr, mountPath, 0);
+    // Close any open handles while the filesystem is still mounted.
     if (slotMgr) {
         for (int i = 0; i < MAX_OPEN_FILES; i++) {
             FatFsSlot& s = slotMgr->slots[i];
@@ -66,9 +64,13 @@ FatFsWrapper::~FatFsWrapper() {
                 s.used = false;
             }
         }
-        delete slotMgr;
-        slotMgr = nullptr;
     }
+    // Now safe to unmount the volume.
+    char mountPath[4] = "0:";
+    mountPath[0] = '0' + pdrv;
+    f_mount(nullptr, mountPath, 0);
+    delete slotMgr;
+    slotMgr = nullptr;
 }
 
 /* Copy path to a local buffer with FatFs-compatible format */

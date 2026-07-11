@@ -21,8 +21,7 @@ Desktop::Desktop(int32_t w, int32_t h)
     KDBG1("DESKTOP Initialized with ID 0x%x", this->ID);
 
     // Initialize Wallpaper
-    char* wallpaperName = (char*)PATH_DESKTOP_BMP;
-    Bitmap* wallpaperImg = new Bitmap(wallpaperName);
+    Bitmap* wallpaperImg = new Bitmap(PATH_DESKTOP_BMP);
     if (!wallpaperImg) {
         HALT("CRITICAL: Failed to allocate desktop wallpaper bitmap!\n");
     }

@@ -164,14 +164,24 @@ int16_t* BuildKerningArray(stbtt_fontinfo* font, int pixelSize, int firstChar, i
 bool TTF_RasterizeFont(const uint8_t* ttfData, uint32_t ttfSize,
                         int sizeSlot, int styleSlot, FontData* outData,
                         int firstChar, int numChars) {
-    (void)ttfSize;
     if (!ttfData || !outData) return false;
     if (sizeSlot < 0 || sizeSlot > 4) return false;
     if (styleSlot < 0 || styleSlot > 3) return false;
     if (numChars <= 0) return false;
 
+    // Reject obviously truncated buffers before any stb-truetype call.
+    if (ttfSize < 12) {
+        KDBG1("TTF: Buffer too small (%u bytes)", ttfSize);
+        return false;
+    }
+    int offset = stbtt_GetFontOffsetForIndex(ttfData, 0);
+    if (offset < 0 || (uint32_t)offset + 12 > ttfSize) {
+        KDBG1("TTF: Invalid font offset %d (buffer %u bytes)", offset, ttfSize);
+        return false;
+    }
+
     stbtt_fontinfo font;
-    if (!stbtt_InitFont(&font, ttfData, stbtt_GetFontOffsetForIndex(ttfData, 0))) {
+    if (!stbtt_InitFont(&font, ttfData, offset)) {
         KDBG1("TTF: Failed to init font");
         return false;
     }

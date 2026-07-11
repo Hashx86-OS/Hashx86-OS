@@ -182,22 +182,23 @@ else
     INDENT=$(grep -E '^\s+\S+\\$' "$PROG_MAKEFILE" | head -1 | sed 's/[^ \t].*$//')
     [ -z "$INDENT" ] && INDENT=$'\t\t  '
 
-    # Add backslash to the last SUBDIRS entry (the one without \)
-    sed -i '/^SUBDIRS/,/^[[:space:]]*$/{
-        /^[[:space:]]*$/{
-            # Insert new entry before blank line
-            i\'"$INDENT$APP_NAME"'
-        }
+    # Two-pass sed: first, delete blank lines between SUBDIRS and .PHONY:,
+    # and add backslash to the last entry; second, insert the new entry.
+    # Anchored on .PHONY: (stable target) instead of a fragile blank line.
+    sed -i '/^SUBDIRS/,/^\.PHONY:/{
+        /^[[:space:]]*$/d
         /\\$/!{
             /^SUBDIRS/!{
-                /^[[:space:]]*$/!{
-                    # Line without backslash that is not SUBDIRS and not blank -> add backslash
+                /^\.PHONY:/!{
                     s/$/\\/
                 }
             }
         }
     }' "$PROG_MAKEFILE"
+    sed -i '/^\.PHONY:/i\'"$INDENT$APP_NAME"'' "$PROG_MAKEFILE"
 
+    # Verify the insertion actually happened
+    grep -qw "$APP_NAME" "$PROG_MAKEFILE" || die "Failed to insert '$APP_NAME' into SUBDIRS in $PROG_MAKEFILE"
     echo "  Updated $PROG_MAKEFILE (SUBDIRS)"
 fi
 

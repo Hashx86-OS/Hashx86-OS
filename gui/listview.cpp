@@ -98,27 +98,7 @@ void ListView::OnKeyDown(const char* key) {
     if (!enabled || !isVisible || !key) return;
     if (key[0] == 0) return;
 
-    if (key[0] == 'H') {
-        // Up arrow (scancode 0x48)
-        if (selectedIndex > 0) {
-            selectedIndex--;
-            if (selectedIndex < scrollOffset) {
-                scrollOffset = selectedIndex;
-            }
-            MarkDirty();
-        }
-    } else if (key[0] == 'P') {
-        // Down arrow (scancode 0x50)
-        if (selectedIndex < itemCount - 1) {
-            selectedIndex++;
-            int contentH = h - LISTVIEW_HEADER_HEIGHT - 2;
-            int visibleItems = contentH / itemHeight;
-            if (selectedIndex >= scrollOffset + visibleItems) {
-                scrollOffset = selectedIndex - visibleItems + 1;
-            }
-            MarkDirty();
-        }
-    } else if (key[0] == '\r' || key[0] == '\n' || key[0] == ' ') {
+    if (key[0] == '\r' || key[0] == '\n' || key[0] == ' ') {
         // Enter or Space → fire click event
         if (selectedIndex >= 0) {
             Event* new_event = new Event{this->ID, ON_CLICK};
@@ -130,6 +110,30 @@ void ListView::OnKeyDown(const char* key) {
             if (g_scheduler && handler->thread) {
                 g_scheduler->WakeThread(handler->thread);
             }
+        }
+    }
+}
+
+void ListView::OnSpecialKeyDown(uint8_t key) {
+    if (!enabled || !isVisible) return;
+
+    if (key == 0x48) {
+        if (selectedIndex > 0) {
+            selectedIndex--;
+            if (selectedIndex < scrollOffset) {
+                scrollOffset = selectedIndex;
+            }
+            MarkDirty();
+        }
+    } else if (key == 0x50) {
+        if (selectedIndex < itemCount - 1) {
+            selectedIndex++;
+            int contentH = h - LISTVIEW_HEADER_HEIGHT - 2;
+            int visibleItems = contentH / itemHeight;
+            if (selectedIndex >= scrollOffset + visibleItems) {
+                scrollOffset = selectedIndex - visibleItems + 1;
+            }
+            MarkDirty();
         }
     }
 }

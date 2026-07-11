@@ -44,6 +44,9 @@ public:
     void Format() override;
 
 private:
+    FatFsWrapper(const FatFsWrapper&) = delete;
+    FatFsWrapper& operator=(const FatFsWrapper&) = delete;
+
     struct SlotManager {
         FatFsSlot slots[MAX_OPEN_FILES];
 

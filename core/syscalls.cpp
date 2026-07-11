@@ -484,7 +484,9 @@ int32_t SyscallHandlers::Handle_sys_close(uint32_t fd) {
 int32_t SyscallHandlers::Handle_sys_lseek(uint32_t fd, int32_t offset, int32_t whence) {
     if (fd <= 2) return -1;
 
-    ProcessControlBlock* process = Scheduler::activeInstance->GetCurrentProcess();
+    ProcessControlBlock* process =
+        Scheduler::activeInstance ? Scheduler::activeInstance->GetCurrentProcess() : nullptr;
+    if (!process) return -1;
     File* file = GetFileByFd(process, fd);
     if (!file) return -1;
 

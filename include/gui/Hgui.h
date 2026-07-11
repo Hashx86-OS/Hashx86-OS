@@ -85,6 +85,13 @@ public:
     void RemoveAppByPID(uint32_t PID);
     Widget* FindWidgetByID(uint32_t searchID);
     uint32_t getNewID();
+    template<typename T>
+    T* FindOwnedWidget(uint32_t id, uint32_t pid, bool (Widget::*typeCheck)() const) {
+        Widget* w = FindWidgetByID(id);
+        if (!w || !(w->*typeCheck)() || w->PID != pid) return nullptr;
+        return static_cast<T*>(w);
+    }
+
     static void RemoveWidget(Widget* w);
 };
 

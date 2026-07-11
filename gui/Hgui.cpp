@@ -262,9 +262,8 @@ int32_t HguiHandler::HandleWindow(CPUState* cpu, const WidgetData* _data) {
         HguiWidgets.Add(_widget);
         return (uint32_t)_newID;
     } else if ((uint32_t)cpu->ebx == SET_TEXT) {
-        Widget* w = this->FindWidgetByID(_data->param0);
-        if (!w || !w->IsWindow() || w->PID != proc->pid) return -1;
-        Window* widget = static_cast<Window*>(w);
+        Window* widget = FindOwnedWidget<Window>(_data->param0, proc->pid, &Widget::IsWindow);
+        if (!widget) return -1;
         if (!CopyUserString(proc, _data->param5, titleBuf, sizeof(titleBuf))) {
             return -1;
         }
@@ -304,30 +303,26 @@ int32_t HguiHandler::HandleButton(CPUState* cpu, const WidgetData* _data) {
         HguiWidgets.Add(_widget);
         return (int32_t)_newID;
     } else if ((uint32_t)cpu->ebx == SET_TEXT) {
-        Widget* w = this->FindWidgetByID(_data->param0);
-        if (!w || !w->IsButton() || w->PID != proc->pid) return -1;
-        Button* widget = static_cast<Button*>(w);
+        Button* widget = FindOwnedWidget<Button>(_data->param0, proc->pid, &Widget::IsButton);
+        if (!widget) return -1;
         if (!CopyUserString(proc, _data->param5, labelBuf, sizeof(labelBuf))) {
             return -1;
         }
         widget->SetLabel(labelBuf);
         return 1;
     } else if ((uint32_t)cpu->ebx == SET_FONT_SIZE) {
-        Widget* w = this->FindWidgetByID(_data->param0);
-        if (!w || !w->IsButton() || w->PID != proc->pid) return -1;
-        Button* widget = static_cast<Button*>(w);
+        Button* widget = FindOwnedWidget<Button>(_data->param0, proc->pid, &Widget::IsButton);
+        if (!widget) return -1;
         widget->SetFontSize((int32_t)_data->param1);
         return 1;
     } else if ((uint32_t)cpu->ebx == SET_WIDTH) {
-        Widget* w = this->FindWidgetByID(_data->param0);
-        if (!w || !w->IsButton() || w->PID != proc->pid) return -1;
-        Button* widget = static_cast<Button*>(w);
+        Button* widget = FindOwnedWidget<Button>(_data->param0, proc->pid, &Widget::IsButton);
+        if (!widget) return -1;
         widget->SetWidth((int32_t)_data->param1);
         return 1;
     } else if ((uint32_t)cpu->ebx == SET_HEIGHT) {
-        Widget* w = this->FindWidgetByID(_data->param0);
-        if (!w || !w->IsButton() || w->PID != proc->pid) return -1;
-        Button* widget = static_cast<Button*>(w);
+        Button* widget = FindOwnedWidget<Button>(_data->param0, proc->pid, &Widget::IsButton);
+        if (!widget) return -1;
         widget->SetHeight((int32_t)_data->param1);
         return 1;
     }
@@ -393,41 +388,35 @@ int32_t HguiHandler::HandleIconButton(CPUState* cpu, const WidgetData* _data) {
         HguiWidgets.Add(_widget);
         return (int32_t)_newID;
     } else if ((uint32_t)cpu->ebx == SET_ICON) {
-        Widget* w = this->FindWidgetByID(_data->param0);
-        if (!w || !w->IsButton() || w->PID != proc->pid) return -1;
-        IconButton* widget = static_cast<IconButton*>(w);
+        IconButton* widget = FindOwnedWidget<IconButton>(_data->param0, proc->pid, &Widget::IsButton);
+        if (!widget) return -1;
         if (!CopyUserString(proc, _data->param5, iconBuf, sizeof(iconBuf))) return -1;
         widget->SetIcon(iconBuf);
         return 1;
     } else if ((uint32_t)cpu->ebx == SET_TEXT) {
-        Widget* w = this->FindWidgetByID(_data->param0);
-        if (!w || !w->IsButton() || w->PID != proc->pid) return -1;
-        IconButton* widget = static_cast<IconButton*>(w);
+        IconButton* widget = FindOwnedWidget<IconButton>(_data->param0, proc->pid, &Widget::IsButton);
+        if (!widget) return -1;
         if (!CopyUserString(proc, _data->param5, labelBuf, sizeof(labelBuf))) return -1;
         widget->SetLabel(labelBuf);
         return 1;
     } else if ((uint32_t)cpu->ebx == SET_FONT_SIZE) {
-        Widget* w = this->FindWidgetByID(_data->param0);
-        if (!w || !w->IsButton() || w->PID != proc->pid) return -1;
-        IconButton* widget = static_cast<IconButton*>(w);
+        IconButton* widget = FindOwnedWidget<IconButton>(_data->param0, proc->pid, &Widget::IsButton);
+        if (!widget) return -1;
         widget->SetFontSize((int32_t)_data->param1);
         return 1;
     } else if ((uint32_t)cpu->ebx == SET_ICON_FONT_SIZE) {
-        Widget* w = this->FindWidgetByID(_data->param0);
-        if (!w || !w->IsButton() || w->PID != proc->pid) return -1;
-        IconButton* widget = static_cast<IconButton*>(w);
+        IconButton* widget = FindOwnedWidget<IconButton>(_data->param0, proc->pid, &Widget::IsButton);
+        if (!widget) return -1;
         widget->SetIconFontSize((int32_t)_data->param1);
         return 1;
     } else if ((uint32_t)cpu->ebx == SET_WIDTH) {
-        Widget* w = this->FindWidgetByID(_data->param0);
-        if (!w || !w->IsButton() || w->PID != proc->pid) return -1;
-        IconButton* widget = static_cast<IconButton*>(w);
+        IconButton* widget = FindOwnedWidget<IconButton>(_data->param0, proc->pid, &Widget::IsButton);
+        if (!widget) return -1;
         widget->SetIconWidth((int32_t)_data->param1);
         return 1;
     } else if ((uint32_t)cpu->ebx == SET_HEIGHT) {
-        Widget* w = this->FindWidgetByID(_data->param0);
-        if (!w || !w->IsButton() || w->PID != proc->pid) return -1;
-        IconButton* widget = static_cast<IconButton*>(w);
+        IconButton* widget = FindOwnedWidget<IconButton>(_data->param0, proc->pid, &Widget::IsButton);
+        if (!widget) return -1;
         widget->SetIconHeight((int32_t)_data->param1);
         return 1;
     }
@@ -462,9 +451,8 @@ int32_t HguiHandler::HandleLabel(CPUState* cpu, const WidgetData* _data) {
         HguiWidgets.Add(_widget);
         return (int32_t)_newID;
     } else if ((uint32_t)cpu->ebx == SET_TEXT) {
-        Widget* w = this->FindWidgetByID(_data->param0);
-        if (!w || !w->IsLabel() || w->PID != proc->pid) return -1;
-        Label* widget = static_cast<Label*>(w);
+        Label* widget = FindOwnedWidget<Label>(_data->param0, proc->pid, &Widget::IsLabel);
+        if (!widget) return -1;
         if (!CopyUserString(proc, _data->param5, textBuf, sizeof(textBuf))) {
             return -1;
         }
@@ -472,41 +460,36 @@ int32_t HguiHandler::HandleLabel(CPUState* cpu, const WidgetData* _data) {
 
         return 1;
     } else if ((uint32_t)cpu->ebx == SET_FONT_SIZE) {
-        Widget* w = this->FindWidgetByID(_data->param0);
-        if (!w || !w->IsLabel() || w->PID != proc->pid) return -1;
-        Label* widget = static_cast<Label*>(w);
+        Label* widget = FindOwnedWidget<Label>(_data->param0, proc->pid, &Widget::IsLabel);
+        if (!widget) return -1;
 
         widget->setSize((FontSize)_data->param1);
 
         return 1;
     } else if ((uint32_t)cpu->ebx == SET_FONT_TYPE) {
-        Widget* w = this->FindWidgetByID(_data->param0);
-        if (!w || !w->IsLabel() || w->PID != proc->pid) return -1;
-        Label* widget = static_cast<Label*>(w);
+        Label* widget = FindOwnedWidget<Label>(_data->param0, proc->pid, &Widget::IsLabel);
+        if (!widget) return -1;
 
         widget->setType((FontType)_data->param1);
 
         return 1;
     } else if ((uint32_t)cpu->ebx == SET_COLOR) {
-        Widget* w = this->FindWidgetByID(_data->param0);
-        if (!w || !w->IsLabel() || w->PID != proc->pid) return -1;
-        Label* widget = static_cast<Label*>(w);
+        Label* widget = FindOwnedWidget<Label>(_data->param0, proc->pid, &Widget::IsLabel);
+        if (!widget) return -1;
 
         widget->SetColor((uint32_t)_data->param1);
 
         return 1;
     } else if ((uint32_t)cpu->ebx == SET_BACKGROUND) {
-        Widget* w = this->FindWidgetByID(_data->param0);
-        if (!w || !w->IsLabel() || w->PID != proc->pid) return -1;
-        Label* widget = static_cast<Label*>(w);
+        Label* widget = FindOwnedWidget<Label>(_data->param0, proc->pid, &Widget::IsLabel);
+        if (!widget) return -1;
 
         widget->SetBackground((uint32_t)_data->param1);
 
         return 1;
     } else if ((uint32_t)cpu->ebx == SET_ALIGNMENT) {
-        Widget* w = this->FindWidgetByID(_data->param0);
-        if (!w || !w->IsLabel() || w->PID != proc->pid) return -1;
-        Label* widget = static_cast<Label*>(w);
+        Label* widget = FindOwnedWidget<Label>(_data->param0, proc->pid, &Widget::IsLabel);
+        if (!widget) return -1;
 
         widget->SetAlignment((HAlign)_data->param1, (VAlign)_data->param2);
 
@@ -541,9 +524,8 @@ int32_t HguiHandler::HandleListView(CPUState* cpu, const WidgetData* _data) {
         return (int32_t)_newID;
     } else if ((uint32_t)cpu->ebx == SET_ITEMS) {
         // param0 = widgetID, param5 = pointer to ListViewItemData array, param1 = count
-        Widget* w = this->FindWidgetByID(_data->param0);
-        if (!w || !w->IsListView() || w->PID != proc->pid) return -1;
-        ListView* widget = static_cast<ListView*>(w);
+        ListView* widget = FindOwnedWidget<ListView>(_data->param0, proc->pid, &Widget::IsListView);
+        if (!widget) return -1;
 
         struct ListViewItemData {
             char name[64];
@@ -569,20 +551,17 @@ int32_t HguiHandler::HandleListView(CPUState* cpu, const WidgetData* _data) {
         }
         return count;
     } else if ((uint32_t)cpu->ebx == CLEAR_ITEMS) {
-        Widget* w = this->FindWidgetByID(_data->param0);
-        if (!w || !w->IsListView() || w->PID != proc->pid) return -1;
-        ListView* widget = static_cast<ListView*>(w);
+        ListView* widget = FindOwnedWidget<ListView>(_data->param0, proc->pid, &Widget::IsListView);
+        if (!widget) return -1;
         widget->Clear();
         return 1;
     } else if ((uint32_t)cpu->ebx == GET_SELECTED) {
-        Widget* w = this->FindWidgetByID(_data->param0);
-        if (!w || !w->IsListView() || w->PID != proc->pid) return -1;
-        ListView* widget = static_cast<ListView*>(w);
+        ListView* widget = FindOwnedWidget<ListView>(_data->param0, proc->pid, &Widget::IsListView);
+        if (!widget) return -1;
         return widget->GetSelectedIndex();
     } else if ((uint32_t)cpu->ebx == SET_TEXT) {
-        Widget* w = this->FindWidgetByID(_data->param0);
-        if (!w || !w->IsListView() || w->PID != proc->pid) return -1;
-        ListView* widget = static_cast<ListView*>(w);
+        ListView* widget = FindOwnedWidget<ListView>(_data->param0, proc->pid, &Widget::IsListView);
+        if (!widget) return -1;
         if (!CopyUserString(proc, _data->param5, headerBuf, sizeof(headerBuf))) {
             return -1;
         }
@@ -624,9 +603,8 @@ int32_t HguiHandler::HandleTerminalView(CPUState* cpu, const WidgetData* _data) 
         // Use a larger heap buffer for terminal text — CLI apps can produce
         // output far exceeding the 256-byte MAX_USER_TEXT stack buffer.
         constexpr size_t MAX_TERMINAL_TEXT = 8192;
-        Widget* w = this->FindWidgetByID(_data->param0);
-        if (!w || !w->IsTerminalView() || w->PID != proc->pid) return -1;
-        TerminalView* widget = static_cast<TerminalView*>(w);
+        TerminalView* widget = FindOwnedWidget<TerminalView>(_data->param0, proc->pid, &Widget::IsTerminalView);
+        if (!widget) return -1;
         char* textBuf = (char*)kmalloc(MAX_TERMINAL_TEXT);
         if (!textBuf) return -1;
         if (!CopyUserString(proc, _data->param5, textBuf, MAX_TERMINAL_TEXT)) {
@@ -637,21 +615,18 @@ int32_t HguiHandler::HandleTerminalView(CPUState* cpu, const WidgetData* _data) 
         kfree(textBuf);
         return 1;
     } else if ((uint32_t)cpu->ebx == SET_FONT_SIZE) {
-        Widget* w = this->FindWidgetByID(_data->param0);
-        if (!w || !w->IsTerminalView() || w->PID != proc->pid) return -1;
-        TerminalView* widget = static_cast<TerminalView*>(w);
+        TerminalView* widget = FindOwnedWidget<TerminalView>(_data->param0, proc->pid, &Widget::IsTerminalView);
+        if (!widget) return -1;
         widget->setSize((FontSize)_data->param1);
         return 1;
     } else if ((uint32_t)cpu->ebx == SET_SCROLL_META) {
-        Widget* w = this->FindWidgetByID(_data->param0);
-        if (!w || !w->IsTerminalView() || w->PID != proc->pid) return -1;
-        TerminalView* widget = static_cast<TerminalView*>(w);
+        TerminalView* widget = FindOwnedWidget<TerminalView>(_data->param0, proc->pid, &Widget::IsTerminalView);
+        if (!widget) return -1;
         widget->setScrollMeta((int)_data->param1, (int)_data->param2, (int)_data->param3);
         return 1;
     } else if ((uint32_t)cpu->ebx == GET_SCROLL_ACTION) {
-        Widget* w = this->FindWidgetByID(_data->param0);
-        if (!w || !w->IsTerminalView() || w->PID != proc->pid) return -1;
-        TerminalView* widget = static_cast<TerminalView*>(w);
+        TerminalView* widget = FindOwnedWidget<TerminalView>(_data->param0, proc->pid, &Widget::IsTerminalView);
+        if (!widget) return -1;
         return widget->consumeScrollAction();
     }
 

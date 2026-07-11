@@ -20,7 +20,7 @@ Bitmap::Bitmap(File* file) {
     Load(file);
 }
 
-Bitmap::Bitmap(char* path) {
+Bitmap::Bitmap(const char* path) {
     this->valid = false;
     this->buffer = 0;
     this->width = 0;
@@ -33,7 +33,7 @@ Bitmap::Bitmap(char* path) {
 
     FileSystem* fs = g_bootPartition;
 
-    File* file = fs->Open(path);
+    File* file = fs->Open(const_cast<char*>(path));
 
     if (file == 0) {
         KDBG1("Error: File not found %s", path);

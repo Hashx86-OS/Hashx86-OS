@@ -672,8 +672,7 @@ extern "C" void kernelMain(void* multiboot_structure, uint32_t magicnumber) {
     }
 
     // Load Boot Image
-    char* bootImageName = (char*)PATH_BOOT_BMP;
-    Bitmap* bootImg = new Bitmap(bootImageName);
+    Bitmap* bootImg = new Bitmap(PATH_BOOT_BMP);
     if (!bootImg) {
         HALT("CRITICAL: Failed to allocate Bitmap for boot image!\n");
     }

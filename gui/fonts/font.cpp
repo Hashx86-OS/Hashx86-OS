@@ -476,6 +476,7 @@ bool FontManager::LazyLoadStyle(FontFile* ff, FontType style) {
 
     // Open the variant file
     extern FileSystem* g_bootPartition;
+    if (!g_bootPartition) return false;
     File* f = g_bootPartition->Open(variantPath);
     if (!f || f->size == 0) {
         if (f) { f->Close(); delete f; }

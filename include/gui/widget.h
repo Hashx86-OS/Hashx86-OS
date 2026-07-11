@@ -33,7 +33,7 @@ class Widget {
 
 protected:
     Font* font = nullptr;
-    uint32_t colorIndex = 0;
+    uint32_t argbColor = 0;
     bool isFocussable = true;
     bool isFocused = false;
     bool enabled = true;
@@ -121,10 +121,10 @@ public:
         return false;
     }
 
-    uint32_t GetColorIndex() const { return colorIndex; }
-    void SetColorIndex(uint32_t ci) { colorIndex = ci; MarkDirty(); }
-    void SetAlpha(uint8_t alpha) { colorIndex = (colorIndex & 0x00FFFFFF) | ((uint32_t)alpha << 24); MarkDirty(); }
-    uint8_t GetAlpha() const { return (uint8_t)(colorIndex >> 24); }
+    uint32_t GetColor() const { return argbColor; }
+    void SetColor(uint32_t c) { argbColor = c; MarkDirty(); }
+    void SetAlpha(uint8_t alpha) { argbColor = (argbColor & 0x00FFFFFF) | ((uint32_t)alpha << 24); MarkDirty(); }
+    uint8_t GetAlpha() const { return (uint8_t)(argbColor >> 24); }
 };
 
 /**
