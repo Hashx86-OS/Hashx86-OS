@@ -272,6 +272,9 @@ void TerminalView::RedrawToCache() {
             c = '?';
             idx = (uint8_t)c - 32;
         }
+        if (idx < 0 || idx >= font->glyph_count || !font->font_glyphs) {
+            continue;
+        }
 
         int xadvance = font->font_glyphs[idx * 8 + 7];
 

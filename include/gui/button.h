@@ -29,6 +29,8 @@ public:
     bool IsPressed() const override;
 
 protected:
+    void EmitClickEvent();
+
     char* label;
     bool isPressed;
     bool isHovered = false;

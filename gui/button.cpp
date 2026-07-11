@@ -133,26 +133,7 @@ void Button::OnMouseUp(int32_t x, int32_t y, uint8_t) {
             return;
         }
 
-        Event* new_event = new Event{this->ID, ON_CLICK};
-        if (!new_event) {
-            HALT("CRITICAL: Failed to allocate button click event!\n");
-        }
-
-        if (!Desktop::activeInstance) {
-            delete new_event;
-            return;
-        }
-
-        EventHandler* handler = Desktop::activeInstance->getHandler(this->PID);
-        if (!handler) {
-            delete new_event;
-            return;
-        }
-
-        handler->eventQueue.Add(new_event);
-        if (g_scheduler && handler->thread) {
-            g_scheduler->WakeThread(handler->thread);
-        }
+        EmitClickEvent();
     }
 }
 
@@ -187,15 +168,19 @@ void Button::SetFontSize(int32_t px) {
 void Button::OnKeyDown(const char* key) {
     if (!enabled || !isVisible) return;
     if (key && (key[0] == '\r' || key[0] == '\n' || key[0] == ' ')) {
-        Event* new_event = new Event{this->ID, ON_CLICK};
-        if (!new_event) return;
-        if (!Desktop::activeInstance) { delete new_event; return; }
-        EventHandler* handler = Desktop::activeInstance->getHandler(this->PID);
-        if (!handler) { delete new_event; return; }
-        handler->eventQueue.Add(new_event);
-        if (g_scheduler && handler->thread) {
-            g_scheduler->WakeThread(handler->thread);
-        }
+        EmitClickEvent();
+    }
+}
+
+void Button::EmitClickEvent() {
+    Event* new_event = new Event{this->ID, ON_CLICK};
+    if (!new_event) return;
+    if (!Desktop::activeInstance) { delete new_event; return; }
+    EventHandler* handler = Desktop::activeInstance->getHandler(this->PID);
+    if (!handler) { delete new_event; return; }
+    handler->eventQueue.Add(new_event);
+    if (g_scheduler && handler->thread) {
+        g_scheduler->WakeThread(handler->thread);
     }
 }
 

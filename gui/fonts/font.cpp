@@ -378,6 +378,10 @@ void FontManager::LoadFile(File* file, FontType style, const char* ttfPath,
         return;
     }
 
+    if (file->size > 10 * 1024 * 1024) {
+        KDBG1("Font error: file too large (%u bytes, max 10MB)", file->size);
+        return;
+    }
     uint8_t* buffer = new uint8_t[file->size];
     if (!buffer) {
         HALT("CRITICAL: Failed to allocate TTF file buffer!\n");
@@ -486,6 +490,10 @@ bool FontManager::LazyLoadStyle(FontFile* ff, FontType style) {
 
     // Read entire TTF into buffer
     uint32_t fileSz = f->size;
+    if (fileSz > 10 * 1024 * 1024) {
+        KDBG1("LazyLoad: font too large (%u bytes, max 10MB)", fileSz);
+        f->Close(); delete f; return false;
+    }
     uint8_t* buffer = new uint8_t[fileSz];
     if (!buffer) { f->Close(); delete f; return false; }
     f->Seek(0);
