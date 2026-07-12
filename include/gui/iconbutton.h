@@ -25,6 +25,8 @@ public:
     void SetIconMode(IconMode mode);
     void SetIconFontSize(int32_t px);
 
+    bool IsIconButton() const override { return true; }
+
     void RedrawToCache() override;
     void SetIconWidth(int32_t w);
     void SetIconHeight(int32_t h);

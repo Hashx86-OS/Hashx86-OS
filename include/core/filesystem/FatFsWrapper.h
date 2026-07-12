@@ -29,7 +29,7 @@ public:
                  uint32_t partitionSizeSectors);
     ~FatFsWrapper();
 
-    File* Open(char* path) override;
+    File* Open(const char* path) override;
     uint32_t ReadStream(File* file, uint8_t* buffer, uint32_t length) override;
     void CloseFile(File* file) override;
     void ListRoot() override;
@@ -61,7 +61,7 @@ private:
     BYTE pdrv;
     SlotManager* slotMgr;
 
-    bool PathToFatFs(char* path, char* out, uint32_t outLen);
+    bool PathToFatFs(const char* path, char* out, uint32_t outLen);
 };
 
 #endif

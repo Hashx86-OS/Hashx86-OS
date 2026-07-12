@@ -4,8 +4,8 @@
    Permission is granted to use, modify, and / or redistribute at will.
 */
 
-#ifndef _STRING_H
-#define _STRING_H _STRING_H
+#ifndef PDCLIB_STRING_H
+#define PDCLIB_STRING_H PDCLIB_STRING_H
 
 #include <stddef.h>  /* size_t, NULL */
 

@@ -46,7 +46,7 @@ public:
 public:
     // Constructors matching Bitmap pattern
     Wav(File* file);
-    Wav(char* path);
+    Wav(const char* path);
     ~Wav();
 
     // Sends the audio to the global mixer

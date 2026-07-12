@@ -17,7 +17,7 @@ class FileSystem {
 public:
     virtual ~FileSystem() {}
 
-    virtual File* Open(char* path) = 0;
+    virtual File* Open(const char* path) = 0;
     virtual uint32_t ReadStream(File* file, uint8_t* buffer, uint32_t length) = 0;
     virtual void CloseFile(File* file) = 0;
     virtual void ListRoot() = 0;

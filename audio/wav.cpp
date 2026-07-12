@@ -21,7 +21,7 @@ Wav::Wav(File* file) {
     Load(file);
 }
 
-Wav::Wav(char* path) {
+Wav::Wav(const char* path) {
     this->valid = false;
     this->buffer = 0;
     this->length = 0;

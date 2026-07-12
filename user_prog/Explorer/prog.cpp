@@ -66,11 +66,11 @@ ExplorerApp::ExplorerApp() {
 
     // Toolbar buttons - left side
     btnUp = new IconButton(mainWindow, pad, toolbarY, 64, toolbarH, "fa-arrow-left", "");
-    btnUp->setIconFontSize(TINY);
+    btnUp->setIconFontSize(16);
     btnRefresh = new IconButton(mainWindow, pad + 72, toolbarY, 64, toolbarH, "fa-refresh", "");
-    btnRefresh->setIconFontSize(TINY);
+    btnRefresh->setIconFontSize(16);
     btnOpen = new IconButton(mainWindow, pad + 144, toolbarY, 64, toolbarH, "fa-folder-open", "");
-    btnOpen->setIconFontSize(TINY);
+    btnOpen->setIconFontSize(16);
 
     // Path label spans beside the buttons
     const int32_t btnEnd = pad + 144 + 64 + 6;

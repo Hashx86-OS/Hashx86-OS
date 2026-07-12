@@ -129,6 +129,8 @@ void Label::Recalc() {
                 w = parent->w - padding.l - padding.r;
                 h = parent->h - padding.t - padding.b;
             }
+            if ((int32_t)minWidth > 0 && w < (int32_t)minWidth) w = (int32_t)minWidth;
+            if ((int32_t)minHeight > 0 && h < (int32_t)minHeight) h = (int32_t)minHeight;
             if (newW != w || newH != h) {
                 if (cache) delete[] cache;
                 cache = nullptr;
@@ -150,7 +152,7 @@ void Label::Recalc() {
     }
 }
 
-void Label::SetFontSize(int32_t px) {
+void Label::setFontSize(int32_t px) {
     if (!FontManager::activeInstance) return;
     FontSize slot = Font::PixelToFontSlot(px);
     FontType type = this->font ? this->font->fontType : REGULAR;
@@ -163,17 +165,17 @@ void Label::SetFontSize(int32_t px) {
     MarkDirty();
 }
 
-void Label::SetColor(uint32_t argb) {
+void Label::setColor(uint32_t argb) {
     this->textColor = argb;
     MarkDirty();
 }
 
-void Label::SetBackground(uint32_t argb) {
+void Label::setBackground(uint32_t argb) {
     this->bgColor = argb;
     MarkDirty();
 }
 
-void Label::SetAlignment(HAlign ha, VAlign va) {
+void Label::setAlignment(HAlign ha, VAlign va) {
     this->hAlign = ha;
     this->vAlign = va;
     MarkDirty();

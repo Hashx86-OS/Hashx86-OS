@@ -130,7 +130,7 @@ void ListView::OnSpecialKeyDown(uint8_t key) {
             selectedIndex++;
             int contentH = h - LISTVIEW_HEADER_HEIGHT - 2;
             int visibleItems = contentH / itemHeight;
-            if (selectedIndex >= scrollOffset + visibleItems) {
+            if (visibleItems > 0 && selectedIndex >= scrollOffset + visibleItems) {
                 scrollOffset = selectedIndex - visibleItems + 1;
             }
             MarkDirty();

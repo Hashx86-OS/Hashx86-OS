@@ -22,10 +22,10 @@ public:
     void setText(const char* text);
     void setSize(FontSize size);
     void setType(FontType type);
-    void SetFontSize(int32_t px);
-    void SetColor(uint32_t argb);
-    void SetBackground(uint32_t argb);
-    void SetAlignment(HAlign ha, VAlign va);
+    void setFontSize(int32_t px);
+    void setColor(uint32_t argb);
+    void setBackground(uint32_t argb);
+    void setAlignment(HAlign ha, VAlign va);
     void RedrawToCache() override;
     void Recalc() override;
     bool IsLabel() const override {

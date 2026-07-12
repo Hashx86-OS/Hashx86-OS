@@ -387,7 +387,7 @@ void init_pci(FileSystem* boot_partition, DriverManager* driverManager) {
 
     // Only Proceed if Device Found
     if (dev != nullptr && dev->vendor_id != 0) {
-        char* BGAfilename = (char*)PATH_BGA_DRIVER;
+        const char* BGAfilename = PATH_BGA_DRIVER;
 
         KDBG1("BGA Hardware Detected (ID: %x:%x). Loading Driver... [%s]", dev->vendor_id,
               dev->device_id, BGAfilename);
@@ -455,7 +455,7 @@ void init_pci(FileSystem* boot_partition, DriverManager* driverManager) {
     dev = pciCheck->FindHardwareDevice(0x8086, 0x2415);
 
     if (dev != nullptr && dev->vendor_id != 0) {
-        char* driverName = (char*)PATH_AC97_DRIVER;
+        const char* driverName = PATH_AC97_DRIVER;
         KDBG1("Audio Hardware Detected. Loading... [%s]", driverName);
 
         File* drvFile = boot_partition->Open(driverName);
@@ -696,7 +696,7 @@ extern "C" void kernelMain(void* multiboot_structure, uint32_t magicnumber) {
         HALT("CRITICAL: Failed to allocate FontManager!\n");
     }
 
-    auto loadFontStyle = [&](char* path, FontType style, bool critical) {
+    auto loadFontStyle = [&](const char* path, FontType style, bool critical) {
         File* f = g_bootPartition->Open(path);
         if (!f || f->size == 0) {
             if (critical) {
@@ -713,20 +713,20 @@ extern "C" void kernelMain(void* multiboot_structure, uint32_t magicnumber) {
     };
 
     // Load only REGULAR fonts at boot. Bold/Italic variants are loaded on demand.
-    loadFontStyle((char*)PATH_SEGOEUI_FONT, REGULAR, true);
-    loadFontStyle((char*)PATH_CASCADIA_FONT, REGULAR, false);
+    loadFontStyle(PATH_SEGOEUI_FONT, REGULAR, true);
+    loadFontStyle(PATH_CASCADIA_FONT, REGULAR, false);
 
     // Load icon font (FontAwesome) — icon codepoints start in Unicode PUA range
     {
-        File* f = g_bootPartition->Open((char*)PATH_ICON_FONT);
+        File* f = g_bootPartition->Open(PATH_ICON_FONT);
         if (f && f->size > 0) {
             g_fManager->LoadFile(f, REGULAR, PATH_ICON_FONT, 0xF000, 128);
             f->Close();
             delete f;
-            KDBG1("Loaded icon font from %s", (char*)PATH_ICON_FONT);
+            KDBG1("Loaded icon font from %s", PATH_ICON_FONT);
         } else {
             if (f) { f->Close(); delete f; }
-            KDBG1("Icon font not found: %s", (char*)PATH_ICON_FONT);
+            KDBG1("Icon font not found: %s", PATH_ICON_FONT);
         }
     }
 
@@ -814,7 +814,7 @@ extern "C" void kernelMain(void* multiboot_structure, uint32_t magicnumber) {
     }
 
     if (g_AudioMixer) {
-        Wav* sound = new Wav((char*)PATH_BOOT_WAV);
+        Wav* sound = new Wav(PATH_BOOT_WAV);
         if (!sound) {
             HALT("CRITICAL: Failed to allocate Wav object for boot sound!\n");
         }

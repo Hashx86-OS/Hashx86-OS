@@ -27,7 +27,7 @@ void KernelSymbolTable::Load(FileSystem* fs, const char* path) {
     }
     symbolCount = 0;
     KDBG1("Loading map file: %s", path);
-    File* file = fs->Open((char*)path);
+    File* file = fs->Open(path);
     if (!file) {
         KDBG1("Failed to open %s", path);
         return;

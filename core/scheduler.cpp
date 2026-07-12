@@ -709,17 +709,10 @@ bool Scheduler::KillProcess(uint32_t pid) {
         _pager->SwitchDirectory(_pager->KernelPageDirectory);
     }
 
-    // Collect user-stack slot indices before TerminateThread destroys the TCBs.
-    // Recycling is deferred until the page-table sweep has freed the physical pages.
-    uint32_t stackSlots[256];
-    int slotCount = 0;
-    if (!target->isKernelProcess) {
-        target->threads.ForEach([&](ThreadControlBlock* t) {
-            if (t->stackSlotIdx != UINT32_MAX && slotCount < 256) {
-                stackSlots[slotCount++] = t->stackSlotIdx;
-            }
-        });
-    }
+    // All stack slot indices have already been collected in the process's
+    // deferredStackSlots array by TerminateThread.  Recycling is deferred
+    // until the page-table sweep has freed the physical pages.
+    int slotCount = target->deferredSlotCount;
 
     // Terminate all threads (removes from scheduler queues, frees kernel stacks)
     int tCount = target->threads.GetSize();
@@ -777,8 +770,9 @@ bool Scheduler::KillProcess(uint32_t pid) {
     // Recycle user-stack slots only after the page-table sweep has freed
     // the physical pages and cleared the PTEs.
     for (int i = 0; i < slotCount; i++) {
-        g_freeStackOffsets.Add(stackSlots[i]);
+        g_freeStackOffsets.Add(target->deferredStackSlots[i]);
     }
+    target->deferredSlotCount = 0;
 
     // RESOURCE CLEANUP END
 
@@ -805,6 +799,15 @@ void Scheduler::TerminateThread(ThreadControlBlock* thread) {
     thread->state = THREAD_STATE_TERMINATED;
     readyQueue.Remove([thread](ThreadControlBlock* t) { return t == thread; });
     blockedQueue.Remove([thread](ThreadControlBlock* t) { return t == thread; });
+
+    // Preserve the stack slot index on the parent process so KillProcess
+    // can recycle it after the page-table sweep.
+    if (thread->parent && thread->stackSlotIdx != UINT32_MAX) {
+        ProcessControlBlock* p = thread->parent;
+        if (p->deferredSlotCount < 256) {
+            p->deferredStackSlots[p->deferredSlotCount++] = thread->stackSlotIdx;
+        }
+    }
 
     // Remove from parent's thread list to prevent KillProcess from
     // iterating over a dangling pointer later.

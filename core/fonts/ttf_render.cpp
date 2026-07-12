@@ -6,8 +6,9 @@
 
 // Override stb_truetype macros — use fdlibm for math, kernel for memory
 static inline int stbtt_ifloor_impl(float x) { int i = (int)x; return (x < 0 && x != (float)i) ? i - 1 : i; }
+static inline int stbtt_iceil_impl(float x) { int i = (int)x; return (x > 0 && x != (float)i) ? i + 1 : i; }
 #define STBTT_ifloor(x)   (stbtt_ifloor_impl(x))
-#define STBTT_iceil(x)    ((int)((x) + 0.99999997f))
+#define STBTT_iceil(x)    (stbtt_iceil_impl(x))
 #define STBTT_sqrt(x)     sqrt(x)
 #define STBTT_pow(x,y)    pow(x,y)
 #define STBTT_fmod(x,y)   fmod(x,y)

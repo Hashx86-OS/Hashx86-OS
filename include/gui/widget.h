@@ -120,6 +120,9 @@ public:
     virtual bool IsTaskbar() const {
         return false;
     }
+    virtual bool IsIconButton() const {
+        return false;
+    }
 
     uint32_t GetColor() const { return argbColor; }
     void SetColor(uint32_t c) { argbColor = c; MarkDirty(); }

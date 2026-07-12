@@ -38,6 +38,10 @@ FatFsWrapper::FatFsWrapper(AdvancedTechnologyAttachment* hd, uint32_t partitionO
                            uint32_t partitionSizeSectors)
     : hd(hd), partitionOffset(partitionOffset), pdrv(pdrv), slotMgr(new SlotManager()) {
 
+    if (!slotMgr) {
+        HALT("CRITICAL: Failed to allocate FatFsSlotManager!\n");
+    }
+
     fatfs_init(pdrv, hd, partitionOffset, partitionSizeSectors);
     /* Mount as "0:" for pdrv=0, "1:" for pdrv=1, etc. */
     char mountPath[4] = "0:";
@@ -74,8 +78,8 @@ FatFsWrapper::~FatFsWrapper() {
 }
 
 /* Copy path to a local buffer with FatFs-compatible format */
-bool FatFsWrapper::PathToFatFs(char* path, char* out, uint32_t outLen) {
-    if (!path || !out || outLen == 0) return false;
+bool FatFsWrapper::PathToFatFs(const char* path, char* out, uint32_t outLen) {
+    if (!path || !out || outLen < 3) return false;
     /* Prepend drive prefix (e.g. "0:", "1:") so the path resolves on the correct volume */
     out[0] = '0' + pdrv;
     out[1] = ':';
@@ -86,11 +90,13 @@ bool FatFsWrapper::PathToFatFs(char* path, char* out, uint32_t outLen) {
     while (path[i] != 0 && j < outLen - 1) {
         out[j++] = path[i++];
     }
+    /* Check whether the entire source was consumed */
+    if (path[i] != 0) return false;
     out[j] = 0;
     return true;
 }
 
-File* FatFsWrapper::Open(char* path) {
+File* FatFsWrapper::Open(const char* path) {
     if (!path) return nullptr;
 
     char fatPath[256];

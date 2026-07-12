@@ -239,30 +239,30 @@ void IconButton::calculateMinSize() {
     }
 }
 
+static void reallocateCache(uint32_t*& cache, int32_t w, int32_t h) {
+    if (cache) delete[] cache;
+    cache = nullptr;
+    if (w > 0 && h > 0 && (size_t)w * (size_t)h / (size_t)w == (size_t)h) {
+        cache = new uint32_t[(size_t)w * (size_t)h]();
+    }
+}
+
 void IconButton::SetIconWidth(int32_t reqW) {
     int32_t minW = (int32_t)minWidth;
     this->w = (reqW < minW) ? minW : reqW;
-    if (cache) delete[] cache;
-    cache = nullptr;
-    if (w > 0 && h > 0 && (size_t)this->w * (size_t)this->h / (size_t)this->w == (size_t)this->h) {
-        cache = new uint32_t[this->w * this->h]();
-    }
+    reallocateCache(cache, this->w, this->h);
     MarkDirty();
 }
 
 void IconButton::SetIconHeight(int32_t reqH) {
     int32_t minH = (int32_t)minHeight;
     this->h = (reqH < minH) ? minH : reqH;
-    if (cache) delete[] cache;
-    cache = nullptr;
-    if (w > 0 && h > 0 && (size_t)this->w * (size_t)this->h / (size_t)this->w == (size_t)this->h) {
-        cache = new uint32_t[this->w * this->h]();
-    }
+    reallocateCache(cache, this->w, this->h);
     MarkDirty();
 }
 
 void IconButton::RedrawToCache() {
-    if (!NINA::activeInstance) {
+    if (!cache || !NINA::activeInstance) {
         isDirty = false;
         return;
     }

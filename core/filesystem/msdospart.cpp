@@ -57,6 +57,11 @@ void MSDOSPartitionTable::Initialize() {
     KDBG2("Partition 1: Start %d, Size %d", (int32_t)p1_start, (int32_t)p1_size);
     KDBG2("Partition 2: Start %d, Size %d", (int32_t)p2_start, (int32_t)p2_size);
 
+    if (p1_size < 128 || p2_size < 128) {
+        KDBG1("Error: Partition too small (need >=128 sectors, got %u and %u).", p1_size, p2_size);
+        return;
+    }
+
     // Create MBR — fully zero the entire structure before setting fields
     MasterBootRecord mbr;
     memset(&mbr, 0, sizeof(MasterBootRecord));
@@ -93,14 +98,18 @@ void MSDOSPartitionTable::Initialize() {
         // Partition 1 on pdrv=0
         fatfs_init(0, ata, p1_start, p1_size);
         FRESULT res = f_mkfs("0:", &opt, work, sizeof(work));
-        if (res != FR_OK)
+        if (res != FR_OK) {
             KDBG1("f_mkfs(pdrv=0) failed: %d", res);
+            return;
+        }
 
         // Partition 2 on pdrv=1
         fatfs_init(1, ata, p2_start, p2_size);
         res = f_mkfs("1:", &opt, work, sizeof(work));
-        if (res != FR_OK)
+        if (res != FR_OK) {
             KDBG1("f_mkfs(pdrv=1) failed: %d", res);
+            return;
+        }
     }
 
     KDBG1("Initialization Complete.");

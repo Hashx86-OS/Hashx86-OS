@@ -789,16 +789,18 @@ int32_t SyscallHandlers::Handle_sys_getdents(uint32_t fd, struct linux_dirent* d
 
     while (bufOff + sizeof(KernelDirentHeader) <= (uint32_t)bytesRead) {
         KernelDirentHeader* hdr = (KernelDirentHeader*)(buffer + bufOff);
-        if (hdr->d_reclen == 0 || hdr->d_reclen > (uint32_t)bytesRead - bufOff) break;
+        if (hdr->d_reclen < sizeof(KernelDirentHeader) + 1 ||
+            hdr->d_reclen > (uint32_t)bytesRead - bufOff) break;
 
-        // Calculate name length from record
-        uint32_t nameLen = hdr->d_reclen - sizeof(KernelDirentHeader);
-        if (nameLen == 0) break;
-        nameLen--;  // exclude null terminator
-
+        // Locate the NUL terminator within the payload; derive nameLen from it.
+        uint32_t payloadLen = hdr->d_reclen - sizeof(KernelDirentHeader);
         const char* name = hdr->d_name;
+        uint32_t nameLen = 0;
+        while (nameLen < payloadLen && name[nameLen] != '\0') nameLen++;
+
         // Skip . and .. entries
-        if (name[0] == '.' && (name[1] == 0 || (name[1] == '.' && name[2] == 0))) {
+        if (nameLen == 0 ||
+            (name[0] == '.' && (nameLen == 1 || (name[1] == '.' && nameLen == 2)))) {
             bufOff += hdr->d_reclen;
             continue;
         }
@@ -809,6 +811,7 @@ int32_t SyscallHandlers::Handle_sys_getdents(uint32_t fd, struct linux_dirent* d
         if (offsetWritten + reclen > count) {
             // Roll back file position to re-read this entry next time
             dirFile->position -= (bytesRead - bufOff);
+            if (offsetWritten == 0) return -1;
             return offsetWritten;
         }
 
@@ -816,6 +819,7 @@ int32_t SyscallHandlers::Handle_sys_getdents(uint32_t fd, struct linux_dirent* d
         uint8_t* direntBuffer = (uint8_t*)kmalloc(reclen);
         if (!direntBuffer) {
             dirFile->position -= (bytesRead - bufOff);
+            if (offsetWritten == 0) return -1;
             return offsetWritten;
         }
         memset(direntBuffer, 0, reclen);
@@ -824,8 +828,8 @@ int32_t SyscallHandlers::Handle_sys_getdents(uint32_t fd, struct linux_dirent* d
         k_dirent->d_off = dirFile->position;
         k_dirent->d_reclen = reclen;
 
-        // Copy name into the flexible array
-        for (uint32_t j = 0; j <= nameLen; j++) {
+        // Copy name (without padding) into the flexible array
+        for (uint32_t j = 0; j < nameLen; j++) {
             k_dirent->d_name[j] = name[j];
         }
 
@@ -834,6 +838,7 @@ int32_t SyscallHandlers::Handle_sys_getdents(uint32_t fd, struct linux_dirent* d
 
         if (!copyOk) {
             dirFile->position -= (bytesRead - bufOff);
+            if (offsetWritten == 0) return -1;
             return offsetWritten;
         }
 

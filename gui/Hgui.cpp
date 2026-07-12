@@ -388,34 +388,34 @@ int32_t HguiHandler::HandleIconButton(CPUState* cpu, const WidgetData* _data) {
         HguiWidgets.Add(_widget);
         return (int32_t)_newID;
     } else if ((uint32_t)cpu->ebx == SET_ICON) {
-        IconButton* widget = FindOwnedWidget<IconButton>(_data->param0, proc->pid, &Widget::IsButton);
+        IconButton* widget = FindOwnedWidget<IconButton>(_data->param0, proc->pid, &Widget::IsIconButton);
         if (!widget) return -1;
         if (!CopyUserString(proc, _data->param5, iconBuf, sizeof(iconBuf))) return -1;
         widget->SetIcon(iconBuf);
         return 1;
     } else if ((uint32_t)cpu->ebx == SET_TEXT) {
-        IconButton* widget = FindOwnedWidget<IconButton>(_data->param0, proc->pid, &Widget::IsButton);
+        IconButton* widget = FindOwnedWidget<IconButton>(_data->param0, proc->pid, &Widget::IsIconButton);
         if (!widget) return -1;
         if (!CopyUserString(proc, _data->param5, labelBuf, sizeof(labelBuf))) return -1;
         widget->SetLabel(labelBuf);
         return 1;
     } else if ((uint32_t)cpu->ebx == SET_FONT_SIZE) {
-        IconButton* widget = FindOwnedWidget<IconButton>(_data->param0, proc->pid, &Widget::IsButton);
+        IconButton* widget = FindOwnedWidget<IconButton>(_data->param0, proc->pid, &Widget::IsIconButton);
         if (!widget) return -1;
         widget->SetFontSize((int32_t)_data->param1);
         return 1;
     } else if ((uint32_t)cpu->ebx == SET_ICON_FONT_SIZE) {
-        IconButton* widget = FindOwnedWidget<IconButton>(_data->param0, proc->pid, &Widget::IsButton);
+        IconButton* widget = FindOwnedWidget<IconButton>(_data->param0, proc->pid, &Widget::IsIconButton);
         if (!widget) return -1;
         widget->SetIconFontSize((int32_t)_data->param1);
         return 1;
     } else if ((uint32_t)cpu->ebx == SET_WIDTH) {
-        IconButton* widget = FindOwnedWidget<IconButton>(_data->param0, proc->pid, &Widget::IsButton);
+        IconButton* widget = FindOwnedWidget<IconButton>(_data->param0, proc->pid, &Widget::IsIconButton);
         if (!widget) return -1;
         widget->SetIconWidth((int32_t)_data->param1);
         return 1;
     } else if ((uint32_t)cpu->ebx == SET_HEIGHT) {
-        IconButton* widget = FindOwnedWidget<IconButton>(_data->param0, proc->pid, &Widget::IsButton);
+        IconButton* widget = FindOwnedWidget<IconButton>(_data->param0, proc->pid, &Widget::IsIconButton);
         if (!widget) return -1;
         widget->SetIconHeight((int32_t)_data->param1);
         return 1;
@@ -477,21 +477,21 @@ int32_t HguiHandler::HandleLabel(CPUState* cpu, const WidgetData* _data) {
         Label* widget = FindOwnedWidget<Label>(_data->param0, proc->pid, &Widget::IsLabel);
         if (!widget) return -1;
 
-        widget->SetColor((uint32_t)_data->param1);
+        widget->setColor((uint32_t)_data->param1);
 
         return 1;
     } else if ((uint32_t)cpu->ebx == SET_BACKGROUND) {
         Label* widget = FindOwnedWidget<Label>(_data->param0, proc->pid, &Widget::IsLabel);
         if (!widget) return -1;
 
-        widget->SetBackground((uint32_t)_data->param1);
+        widget->setBackground((uint32_t)_data->param1);
 
         return 1;
     } else if ((uint32_t)cpu->ebx == SET_ALIGNMENT) {
         Label* widget = FindOwnedWidget<Label>(_data->param0, proc->pid, &Widget::IsLabel);
         if (!widget) return -1;
 
-        widget->SetAlignment((HAlign)_data->param1, (VAlign)_data->param2);
+        widget->setAlignment((HAlign)_data->param1, (VAlign)_data->param2);
 
         return 1;
     }

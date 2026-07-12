@@ -80,9 +80,6 @@ void InputBox::RedrawToCache() {
     NINA::activeInstance->DrawString(cache, w, h, 2, 2, text, font,
                                      isFocused ? INPUT_TEXT_ACTIVE : INPUT_TEXT_NORMAL);
 
-    // Draw cursor at cursorPos
-    // int cursorX = font->GetTextWidth(text, cursorPos);
-    // NINA::activeInstance->DrawLine(cache, w, h, 2 + cursorX, 2, 2 + cursorX, h - 2, 0xFFFFFFFF);
 
     isDirty = false;
 }

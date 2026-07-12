@@ -390,9 +390,15 @@ void NINA::DrawCharacter(uint32_t* buffer, int32_t bufferWidth, int32_t bufferHe
     uint32_t glyphPixels = (uint32_t)(charWidth * charHeight);
     if (glyphPixels == 0 || glyphPixels > maxGlyphPixels) return;
 
-    // Allocate cropped bitmap
-    uint32_t* croppedBitmap = new uint32_t[glyphPixels];
-    if (!croppedBitmap) return;
+    // Use a static scratch buffer instead of per-glyph allocation
+    static uint32_t* s_croppedBitmap = nullptr;
+    static uint32_t s_croppedBitmapSize = 0;
+    if (s_croppedBitmapSize < glyphPixels) {
+        delete[] s_croppedBitmap;
+        s_croppedBitmap = new uint32_t[glyphPixels];
+        s_croppedBitmapSize = glyphPixels;
+    }
+    uint32_t* croppedBitmap = s_croppedBitmap;
 
     for (int row = 0; row < charHeight; ++row) {
         for (int col = 0; col < charWidth; ++col) {
@@ -416,7 +422,6 @@ void NINA::DrawCharacter(uint32_t* buffer, int32_t bufferWidth, int32_t bufferHe
     // Apply offsets from glyph table
     DrawBitmap(buffer, bufferWidth, bufferHeight, x + xoffset, y + yoffset, croppedBitmap,
                charWidth, charHeight);
-    delete[] croppedBitmap;
 }
 
 void NINA::DrawString(uint32_t* buffer, int32_t bufferWidth, int32_t bufferHeight, int32_t x,
@@ -435,10 +440,10 @@ void NINA::DrawString(uint32_t* buffer, int32_t bufferWidth, int32_t bufferHeigh
             continue;
         }
 
-        // Clamp unsupported characters
+        // Clamp unsupported characters (subtraction-based to avoid overflow)
         uint32_t next_c = (uint8_t)str[i + 1];
-        if (c < font->firstChar || c >= font->firstChar + font->glyph_count) {
-            c = (font->firstChar <= '?' && '?' < font->firstChar + font->glyph_count) ? '?' : font->firstChar;
+        if (c < font->firstChar || c - font->firstChar >= (uint32_t)font->glyph_count) {
+            c = (font->firstChar <= '?' && (uint32_t)('?' - font->firstChar) < (uint32_t)font->glyph_count) ? '?' : font->firstChar;
         }
 
         int16_t* g = &font->font_glyphs[(c - font->firstChar) * 8];

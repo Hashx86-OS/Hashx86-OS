@@ -77,6 +77,7 @@ uint32_t Font::getStringLength(const char* str) {
 
 uint32_t Font::MeasureString(const char* str) {
     uint32_t w = getStringLength(str);
+    if (w > 0xFFFF) w = 0xFFFF;
     uint16_t h = getLineHeight();
     return (w << 16) | h;
 }
@@ -515,7 +516,7 @@ bool FontManager::LazyLoadStyle(FontFile* ff, FontType style) {
     bool anyRasterized = false;
     for (int slot = 0; slot < 5; slot++) {
         FontData* data = new FontData{};
-        if (TTF_RasterizeFont(buffer, fileSz, slot, (int)style, data)) {
+        if (TTF_RasterizeFont(buffer, fileSz, slot, (int)style, data, ff->firstChar, ff->numChars)) {
             ff->font_data_list[slot][(int)style] = data;
             anyRasterized = true;
             KDBG1("LazyLoad: slot=%d style=%d from %s", slot, (int)style, variantPath);

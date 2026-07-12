@@ -12,14 +12,22 @@ IconButton::IconButton(Widget* parent, int32_t x, int32_t y, uint32_t w, uint32_
                        const char* iconName)
     : Button(parent, x, y, w, h, "") {
     WidgetData data = {parent->ID, x, y, w, h, iconName, (char*)"", nullptr};
-    this->ID = HguiAPI(ICON_BUTTON, CREATE, (void*)&data);
+    uint32_t newID = HguiAPI(ICON_BUTTON, CREATE, (void*)&data);
+    if (newID != UINT32_MAX) {
+        HguiAPI(BUTTON, DELETE, (void*)&this->ID);
+        this->ID = newID;
+    }
 }
 
 IconButton::IconButton(Widget* parent, int32_t x, int32_t y, uint32_t w, uint32_t h,
                        const char* iconName, const char* labelText)
     : Button(parent, x, y, w, h, labelText ? labelText : "") {
     WidgetData data = {parent->ID, x, y, w, h, iconName, (char*)(labelText ? labelText : ""), nullptr};
-    this->ID = HguiAPI(ICON_BUTTON, CREATE, (void*)&data);
+    uint32_t newID = HguiAPI(ICON_BUTTON, CREATE, (void*)&data);
+    if (newID != UINT32_MAX) {
+        HguiAPI(BUTTON, DELETE, (void*)&this->ID);
+        this->ID = newID;
+    }
 }
 
 IconButton::~IconButton() {}

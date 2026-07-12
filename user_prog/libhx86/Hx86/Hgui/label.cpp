@@ -40,7 +40,7 @@ bool Label::setColor(uint32_t argb) {
 
 // Convert pixel size to FontSize enum (matches Font::PixelToFontSlot)
 static FontSize PxToFontSlot(int32_t px) {
-    if (px <= 17) return TINY;
+    if (px <= 18) return TINY;
     if (px <= 22) return SMALL;
     if (px <= 27) return MEDIUM;
     if (px <= 34) return LARGE;
