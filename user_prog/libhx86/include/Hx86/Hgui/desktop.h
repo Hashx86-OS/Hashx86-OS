@@ -1,5 +1,5 @@
-#ifndef Desktop_H
-#define Desktop_H
+#ifndef DESKTOP_H
+#define DESKTOP_H
 
 #include <Hx86/Hgui/eventHandler.h>
 #include <Hx86/Hgui/widget.h>
@@ -11,8 +11,8 @@ public:
     static Desktop* activeInstance;
     Desktop();
     ~Desktop();
-    void innitEventHandler();
+    void initEventHandler();
     void RestoreFocus();
 };
 
-#endif  // Desktop_H
+#endif  // DESKTOP_H

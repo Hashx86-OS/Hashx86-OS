@@ -5,7 +5,7 @@
 
 typedef enum {
     ON_CLICK = 0x0,
-    ON_KEYPREASS = 0x1,
+    ON_KEYPRESS = 0x1,
     ON_WINDOW_CLOSE = 0x2,
 } EVENT_TYPE;
 

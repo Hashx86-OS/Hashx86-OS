@@ -8,6 +8,7 @@
 
 #define KDBG_COMPONENT "WAV"
 #include <audio/wav.h>
+#include <core/globals.h>
 
 // External reference to the mixer created in kernel.cpp
 extern AudioMixer* g_AudioMixer;
@@ -20,20 +21,19 @@ Wav::Wav(File* file) {
     Load(file);
 }
 
-Wav::Wav(char* path) {
+Wav::Wav(const char* path) {
     this->valid = false;
     this->buffer = 0;
     this->length = 0;
     this->sampleRate = 0;
 
     // Get the active filesystem
-    if (!MSDOSPartitionTable::activeInstance ||
-        !MSDOSPartitionTable::activeInstance->partitions[0]) {
+    if (!g_bootPartition) {
         KDBG1("Error: File system not ready.");
         return;
     }
 
-    FAT32* fs = MSDOSPartitionTable::activeInstance->partitions[0];
+    FileSystem* fs = g_bootPartition;
     File* file = fs->Open(path);
 
     if (file == 0) {

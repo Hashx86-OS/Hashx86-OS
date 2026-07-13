@@ -10,7 +10,7 @@
 #include <core/gdt.h>
 #include <core/tss.h>
 #include <debug.h>
-#include <utils/string.h>
+#include <string.h>
 
 extern "C" void tss_flush();
 

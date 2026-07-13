@@ -7,7 +7,7 @@
  */
 
 #define KDBG_COMPONENT "FILE"
-#include <core/filesystem/FAT32.h>
+#include <core/filesystem/FileSystem.h>
 #include <core/filesystem/File.h>
 #include <core/process_types.h>
 
@@ -59,8 +59,10 @@ int File::Write(uint8_t* buffer, uint32_t length) {
 }
 
 void File::Close() {
-    KDBG1("Close called on base File object - no backend registered; cleanup skipped");
-    this->filesystem = 0;  // Prevent double-call from destructor
+    if (this->filesystem) {
+        this->filesystem->CloseFile(this);
+        this->filesystem = 0;
+    }
 }
 
 int32_t AllocateFd(ProcessControlBlock* pcb, File* file) {

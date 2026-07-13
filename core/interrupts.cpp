@@ -7,10 +7,11 @@
  */
 
 #define KDBG_COMPONENT "IDT"
+#include <core/filesystem/Paths.h>
 #include <core/CrashReporter.h>
 #include <core/Iguard.h>
 #include <core/KernelSymbolResolver.h>
-#include <core/filesystem/FAT32.h>
+#include <core/filesystem/FileSystem.h>
 #include <core/interrupts.h>
 #include <gui/Hgui.h>
 
@@ -369,8 +370,7 @@ uint32_t InterruptManager::DohandleException(uint8_t interruptNumber, uint32_t e
         if (g_GraphicsDriver_font) {
             // PANIC
             g_GraphicsDriver->FillRectangle(0, 0, GUI_SCREEN_WIDTH, GUI_SCREEN_HEIGHT, 0x0);
-            char* panicImageName = (char*)"BITMAPS/PANIC.BMP";
-            Bitmap* panicImg = new Bitmap(panicImageName);
+            Bitmap* panicImg = new Bitmap(PATH_PANIC_BMP);
             if (panicImg && panicImg->IsValid()) {
                 g_GraphicsDriver->DrawBitmap(100, 200, panicImg->GetBuffer(), panicImg->GetWidth(),
                                              panicImg->GetHeight());

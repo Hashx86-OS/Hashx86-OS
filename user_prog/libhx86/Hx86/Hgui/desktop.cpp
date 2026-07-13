@@ -45,7 +45,7 @@ static void DispatchKeyToFocused(uint8_t scancode, bool shiftPressed) {
 Desktop::Desktop() : CompositeWidget(0, 0, 0, 1, 1) {
     activeInstance = this;
     this->ID = 0;
-    this->innitEventHandler();
+    this->initEventHandler();
 }
 
 Desktop::~Desktop() {}
@@ -70,7 +70,7 @@ void EventHandlerHGUI(void* arg) {
 
         if (ret >= 0) {
             uint32_t widgetID = (ret >> 16);
-            uint32_t event = (EVENT_TYPE)ret & 0xFFFF;
+            EVENT_TYPE event = (EVENT_TYPE)(ret & 0xFFFF);
             // printf("Widget Id : %d, Event Id : %d\n", widgetID, event);
 
             switch (event) {
@@ -133,7 +133,7 @@ void EventHandlerHGUI(void* arg) {
     }
 }
 
-void Desktop::innitEventHandler() {
+void Desktop::initEventHandler() {
     uint32_t eventTid = syscall_register_event_handler(EventHandlerHGUI, nullptr);
     printf("[PROG] : GUI event handler thread TID : %d\n", eventTid);
 }

@@ -8,15 +8,16 @@
 
 #define KDBG_COMPONENT "GUI:TERMINALVIEW"
 #include <gui/desktop.h>
-#include <gui/fonts/vga.h>
 #include <gui/terminalview.h>
+#include <gui/fonts/font.h>
+#include <gui/renderer/nina.h>
 #include <utils/linkedList.h>
 
 TerminalView::TerminalView(Widget* parent, int32_t x, int32_t y, int32_t w, int32_t h,
                            const char* text)
     : Widget(parent, x, y, w, h),
       text(nullptr),
-      fontSize(TINY),
+      fontSize(SMALL),
       scrollTotal(0),
       scrollVisible(0),
       scrollOffset(0),
@@ -24,36 +25,16 @@ TerminalView::TerminalView(Widget* parent, int32_t x, int32_t y, int32_t w, int3
       isDraggingThumb(false),
       dragStartY(0),
       dragStartOffset(0) {
+    if (FontManager::activeInstance) {
+        font = FontManager::activeInstance->getFontByIndex(1, SMALL, REGULAR);
+        if (!font) font = FontManager::activeInstance->getNewFont(SMALL, REGULAR);
+    }
     setText(text ? text : "");
 }
 
 TerminalView::~TerminalView() {
     if (text) delete[] text;
-}
-
-int TerminalView::GlyphScale() const {
-    switch (fontSize) {
-        case TINY:
-            return 1;
-        case SMALL:
-            return 1;
-        case MEDIUM:
-            return 2;
-        case LARGE:
-            return 2;
-        case XLARGE:
-            return 3;
-        default:
-            return 1;
-    }
-}
-
-int TerminalView::GlyphAdvance() const {
-    return 8 * GlyphScale();
-}
-
-int TerminalView::LineAdvance() const {
-    return (8 * GlyphScale()) + (2 * GlyphScale());
+    if (font) delete font;
 }
 
 void TerminalView::PutPixel(int32_t px, int32_t py, uint32_t color) {
@@ -61,25 +42,9 @@ void TerminalView::PutPixel(int32_t px, int32_t py, uint32_t color) {
     cache[py * w + px] = color;
 }
 
-void TerminalView::DrawGlyph(int32_t x, int32_t y, char c, uint32_t color) {
-    const uint8_t* glyph = GetGlyph(c);
-    int scale = GlyphScale();
-
-    for (int row = 0; row < 8; row++) {
-        uint8_t bits = glyph[row];
-        for (int col = 0; col < 8; col++) {
-            if ((bits & (1u << (7 - col))) == 0) continue;
-
-            int px = x + col * scale;
-            int py = y + row * scale;
-
-            for (int sy = 0; sy < scale; sy++) {
-                for (int sx = 0; sx < scale; sx++) {
-                    PutPixel(px + sx, py + sy, color);
-                }
-            }
-        }
-    }
+void TerminalView::DrawCharacter(char c, int32_t x, int32_t y, uint32_t color) {
+    if (!font || !NINA::activeInstance) return;
+    NINA::activeInstance->DrawCharacter(cache, w, h, x, y, c, font, color);
 }
 
 void TerminalView::setText(const char* newText) {
@@ -102,8 +67,26 @@ void TerminalView::setText(const char* newText) {
     MarkDirty();
 }
 
+void TerminalView::SetFontSize(int32_t px) {
+    if (!FontManager::activeInstance) return;
+    FontSize slot = Font::PixelToFontSlot(px);
+    FontType type = this->font ? this->font->fontType : REGULAR;
+    Font* newFont = FontManager::activeInstance->getNewFont(slot, type);
+    if (!newFont) return;
+    delete this->font;
+    this->font = newFont;
+    this->fontSize = slot;
+    MarkDirty();
+}
+
 void TerminalView::setSize(FontSize size) {
-    if (fontSize == size) return;
+    if (fontSize == size || !font || !FontManager::activeInstance) return;
+    FontType type = (FontType)font->fontType;
+    Font* newFont = FontManager::activeInstance->getFontByIndex(1, size, type);
+    if (!newFont) newFont = FontManager::activeInstance->getNewFont(size, type);
+    if (!newFont) return;
+    delete font;
+    font = newFont;
     fontSize = size;
     MarkDirty();
 }
@@ -202,10 +185,10 @@ void TerminalView::DrawScrollBar() {
 
     if (barH <= (btnH * 2 + 2)) return;
 
-    uint32_t border = LISTVIEW_BORDER_COLOR;
+    uint32_t border = LISTVIEW_BORDER;
     uint32_t bg = LISTVIEW_SCROLLBAR_BG;
     uint32_t thumb = LISTVIEW_SCROLLBAR_THUMB;
-    uint32_t arrow = LABEL_TEXT_COLOR_NORMAL;
+    uint32_t arrow = LABEL_TEXT_NORMAL;
 
     NINA::activeInstance->FillRectangle(cache, w, h, barX, barY, barW, barH, bg);
     NINA::activeInstance->DrawRectangle(cache, w, h, barX, barY, barW, barH, border);
@@ -240,28 +223,30 @@ void TerminalView::DrawScrollBar() {
 
 void TerminalView::RedrawToCache() {
     if (!cache || w <= 0 || h <= 0) return;
+    if (!NINA::activeInstance) {
+        isDirty = false;
+        return;
+    }
     memset(cache, 0, sizeof(uint32_t) * w * h);
 
-    NINA::activeInstance->FillRectangle(cache, w, h, 0, 0, w, h, LISTVIEW_BG_COLOR);
-    NINA::activeInstance->DrawRectangle(cache, w, h, 0, 0, w, h, LISTVIEW_BORDER_COLOR);
+    NINA::activeInstance->FillRectangle(cache, w, h, 0, 0, w, h, LISTVIEW_BG);
+    NINA::activeInstance->DrawRectangle(cache, w, h, 0, 0, w, h, LISTVIEW_BORDER);
 
     DrawScrollBar();
+
+    if (!text || !font) {
+        isDirty = false;
+        return;
+    }
 
     const int padX = 4;
     const int padY = 2;
     const int barReserve = 16;
+    int lineHeight = font->getLineHeight();
     int penX = padX;
     int penY = padY;
-
-    int advX = GlyphAdvance();
-    int advY = LineAdvance();
-    int maxX = w - barReserve - padX - advX;
-    int maxY = h - padY - (8 * GlyphScale());
-
-    if (!text) {
-        isDirty = false;
-        return;
-    }
+    int maxX = w - barReserve - padX;
+    int maxY = h - padY;
 
     // Skip lines according to scrollOffset (count newlines)
     int skippedLines = 0;
@@ -276,19 +261,31 @@ void TerminalView::RedrawToCache() {
 
         if (c == '\n') {
             penX = padX;
-            penY += advY;
+            penY += lineHeight;
             if (penY > maxY) break;
             continue;
         }
 
+        // Clamp to supported range
+        int idx = (uint8_t)c - 32;
+        if (idx < 0 || idx >= font->glyph_count) {
+            c = '?';
+            idx = (uint8_t)c - 32;
+        }
+        if (idx < 0 || idx >= font->glyph_count || !font->font_glyphs) {
+            continue;
+        }
+
+        int xadvance = font->font_glyphs[idx * 8 + 7];
+
         if (penX > maxX) {
             penX = padX;
-            penY += advY;
+            penY += lineHeight;
             if (penY > maxY) break;
         }
 
-        DrawGlyph(penX, penY, c, LABEL_TEXT_COLOR_NORMAL);
-        penX += advX;
+        DrawCharacter(c, penX, penY, LABEL_TEXT_NORMAL);
+        penX += xadvance;
     }
 
     isDirty = false;

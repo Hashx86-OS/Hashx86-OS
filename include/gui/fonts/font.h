@@ -35,6 +35,8 @@ struct FontData {
     uint16_t glyph_count;
     uint16_t kerning_count;
 
+    uint32_t firstChar;  // starting codepoint for glyph array indexing
+
     uint32_t* atlas;    // atlas ARGB pixels
     int16_t* glyphs;    // glyph metrics (glyph_count * 8)
     int16_t* kernings;  // kerning pairs (kerning_count * 3)
@@ -52,6 +54,9 @@ private:
 public:
     FontFile();
     ~FontFile();
+    char filePath[128] = {};  // source TTF path (empty if loaded from archive)
+    int firstChar = 32;  // starting codepoint for this font's glyph range
+    int numChars = 95;   // number of glyphs loaded
 };
 
 // -----------------------------
@@ -77,11 +82,21 @@ public:
 
     uint8_t fontSize;   // chosen size
     FontType fontType;  // chosen style
+    uint32_t firstChar;  // starting codepoint for glyph indexing
 
     uint32_t getStringLength(const char* str);
+    uint32_t MeasureString(const char* str);
     void setType(FontType type);
     void setSize(FontSize size);
     uint16_t getLineHeight();
+
+    static inline FontSize PixelToFontSlot(int32_t px) {
+        if (px <= 18) return TINY;
+        if (px <= 22) return SMALL;
+        if (px <= 27) return MEDIUM;
+        if (px <= 34) return LARGE;
+        return XLARGE;
+    }
 
 private:
     FontFile* sourceFile;  // reference to loaded data
@@ -98,11 +113,21 @@ public:
     static FontManager* activeInstance;
 
     void LoadFile(uint32_t mod_start, uint32_t mod_end);
-    void LoadFile(File* file);
+    void LoadFile(File* file, FontType style, const char* ttfPath = nullptr,
+                  int firstChar = 32, int numChars = 95);
     Font* getNewFont(FontSize size = SMALL, FontType type = REGULAR);
+    Font* getFontByIndex(uint32_t index, FontSize size = SMALL, FontType type = REGULAR);
+    Font* getFontByFilePath(const char* path, FontSize size = SMALL, FontType type = REGULAR);
 
 private:
     LinkedList<FontFile*>* font_list;
+    bool LazyLoadStyle(FontFile* ff, FontType style);  // load TTF variant on demand
 };
+
+// TTF rasterizer interface — returns true and fills outData on success
+struct FontData;
+bool TTF_RasterizeFont(const uint8_t* ttfData, uint32_t ttfSize,
+                        int sizeSlot, int styleSlot, FontData* outData,
+                        int firstChar = 32, int numChars = 95);
 
 #endif  // FONT_H

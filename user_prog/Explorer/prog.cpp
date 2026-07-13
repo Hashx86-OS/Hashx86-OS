@@ -30,9 +30,9 @@ private:
     Label* pathLabel;
     Label* statusLabel;
     HListView* fileList;
-    Button* btnUp;
-    Button* btnRefresh;
-    Button* btnOpen;
+    IconButton* btnUp;
+    IconButton* btnRefresh;
+    IconButton* btnOpen;
 
 public:
     ExplorerApp();
@@ -64,14 +64,18 @@ ExplorerApp::ExplorerApp() {
     mainWindow = new Window(desktop, 120, 300, winW, winH);
     mainWindow->setWindowTitle("Explorer");
 
-    // Path bar spanning content width, inside toolbar row
-    pathLabel = new Label(mainWindow, pad + 260, toolbarY + 2, contentW - 260, 20, "/");
-    pathLabel->setSize(SMALL);
-
     // Toolbar buttons - left side
-    btnUp = new Button(mainWindow, pad, toolbarY, 70, toolbarH, "Up");
-    btnRefresh = new Button(mainWindow, pad + 78, toolbarY, 90, toolbarH, "Refresh");
-    btnOpen = new Button(mainWindow, pad + 176, toolbarY, 70, toolbarH, "Open");
+    btnUp = new IconButton(mainWindow, pad, toolbarY, 64, toolbarH, "fa-arrow-left", "");
+    btnUp->setIconFontSize(16);
+    btnRefresh = new IconButton(mainWindow, pad + 72, toolbarY, 64, toolbarH, "fa-refresh", "");
+    btnRefresh->setIconFontSize(16);
+    btnOpen = new IconButton(mainWindow, pad + 144, toolbarY, 64, toolbarH, "fa-folder-open", "");
+    btnOpen->setIconFontSize(16);
+
+    // Path label spans beside the buttons
+    const int32_t btnEnd = pad + 144 + 64 + 6;
+    pathLabel = new Label(mainWindow, btnEnd, toolbarY + 2, contentW - (btnEnd - pad), 20, "/");
+    pathLabel->setSize(SMALL);
 
     // File list view - fills the main content area
     fileList = new HListView(mainWindow, pad, listY, contentW, listH);
@@ -163,9 +167,9 @@ int ExplorerApp::loadDirectory(const char* path) {
 bool ExplorerApp::isExecutable(const char* name) {
     int len = strlen(name);
     if (len < 5) return false;
-    // Check for .BIN extension (Only need to check for Capital letters)
-    if ((name[len - 4] == '.') && (name[len - 3] == 'B') && (name[len - 2] == 'I') &&
-        (name[len - 1] == 'N')) {
+    // Check for .BIN extension (case-insensitive)
+    char c1 = name[len - 3] | 0x20, c2 = name[len - 2] | 0x20, c3 = name[len - 1] | 0x20;
+    if ((name[len - 4] == '.') && (c1 == 'b') && (c2 == 'i') && (c3 == 'n')) {
         return true;
     }
     return false;

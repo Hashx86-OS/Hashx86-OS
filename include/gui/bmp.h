@@ -34,7 +34,7 @@ struct BitmapInfoHeader {
 class Bitmap {
 public:
     // Takes a File object that is already OPEN
-    Bitmap(char* fileName);
+    Bitmap(const char* fileName);
     Bitmap(File* file);
     Bitmap(int width, int height, uint32_t color);
     ~Bitmap();

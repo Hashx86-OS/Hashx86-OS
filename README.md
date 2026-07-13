@@ -33,7 +33,7 @@ This project focuses on low-level system development, implementing core operatin
 - GUI performance optimization using draw caching
 - Support for dynamic resolution switching via dynamic drivers
 - HDD driver implementation
-- FAT32 filesystem support
+- FAT32 filesystem support (via FatFs R0.16)
 - DMA / PCI driver framework
 - Audio driver support
 - Task State Segment (TSS) integration
@@ -178,7 +178,13 @@ This project wouldn’t have been possible without the help, guidance and inspir
 
 ## 🎨 Credits
 
-* **Desktop Wallpaper:** "Iceland, Beach, Ice image" by **Elisabetta_Miele** on [Pixabay](https://pixabay.com/photos/iceland-beach-ice-frost-sunset-9056229/)
+* **FatFs R0.16:** Generic FAT Filesystem Module by **ChaN** on [elm-chan.org](https://elm-chan.org/fsw/ff/)
+
+* **stb_truetype.h:** Single-header TTF rasterizer by **Sean Barrett** (public domain) — [github.com/nothings/stb](https://github.com/nothings/stb)
+
+* **Sun fdlibm:** Freely Distributable LIBM by **Sun Microsystems** (public domain) — [netlib.org/fdlibm](https://www.netlib.org/fdlibm/)
+
+* **PDCLib:** Public Domain C Library by **the PDCLib contributors** (CC0) — [github.com/DevSolar/pdclib](https://github.com/DevSolar/pdclib)
 
 * **BootUp Sound:** "New Notification 09" by **Universfield** on [Pixabay](https://pixabay.com/sound-effects/film-special-effects-new-notification-09-352705/)
 

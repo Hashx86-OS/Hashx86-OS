@@ -1,6 +1,6 @@
 
-#ifndef HGUI_SYSCALLS_H
-#define HGUI_SYSCALLS_H
+#ifndef HGUI_KERNEL_H
+#define HGUI_KERNEL_H
 
 #include <core/interrupts.h>
 #include <core/memory.h>
@@ -21,6 +21,8 @@ typedef enum {
     LABEL = 0x5,
     LISTVIEW = 0x6,
     TERMINAL_VIEW = 0x7,
+    FONT = 0x8,
+    ICON_BUTTON = 0x9,
 } REQ_Element;
 
 typedef enum {
@@ -36,11 +38,22 @@ typedef enum {
     GET_SELECTED = 0x9,
     SET_SCROLL_META = 0xA,
     GET_SCROLL_ACTION = 0xB,
+    MEASURE_TEXT = 0xC,
+    SET_FONT_TYPE = 0xD,
+    SET_COLOR = 0xE,
+    SET_BACKGROUND = 0xF,
+    SET_ALIGNMENT = 0x10,
+    SET_WIDTH = 0x11,
+    SET_HEIGHT = 0x12,
+    SET_ITEM_HEIGHT = 0x13,
+    SET_ENABLED = 0x14,
+    SET_ICON = 0x15,
+    SET_ICON_FONT_SIZE = 0x16,
 } REQ_MODE;
 
 struct WidgetData {
     uint32_t param0;
-    uint32_t param1;
+    int32_t param1;
     uint32_t param2;
     uint32_t param3;
     uint32_t param4;
@@ -63,13 +76,23 @@ public:
     virtual int32_t HandleWidget(CPUState* cpu, const WidgetData* data);
     virtual int32_t HandleWindow(CPUState* cpu, const WidgetData* data);
     virtual int32_t HandleButton(CPUState* cpu, const WidgetData* data);
+    virtual int32_t HandleIconButton(CPUState* cpu, const WidgetData* data);
     virtual int32_t HandleLabel(CPUState* cpu, const WidgetData* data);
     virtual int32_t HandleListView(CPUState* cpu, const WidgetData* data);
     virtual int32_t HandleTerminalView(CPUState* cpu, const WidgetData* data);
+    virtual int32_t HandleFont(CPUState* cpu, const WidgetData* data);
     virtual int32_t HandleEvent(CPUState* cpu);
     void RemoveAppByPID(uint32_t PID);
     Widget* FindWidgetByID(uint32_t searchID);
     uint32_t getNewID();
+    template<typename T>
+    T* FindOwnedWidget(uint32_t id, uint32_t pid, bool (Widget::*typeCheck)() const) {
+        Widget* w = FindWidgetByID(id);
+        if (!w || !(w->*typeCheck)() || w->PID != pid) return nullptr;
+        return static_cast<T*>(w);
+    }
+
+    static void RemoveWidget(Widget* w);
 };
 
-#endif  // HGUI_SYSCALLS_H
+#endif  // HGUI_KERNEL_H

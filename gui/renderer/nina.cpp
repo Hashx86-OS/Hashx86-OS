@@ -365,10 +365,10 @@ void NINA::DrawVerticalLine(uint32_t* buffer, int32_t bufferWidth, int32_t buffe
 }
 
 void NINA::DrawCharacter(uint32_t* buffer, int32_t bufferWidth, int32_t bufferHeight, int32_t x,
-                         int32_t y, char c, Font* font, uint32_t colorIndex) {
+                         int32_t y, uint32_t codepoint, Font* font, uint32_t colorIndex) {
     if (!buffer || !font || !font->font_glyphs || !font->font_atlas) return;
-    int idx = (uint8_t)c - 32;
-    if (idx < 0 || idx >= 95) return;          // Only standard ASCII printable range (0-94)
+    int idx = (int)(codepoint - font->firstChar);
+    if (idx < 0 || idx >= (int)font->glyph_count) return;
     int16_t* g = &font->font_glyphs[idx * 8];  // each glyph = 8 values
 
     int charID = g[0];
@@ -390,9 +390,15 @@ void NINA::DrawCharacter(uint32_t* buffer, int32_t bufferWidth, int32_t bufferHe
     uint32_t glyphPixels = (uint32_t)(charWidth * charHeight);
     if (glyphPixels == 0 || glyphPixels > maxGlyphPixels) return;
 
-    // Allocate cropped bitmap
-    uint32_t* croppedBitmap = new uint32_t[glyphPixels];
-    if (!croppedBitmap) return;
+    // Use a static scratch buffer instead of per-glyph allocation
+    static uint32_t* s_croppedBitmap = nullptr;
+    static uint32_t s_croppedBitmapSize = 0;
+    if (s_croppedBitmapSize < glyphPixels) {
+        delete[] s_croppedBitmap;
+        s_croppedBitmap = new uint32_t[glyphPixels];
+        s_croppedBitmapSize = glyphPixels;
+    }
+    uint32_t* croppedBitmap = s_croppedBitmap;
 
     for (int row = 0; row < charHeight; ++row) {
         for (int col = 0; col < charWidth; ++col) {
@@ -416,7 +422,6 @@ void NINA::DrawCharacter(uint32_t* buffer, int32_t bufferWidth, int32_t bufferHe
     // Apply offsets from glyph table
     DrawBitmap(buffer, bufferWidth, bufferHeight, x + xoffset, y + yoffset, croppedBitmap,
                charWidth, charHeight);
-    delete[] croppedBitmap;
 }
 
 void NINA::DrawString(uint32_t* buffer, int32_t bufferWidth, int32_t bufferHeight, int32_t x,
@@ -426,7 +431,7 @@ void NINA::DrawString(uint32_t* buffer, int32_t bufferWidth, int32_t bufferHeigh
     int penY = y;
 
     for (int i = 0; str[i] != '\0'; ++i) {
-        char c = str[i];
+        uint32_t c = (uint8_t)str[i];
 
         // Handle newline
         if (c == '\n') {
@@ -435,22 +440,21 @@ void NINA::DrawString(uint32_t* buffer, int32_t bufferWidth, int32_t bufferHeigh
             continue;
         }
 
-        char next = str[i + 1];
-
-        // Clamp unsupported characters
-        if (c < 32 || c > 126) {
-            c = '?';
+        // Clamp unsupported characters (subtraction-based to avoid overflow)
+        uint32_t next_c = (uint8_t)str[i + 1];
+        if (c < font->firstChar || c - font->firstChar >= (uint32_t)font->glyph_count) {
+            c = (font->firstChar <= '?' && (uint32_t)('?' - font->firstChar) < (uint32_t)font->glyph_count) ? '?' : font->firstChar;
         }
 
-        int16_t* g = &font->font_glyphs[((uint8_t)c - 32) * 8];
+        int16_t* g = &font->font_glyphs[(c - font->firstChar) * 8];
         int xadvance = g[7];
 
         // Kerning lookup
         int kernAdjust = 0;
-        if (next >= 32 && font->font_kernings) {
+        if (font->font_kernings) {
             for (int k = 0; k < font->font_kerning_count; k++) {
                 int16_t* kdata = &font->font_kernings[k * 3];
-                if (kdata[0] == (uint8_t)c && kdata[1] == (uint8_t)next) {
+                if (kdata[0] == (int16_t)c && kdata[1] == (int16_t)next_c) {
                     kernAdjust = kdata[2];
                     break;
                 }

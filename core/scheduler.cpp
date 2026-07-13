@@ -21,8 +21,17 @@ extern TaskStateSegment g_tss;
 
 #define KERNEL_STACK_SIZE (64 * 1024)
 
-// Number of pages per User-Mode stack (16KB)
-#define USER_STACK_PAGES 4
+// Number of pages per User-Mode stack
+#define USER_STACK_PAGES 128
+
+// Free-list of reclaimed user-stack offsets so exited threads recycle virtual slots
+// instead of always growing tid-based offsets.
+static LinkedList<uint32_t> g_freeStackOffsets;
+
+// Dedicated counter for allocating new stack slots when the free list is empty.
+// Advances only when a new slot is actually claimed, so _tidCounter bumps from
+// clone or failed threads don't burn through the virtual address range.
+static uint32_t g_nextStackSlotIdx = 0;
 
 Scheduler* Scheduler::activeInstance = nullptr;
 void FlushSerial();
@@ -185,6 +194,106 @@ ProcessControlBlock* Scheduler::FindProcess(uint32_t pid) {
     return found;
 }
 
+/**
+ * Allocate a user-stack slot and map USER_STACK_PAGES of physical pages.
+ * On failure, cleans up tcb (frees kernel stack, deletes tcb, recycles slot)
+ * and returns false.
+ */
+static bool AllocUserStack(
+    ThreadControlBlock* tcb,
+    Paging* pager,
+    uint32_t* page_directory,
+    const char* who,
+    uint32_t* out_user_stack_base,
+    uint32_t* out_top_page_phys)
+{
+    uint32_t user_stack_size = USER_STACK_PAGES * PAGE_SIZE;
+
+    if (!g_freeStackOffsets.IsEmpty()) {
+        tcb->stackSlotIdx = g_freeStackOffsets.PopFront();
+    } else {
+        uint32_t nextOffset = g_nextStackSlotIdx * user_stack_size;
+        if (nextOffset / user_stack_size != g_nextStackSlotIdx ||
+            nextOffset >= USER_STACK_VIRT_TOP - USER_STACK_VIRT_BOTTOM - user_stack_size) {
+            kfree(tcb->stack);
+            delete tcb;
+            return false;
+        }
+        tcb->stackSlotIdx = g_nextStackSlotIdx++;
+    }
+
+    auto recycleSlot = [&]() {
+        g_freeStackOffsets.Add(tcb->stackSlotIdx);
+    };
+
+    uint64_t stack_offset64 = (uint64_t)tcb->stackSlotIdx * (uint64_t)user_stack_size;
+    if (stack_offset64 > (uint64_t)USER_STACK_VIRT_TOP - user_stack_size) {
+        recycleSlot();
+        kfree(tcb->stack);
+        delete tcb;
+        return false;
+    }
+    uint32_t user_stack_base = USER_STACK_VIRT_TOP - (uint32_t)stack_offset64 - user_stack_size;
+    if (user_stack_base < USER_STACK_VIRT_BOTTOM) {
+        recycleSlot();
+        kfree(tcb->stack);
+        delete tcb;
+        return false;
+    }
+
+    uint32_t top_page_phys = 0;
+    for (uint32_t p = 0; p < USER_STACK_PAGES; p++) {
+        uint32_t phys = (uint32_t)pmm_alloc_block_low(256 * 1024 * 1024);
+        if (!phys) {
+            KDBG1("%s: Failed to allocate user stack page %u", who, p);
+            for (uint32_t q = 0; q < p; q++) {
+                uint32_t va = user_stack_base + q * PAGE_SIZE;
+                uint32_t pf = pager->GetPhysicalAddress(page_directory, va);
+                if (pf != 0xFFFFFFFF) {
+                    uint32_t pd_idx = va >> 22;
+                    uint32_t pt_idx = (va >> 12) & 0x3FF;
+                    uint32_t* pt = (uint32_t*)(page_directory[pd_idx] & 0xFFFFF000);
+                    pt[pt_idx] = 0;
+                    asm volatile("invlpg %0" : : "m"(*(uint8_t*)va) : "memory");
+                    pmm_free_block((void*)pf);
+                }
+            }
+            recycleSlot();
+            kfree(tcb->stack);
+            delete tcb;
+            return false;
+        }
+        memset((void*)phys, 0, PAGE_SIZE);
+        uint32_t vaddr = user_stack_base + p * PAGE_SIZE;
+        if (!pager->MapPage(page_directory, vaddr, phys,
+                            PAGE_PRESENT | PAGE_RW | PAGE_USER)) {
+            KDBG1("%s: Failed to map user stack page %u", who, p);
+            pmm_free_block((void*)phys);
+            for (uint32_t q = 0; q < p; q++) {
+                uint32_t va = user_stack_base + q * PAGE_SIZE;
+                uint32_t pf = pager->GetPhysicalAddress(page_directory, va);
+                if (pf != 0xFFFFFFFF) {
+                    uint32_t pd_idx = va >> 22;
+                    uint32_t pt_idx = (va >> 12) & 0x3FF;
+                    uint32_t* pt = (uint32_t*)(page_directory[pd_idx] & 0xFFFFF000);
+                    pt[pt_idx] = 0;
+                    asm volatile("invlpg %0" : : "m"(*(uint8_t*)va) : "memory");
+                    pmm_free_block((void*)pf);
+                }
+            }
+            recycleSlot();
+            kfree(tcb->stack);
+            delete tcb;
+            return false;
+        }
+        if (p == USER_STACK_PAGES - 1) top_page_phys = phys;
+    }
+
+    *out_user_stack_base = user_stack_base;
+    *out_top_page_phys = top_page_phys;
+    return true;
+}
+
 ThreadControlBlock* Scheduler::CreateThread(ProcessControlBlock* parent, void (*entrypoint)(void*),
                                             void* arg) {
     InterruptGuard guard;
@@ -194,6 +303,7 @@ ThreadControlBlock* Scheduler::CreateThread(ProcessControlBlock* parent, void (*
     tcb->tid = _tidCounter++;
     tcb->parent = parent;
     tcb->pid = parent ? parent->pid : 0;
+    tcb->stackSlotIdx = 0;
 
     // Allocate 64KB kernel stack
     tcb->stack = (uint8_t*)kmalloc(KERNEL_STACK_SIZE);
@@ -242,68 +352,11 @@ ThreadControlBlock* Scheduler::CreateThread(ProcessControlBlock* parent, void (*
 
         // Allocate USER-MODE stack (USER_STACK_PAGES pages)
         // Must be in identity-mapped range (<256MB) because kernel writes arg/retaddr to it
-        uint32_t user_stack_size = USER_STACK_PAGES * PAGE_SIZE;
-        uint64_t stack_offset64 = (uint64_t)tcb->tid * (uint64_t)user_stack_size;
-        if (stack_offset64 > (uint64_t)USER_STACK_VIRT_TOP - user_stack_size) {
-            kfree(tcb->stack);
-            delete tcb;
+        uint32_t user_stack_base;
+        uint32_t top_page_phys;
+        if (!AllocUserStack(tcb, _pager, parent->page_directory, "CreateThread",
+                            &user_stack_base, &top_page_phys)) {
             return nullptr;
-        }
-        uint32_t user_stack_base = USER_STACK_VIRT_TOP - (uint32_t)stack_offset64 - user_stack_size;
-        if (user_stack_base < USER_STACK_VIRT_BOTTOM) {
-            kfree(tcb->stack);
-            delete tcb;
-            return nullptr;
-        }
-        uint32_t top_page_phys = 0;
-
-        for (uint32_t p = 0; p < USER_STACK_PAGES; p++) {
-            uint32_t phys = (uint32_t)pmm_alloc_block_low(256 * 1024 * 1024);
-            if (!phys) {
-                KDBG1("CreateThread: Failed to allocate user stack page %d! Low Memory Exhausted?",
-                      p);
-                // Free previously allocated pages
-                for (uint32_t q = 0; q < p; q++) {
-                    uint32_t va = user_stack_base + q * PAGE_SIZE;
-                    uint32_t pf = _pager->GetPhysicalAddress(parent->page_directory, va);
-                    if (pf != 0xFFFFFFFF) {
-                        // Unmap before freeing to leave clean page tables
-                        uint32_t pd_idx = va >> 22;
-                        uint32_t pt_idx = (va >> 12) & 0x3FF;
-                        uint32_t* pt = (uint32_t*)(parent->page_directory[pd_idx] & 0xFFFFF000);
-                        pt[pt_idx] = 0;
-                        asm volatile("invlpg %0" : : "m"(*(uint8_t*)va) : "memory");
-                        pmm_free_block((void*)pf);
-                    }
-                }
-                kfree(tcb->stack);
-                delete tcb;
-                return nullptr;
-            }
-            memset((void*)phys, 0, PAGE_SIZE);
-            uint32_t vaddr = user_stack_base + p * PAGE_SIZE;
-            if (!_pager->MapPage(parent->page_directory, vaddr, phys,
-                                 PAGE_PRESENT | PAGE_RW | PAGE_USER)) {
-                KDBG1("CreateThread: Failed to map user stack page %d!", p);
-                pmm_free_block((void*)phys);
-                for (uint32_t q = 0; q < p; q++) {
-                    uint32_t va = user_stack_base + q * PAGE_SIZE;
-                    uint32_t pf = _pager->GetPhysicalAddress(parent->page_directory, va);
-                    if (pf != 0xFFFFFFFF) {
-                        // Unmap before freeing to leave clean page tables
-                        uint32_t pd_idx = va >> 22;
-                        uint32_t pt_idx = (va >> 12) & 0x3FF;
-                        uint32_t* pt = (uint32_t*)(parent->page_directory[pd_idx] & 0xFFFFF000);
-                        pt[pt_idx] = 0;
-                        asm volatile("invlpg %0" : : "m"(*(uint8_t*)va) : "memory");
-                        pmm_free_block((void*)pf);
-                    }
-                }
-                kfree(tcb->stack);
-                delete tcb;
-                return nullptr;
-            }
-            if (p == USER_STACK_PAGES - 1) top_page_phys = phys;
         }
 
         // Write arg and return address to the TOP of the stack (highest page, last 8 bytes)
@@ -322,7 +375,7 @@ ThreadControlBlock* Scheduler::CreateThread(ProcessControlBlock* parent, void (*
         user_stack_top_phys[-2] = USER_EXIT_TRAMPOLINE_VIRT;  // Return to exit trampoline
 
         // IRET will pop SS:ESP for Ring 0 -> Ring 3 transition
-        tcb->context->esp = user_stack_base + user_stack_size - 8;
+        tcb->context->esp = user_stack_base + USER_STACK_PAGES * PAGE_SIZE - 8;
         tcb->context->ss = 0x23;
     }
 
@@ -357,7 +410,6 @@ ThreadControlBlock* Scheduler::CloneCurrentThread(CPUState* parentContext, uint3
     tcb->parent = parent;
     tcb->pid = parent->pid;
     tcb->wakeTime = 0;
-
     // Each thread still needs its own kernel stack for IRQ/syscall context switches.
     tcb->stack = (uint8_t*)kmalloc(KERNEL_STACK_SIZE);
     if (!tcb->stack) {
@@ -372,42 +424,24 @@ ThreadControlBlock* Scheduler::CloneCurrentThread(CPUState* parentContext, uint3
     // Linux clone contract: child returns 0 from clone.
     tcb->context->eax = 0;
 
-    // When child_stack is null, allocate a distinct user stack for the child
-    // so both threads do not share one user stack.
+    // When child_stack is null, allocate a user stack from the slot pool
+    // so the address range does not collide with CreateThread's allocations.
     if (child_stack) {
         tcb->context->esp = (uint32_t)child_stack;
+        tcb->stackSlotIdx = UINT32_MAX;
     } else {
-        // Allocate a small user stack for the child thread
-        uint32_t user_stack_size = 4096;
-        uint32_t user_stack_phys = (uint32_t)pmm_alloc_block_low(256 * 1024 * 1024);
-        if (!user_stack_phys) {
-            kfree(tcb->stack);
-            delete tcb;
+        uint32_t user_stack_base;
+        uint32_t top_page_phys;
+        if (!AllocUserStack(tcb, _pager, parent->page_directory, "CloneCurrentThread",
+                            &user_stack_base, &top_page_phys)) {
             return nullptr;
         }
-        memset((void*)user_stack_phys, 0, 4096);
-        // Map it at a fixed high user address (just below 3GB) unique per thread
-        uint64_t stack_virt64 = (uint64_t)0xBFFF0000 - ((uint64_t)tcb->tid * 4096ULL);
-        if (stack_virt64 < 0x10000000ULL || stack_virt64 > 0xFFFFFFFFULL) {
-            pmm_free_block((void*)user_stack_phys);
-            kfree(tcb->stack);
-            delete tcb;
-            return nullptr;
-        }
-        uint32_t user_stack_virt = (uint32_t)stack_virt64;
-        if (!_pager->MapPage(parent->page_directory, user_stack_virt, user_stack_phys,
-                             PAGE_PRESENT | PAGE_RW | PAGE_USER)) {
-            pmm_free_block((void*)user_stack_phys);
-            kfree(tcb->stack);
-            delete tcb;
-            return nullptr;
-        }
-        // Set esp to top of the allocated page
-        tcb->context->esp = user_stack_virt + 4096 - 8;
-        // Write a return address to the exit trampoline (bottom of stack)
-        uint32_t* stack_top_phys = (uint32_t*)(user_stack_phys + 4096);
-        stack_top_phys[-1] = 0;  // Argument
-        stack_top_phys[-2] = USER_EXIT_TRAMPOLINE_VIRT;
+        // Set esp to top of the allocated stack
+        tcb->context->esp = user_stack_base + USER_STACK_PAGES * PAGE_SIZE - 8;
+        // Write arg and return address to the TOP of the stack (last page, last 8 bytes)
+        uint32_t* user_stack_top_phys = (uint32_t*)(top_page_phys + PAGE_SIZE);
+        user_stack_top_phys[-2] = USER_EXIT_TRAMPOLINE_VIRT;
+        user_stack_top_phys[-1] = 0;
     }
 
     // Best-effort handling for common TID reporting flags.
@@ -559,6 +593,7 @@ ThreadControlBlock* Scheduler::CloneCurrentProcess(CPUState* parentContext, uint
     tcb->parent = childProc;
     tcb->pid = childProc->pid;
     tcb->wakeTime = 0;
+    tcb->stackSlotIdx = UINT32_MAX;
     tcb->stack = (uint8_t*)kmalloc(KERNEL_STACK_SIZE);
     if (!tcb->stack) {
         delete tcb;
@@ -674,6 +709,11 @@ bool Scheduler::KillProcess(uint32_t pid) {
         _pager->SwitchDirectory(_pager->KernelPageDirectory);
     }
 
+    // All stack slot indices have already been collected in the process's
+    // deferredStackSlots array by TerminateThread.  Recycling is deferred
+    // until the page-table sweep has freed the physical pages.
+    int slotCount = target->deferredSlotCount;
+
     // Terminate all threads (removes from scheduler queues, frees kernel stacks)
     int tCount = target->threads.GetSize();
     for (int i = 0; i < tCount; i++) {
@@ -727,6 +767,13 @@ bool Scheduler::KillProcess(uint32_t pid) {
         pmm_free_block(target->page_directory);
     }
 
+    // Recycle user-stack slots only after the page-table sweep has freed
+    // the physical pages and cleared the PTEs.
+    for (int i = 0; i < slotCount; i++) {
+        g_freeStackOffsets.Add(target->deferredStackSlots[i]);
+    }
+    target->deferredSlotCount = 0;
+
     // RESOURCE CLEANUP END
 
     // Free program arguments (kmalloc'd strings + struct)
@@ -753,12 +800,24 @@ void Scheduler::TerminateThread(ThreadControlBlock* thread) {
     readyQueue.Remove([thread](ThreadControlBlock* t) { return t == thread; });
     blockedQueue.Remove([thread](ThreadControlBlock* t) { return t == thread; });
 
+    // Preserve the stack slot index on the parent process so KillProcess
+    // can recycle it after the page-table sweep.
+    if (thread->parent && thread->stackSlotIdx != UINT32_MAX) {
+        ProcessControlBlock* p = thread->parent;
+        if (p->deferredSlotCount < 256) {
+            p->deferredStackSlots[p->deferredSlotCount++] = thread->stackSlotIdx;
+        }
+    }
+
     // Remove from parent's thread list to prevent KillProcess from
     // iterating over a dangling pointer later.
     if (thread->parent) {
         thread->parent->threads.Remove([thread](ThreadControlBlock* t) { return t == thread; });
     }
 
+    // Slot recycling is deferred to KillProcess (after the page-table sweep),
+    // because the physical user-stack pages are still mapped in the process
+    // page directory at this point.
     if (thread == currentThread) {
         // Defer cleanup: this thread is still running on its own kernel stack.
         // Freeing it now would corrupt the stack we are executing on.

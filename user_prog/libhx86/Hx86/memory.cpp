@@ -173,11 +173,6 @@ void *kmalloc(int size) {
             heap_BLOCK *new_block = allocate_new_block(size);
             if (!new_block) return NULL;
 
-            new_block->metadata.is_free = false;
-            new_block->metadata.size = size;
-            new_block->data = kbrk(size);
-            if (!new_block->data) return NULL;
-
             return new_block->data;
         } else {
             worst->metadata.is_free = false;

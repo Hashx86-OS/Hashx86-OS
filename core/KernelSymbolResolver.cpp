@@ -8,12 +8,13 @@
 
 #define KDBG_COMPONENT "K.SYMBOL"
 #include <core/KernelSymbolResolver.h>
+#include <core/filesystem/File.h>
 
 static char* fileBuffer = nullptr;
 static SymbolEntry* symbolIndex = nullptr;
 static uint32_t symbolCount = 0;
 
-void KernelSymbolTable::Load(FAT32* fs, const char* path) {
+void KernelSymbolTable::Load(FileSystem* fs, const char* path) {
     if (!fs) return;
     // Free previous data before loading new
     if (fileBuffer) {
@@ -26,7 +27,7 @@ void KernelSymbolTable::Load(FAT32* fs, const char* path) {
     }
     symbolCount = 0;
     KDBG1("Loading map file: %s", path);
-    File* file = fs->Open((char*)path);
+    File* file = fs->Open(path);
     if (!file) {
         KDBG1("Failed to open %s", path);
         return;

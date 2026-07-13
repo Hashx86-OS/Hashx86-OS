@@ -17,10 +17,17 @@ Window::Window(Widget* parent, int32_t x, int32_t y, uint32_t w, uint32_t h)
 Window::~Window() {}
 
 void Window::show() {
+    if (!parent) return;
     this->parent->AddChild(this);
 }
 
-void Window::OnCloseButton() {}
+void Window::Close() {
+    if (parent) {
+        parent->RemoveChild(this);
+    }
+    WidgetData delData = {0, (int32_t)ID};
+    HguiAPI(WIDGET, DELETE, (void*)&delData);
+}
 
 void Window::setWindowTitle(const char* title) {
     WidgetData data = {ID, 0, 0, 0, 0, title};

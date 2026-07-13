@@ -11,7 +11,17 @@
 #include <gui/renderer/nina.h>
 #include <types.h>
 #include <utils/linkedList.h>
-#include <utils/string.h>
+#include <string.h>
+
+struct Padding {
+    uint8_t t, r, b, l;
+};
+
+enum SizeMode {
+    FIXED = 0,
+    CONTENT = 1,
+    FILL = 2,
+};
 
 /**
  * @class       Widget
@@ -23,9 +33,10 @@ class Widget {
 
 protected:
     Font* font = nullptr;
-    uint32_t colorIndex = 0;
+    uint32_t argbColor = 0;
     bool isFocussable = true;
     bool isFocused = false;
+    bool enabled = true;
 
 public:
     // Hierarchy
@@ -37,6 +48,10 @@ public:
     uint32_t* cache = nullptr;
     bool isDirty = true;
     bool isVisible = true;
+    uint32_t minWidth = 0, minHeight = 0;
+    Padding padding = {0, 0, 0, 0};
+    SizeMode sizeMode = FIXED;
+    int32_t fontSize = 14;
 
     // Process & Identification
     uint32_t PID = 0;
@@ -49,6 +64,7 @@ public:
     virtual void MarkDirty();
     virtual void RedrawToCache();
     virtual void Draw(GraphicsDriver* gc);
+    virtual void Recalc();
 
     // -- Focus & Interaction --
     virtual void GetFocus(Widget* widget);
@@ -73,6 +89,10 @@ public:
     virtual void OnMouseDown(int32_t x, int32_t y, uint8_t button);
     virtual void OnMouseUp(int32_t x, int32_t y, uint8_t button);
     virtual void OnMouseMove(int32_t oldx, int32_t oldy, int32_t newx, int32_t newy);
+    virtual void OnMouseEnter();
+    virtual void OnMouseLeave();
+    virtual void OnFocusGained();
+    virtual void OnFocusLost();
 
     virtual void OnKeyDown(const char* key);
     virtual void OnSpecialKeyDown(uint8_t key);
@@ -83,6 +103,9 @@ public:
     virtual bool IsMouseCaptured() const;
     virtual bool IsPressed() const;
     virtual bool IsWindow() const {
+        return false;
+    }
+    virtual bool IsButton() const {
         return false;
     }
     virtual bool IsLabel() const {
@@ -97,6 +120,14 @@ public:
     virtual bool IsTaskbar() const {
         return false;
     }
+    virtual bool IsIconButton() const {
+        return false;
+    }
+
+    uint32_t GetColor() const { return argbColor; }
+    void SetColor(uint32_t c) { argbColor = c; MarkDirty(); }
+    void SetAlpha(uint8_t alpha) { argbColor = (argbColor & 0x00FFFFFF) | ((uint32_t)alpha << 24); MarkDirty(); }
+    uint8_t GetAlpha() const { return (uint8_t)(argbColor >> 24); }
 };
 
 /**

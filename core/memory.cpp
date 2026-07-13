@@ -1,6 +1,6 @@
 /**
  * @file        memory.cpp
- * @brief       Memory Manager Implementation with SSE support
+ * @brief       Memory Manager Implementation
  *
  * @date        29/01/2026
  * @version     1.0.0-beta
@@ -8,116 +8,6 @@
 
 #define KDBG_COMPONENT "K.HEAP"
 #include <core/memory.h>
-
-// --- SSE HELPERS ---
-static inline void __cpuid(int code, uint32_t* a, uint32_t* b, uint32_t* c, uint32_t* d) {
-    asm volatile("cpuid" : "=a"(*a), "=b"(*b), "=c"(*c), "=d"(*d) : "a"(code));
-}
-
-bool CheckSSE() {
-    uint32_t eax, ebx, ecx, edx;
-    __cpuid(1, &eax, &ebx, &ecx, &edx);
-    // Bit 25 of EDX is SSE, Bit 26 is SSE2 (we usually want SSE2 for 128-bit moves)
-    return (edx & (1 << 25)) || (edx & (1 << 26));
-}
-
-void EnableSSE_ASM() {
-    // Set CR0 and CR4 bits to enable SSE context
-    asm volatile(
-        "mov %cr0, %eax\n\t"
-        "and $0xFFFB, %ax\n\t"  // Clear EM (Bit 2)
-        "or  $0x2, %ax\n\t"     // Set MP (Bit 1)
-        "mov %eax, %cr0\n\t"
-
-        "mov %cr4, %eax\n\t"
-        "or  $0x600, %ax\n\t"  // Set OSFXSR (Bit 9) and OSXMMEXCPT (Bit 10)
-        "mov %eax, %cr4\n\t");
-}
-
-void init_memory_optimizations() {
-    // FPU/SSE state is not preserved across context switches, so SSE
-    // memcpy cannot be used safely until the scheduler saves/restores
-    // XMM registers.
-    extern bool g_scheduler_preserves_fpu;
-    if (CheckSSE() && g_scheduler_preserves_fpu) {
-        EnableSSE_ASM();
-        g_sse_active = true;
-        KDBG1("SSE Enabled");
-    } else {
-        g_sse_active = false;
-    }
-}
-
-// --- MEMORY COPY IMPLEMENTATIONS ---
-
-// The Standard C++ Copy (Fallback)
-static void* memcpy_standard(void* destination, const void* source, size_t size) {
-    uint32_t* dst32 = static_cast<uint32_t*>(destination);
-    const uint32_t* src32 = static_cast<const uint32_t*>(source);
-
-    size_t word_count = size / 4;
-    for (size_t i = 0; i < word_count; i++) dst32[i] = src32[i];
-
-    uint8_t* dst8 = reinterpret_cast<uint8_t*>(dst32) + word_count * 4;
-    const uint8_t* src8 = reinterpret_cast<const uint8_t*>(src32) + word_count * 4;
-    for (size_t i = 0; i < (size % 4); i++) dst8[i] = src8[i];
-
-    return destination;
-}
-
-// The SSE Optimized Copy (Assembly)
-__attribute__((target("sse"))) static void* memcpy_sse(void* dest, const void* src, size_t count) {
-    size_t num_blocks = count / 16;
-    size_t remaining = count % 16;
-
-    char* d = (char*)dest;
-    const char* s = (const char*)src;
-
-    // Use XMM0 to move 16 bytes at a time
-    for (size_t i = 0; i < num_blocks; i++) {
-        asm volatile(
-            "movups (%0), %%xmm0\n\t"  // Load unaligned 128-bit
-            "movups %%xmm0, (%1)\n\t"  // Store unaligned 128-bit
-            :
-            : "r"(s), "r"(d)
-            : "memory", "%xmm0");
-        s += 16;
-        d += 16;
-    }
-
-    // Copy remaining bytes
-    while (remaining--) {
-        *d++ = *s++;
-    }
-
-    return dest;
-}
-
-// The Main Wrapper
-void* memcpy(void* destination, const void* source, size_t size) {
-    if (g_sse_active) {
-        return memcpy_sse(destination, source, size);
-    } else {
-        return memcpy_standard(destination, source, size);
-    }
-}
-
-void* memset(void* ptr, int value, size_t size) {
-    uint8_t* byte_ptr = static_cast<uint8_t*>(ptr);
-    for (size_t i = 0; i < size; i++) byte_ptr[i] = static_cast<uint8_t>(value);
-
-    return ptr;
-}
-
-int memcmp(const void* ptr1, const void* ptr2, size_t size) {
-    const uint8_t* byte_ptr1 = static_cast<const uint8_t*>(ptr1);
-    const uint8_t* byte_ptr2 = static_cast<const uint8_t*>(ptr2);
-
-    for (size_t i = 0; i < size; i++)
-        if (byte_ptr1[i] != byte_ptr2[i]) return byte_ptr1[i] - byte_ptr2[i];
-
-    return 0;
-}
 
 // start & end addresses pointing to memory
 void *g_kheap_start_addr = NULL, *g_kheap_end_addr = NULL;
@@ -137,9 +27,6 @@ int kheap_init(void* start_addr, void* end_addr) {
         KDBG1("Init failed start=0x%x end=0x%x", start_addr, end_addr);
         return -1;
     }
-
-    // ENABLE OPTIMIZATIONS
-    init_memory_optimizations();
 
     g_kheap_start_addr = start_addr;
     g_kheap_end_addr = end_addr;
@@ -412,4 +299,29 @@ void operator delete(void* ptr, std::align_val_t) noexcept {
 
 void operator delete[](void* ptr, std::align_val_t) noexcept {
     aligned_kfree(ptr);
+}
+
+// --- Memory routines (extern "C" so kernel callers can link against them) ---
+
+extern "C" void* memset(void* s, int c, size_t n) {
+    unsigned char* p = (unsigned char*)s;
+    while (n--) *p++ = (unsigned char)c;
+    return s;
+}
+
+extern "C" void* memcpy(void* dest, const void* src, size_t n) {
+    char* d = (char*)dest;
+    const char* s = (const char*)src;
+    while (n--) *d++ = *s++;
+    return dest;
+}
+
+extern "C" int memcmp(const void* s1, const void* s2, size_t n) {
+    const unsigned char* p1 = (const unsigned char*)s1;
+    const unsigned char* p2 = (const unsigned char*)s2;
+    while (n--) {
+        if (*p1 != *p2) return *p1 - *p2;
+        ++p1; ++p2;
+    }
+    return 0;
 }

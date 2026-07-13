@@ -12,6 +12,8 @@ typedef enum {
     LABEL = 0x5,
     LISTVIEW = 0x6,
     TERMINAL_VIEW = 0x7,
+    FONT = 0x8,
+    ICON_BUTTON = 0x9,
 } REQ_Element;
 
 typedef enum {
@@ -27,6 +29,17 @@ typedef enum {
     GET_SELECTED = 0x9,
     SET_SCROLL_META = 0xA,
     GET_SCROLL_ACTION = 0xB,
+    MEASURE_TEXT = 0xC,
+    SET_FONT_TYPE = 0xD,
+    SET_COLOR = 0xE,
+    SET_BACKGROUND = 0xF,
+    SET_ALIGNMENT = 0x10,
+    SET_WIDTH = 0x11,
+    SET_HEIGHT = 0x12,
+    SET_ITEM_HEIGHT = 0x13,
+    SET_ENABLED = 0x14,
+    SET_ICON = 0x15,
+    SET_ICON_FONT_SIZE = 0x16,
 } REQ_MODE;
 
 uint32_t HguiAPI(REQ_Element element, REQ_MODE mode, void* data);

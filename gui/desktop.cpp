@@ -8,6 +8,7 @@
 
 #define KDBG_COMPONENT "GUI:DESKTOP"
 #include <gui/desktop.h>
+#include <core/filesystem/Paths.h>
 
 Desktop* Desktop::activeInstance = nullptr;
 
@@ -20,8 +21,7 @@ Desktop::Desktop(int32_t w, int32_t h)
     KDBG1("DESKTOP Initialized with ID 0x%x", this->ID);
 
     // Initialize Wallpaper
-    char* wallpaperName = (char*)"BITMAPS/DESKTOP.BMP";
-    Bitmap* wallpaperImg = new Bitmap(wallpaperName);
+    Bitmap* wallpaperImg = new Bitmap(PATH_DESKTOP_BMP);
     if (!wallpaperImg) {
         HALT("CRITICAL: Failed to allocate desktop wallpaper bitmap!\n");
     }
@@ -48,11 +48,11 @@ Desktop::Desktop(int32_t w, int32_t h)
     taskbar->SetID(0);   // System widget
 
     // Add application launchers
-    taskbar->AddApp("MemViewer", "Memory inspector", "SYS32/MEMVIEW.BIN");
-    taskbar->AddApp("Explorer", "File Manager", "SYS32/EXPLORER.BIN");
-    taskbar->AddApp("Calculator", "Calculator GUI", "SYS32/TEST.BIN");
-    taskbar->AddApp("Terminal", "CLI preview", "SYS32/TERMINAL.BIN");
-    taskbar->AddApp("Game3D", "3D Game Engine", "PROGFILE/GAME3D/GAME3D.BIN");
+    taskbar->AddApp("MemViewer", "Memory inspector", PATH_MEMVIEW);
+    taskbar->AddApp("Explorer", "File Manager", PATH_EXPLORER);
+    taskbar->AddApp("Calculator", "Calculator GUI", PATH_CALCULATOR);
+    taskbar->AddApp("Terminal", "CLI preview", PATH_TERMINAL);
+    taskbar->AddApp("Game3D", "3D Game Engine", PATH_GAME3D);
 
     // NOTE: Taskbar is NOT added to childrenList.
 }

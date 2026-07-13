@@ -73,6 +73,7 @@ struct ThreadControlBlock {
     CPUState* context;
     ProcessControlBlock* parent;
     uint32_t wakeTime;
+    uint32_t stackSlotIdx;  // slot index for user-stack virtual address reuse
 };
 
 struct ProcessControlBlock {
@@ -101,6 +102,11 @@ struct ProcessControlBlock {
     uint32_t cliHostViewId;
     uint32_t cliHostPid;
     uint32_t cliAttachedViewId;
+
+    // Deferred user-stack slot indices collected during TerminateThread,
+    // recycled in KillProcess after the page-table sweep.
+    uint32_t deferredStackSlots[256];
+    int deferredSlotCount;
 };
 
 #endif  // PROCESS_TYPES_H

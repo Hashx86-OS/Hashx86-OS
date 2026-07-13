@@ -8,6 +8,7 @@
 
 #define KDBG_COMPONENT "KERNEL"
 #include <kernel.h>
+#include <core/filesystem/Paths.h>
 
 #define DEBUG_ENABLED TRUE;
 #define PIT_COMMAND_PORT 0x43
@@ -361,7 +362,7 @@ void InitializePIT(uint32_t frequency) {
     KDBG1("PIT Initialized at %d Hz", (int32_t)frequency);
 }
 
-void init_pci(FAT32* boot_partition, DriverManager* driverManager) {
+void init_pci(FileSystem* boot_partition, DriverManager* driverManager) {
     KDBG1("Initializing Drivers (PCI Scan)...");
     // ---------------------------------------------------------
     // Dynamic Graphics Loading (with PCI)
@@ -386,7 +387,7 @@ void init_pci(FAT32* boot_partition, DriverManager* driverManager) {
 
     // Only Proceed if Device Found
     if (dev != nullptr && dev->vendor_id != 0) {
-        char* BGAfilename = "DRIVERS/BGA.SYS";
+        const char* BGAfilename = PATH_BGA_DRIVER;
 
         KDBG1("BGA Hardware Detected (ID: %x:%x). Loading Driver... [%s]", dev->vendor_id,
               dev->device_id, BGAfilename);
@@ -454,7 +455,7 @@ void init_pci(FAT32* boot_partition, DriverManager* driverManager) {
     dev = pciCheck->FindHardwareDevice(0x8086, 0x2415);
 
     if (dev != nullptr && dev->vendor_id != 0) {
-        char* driverName = "DRIVERS/ac97.sys";
+        const char* driverName = PATH_AC97_DRIVER;
         KDBG1("Audio Hardware Detected. Loading... [%s]", driverName);
 
         File* drvFile = boot_partition->Open(driverName);
@@ -516,6 +517,35 @@ void pDesktop(void* arg) {
 
     Font* VBE_font = FontManager::activeInstance->getNewFont();
     VBE_font->setSize(MEDIUM);
+/* 
+    
+    // Font demo window
+    Window* fontWin = new Window(desktop, 50, 50, 320, 260);
+    if (fontWin) {
+        fontWin->setWindowTitle("Font Demo");
+
+        struct FontDemoEntry { const char* text; int y; FontSize size; FontType type; };
+        FontDemoEntry entries[] = {
+            {"Regular TINY",       30, TINY,   REGULAR},
+            {"Regular SMALL",      52, SMALL,  REGULAR},
+            {"Regular MEDIUM",     76, MEDIUM, REGULAR},
+            {"Regular LARGE",     104, LARGE,  REGULAR},
+            {"Bold SMALL",        134, SMALL,  BOLD},
+            {"Italic SMALL",      156, SMALL,  ITALIC},
+            {"Bold Italic MEDIUM",180, MEDIUM, BOLD_ITALIC},
+            {"Regular XLARGE",    212, XLARGE, REGULAR},
+        };
+        for (int i = 0; i < (int)(sizeof(entries)/sizeof(entries[0])); i++) {
+            Label* lbl = new Label(fontWin, 10, entries[i].y, 300, 30, entries[i].text);
+            if (lbl) {
+                lbl->setSize(entries[i].size);
+                lbl->setType(entries[i].type);
+                fontWin->AddChild(lbl);
+            }
+        }
+    }
+
+    desktop->AddChild(fontWin); */
 
     while (true) {
         // Only swap buffers if something actually changed
@@ -619,12 +649,17 @@ extern "C" void kernelMain(void* multiboot_structure, uint32_t magicnumber) {
     // Get Boot Partition
     g_bootPartition = MSDOS->partitions[0];
     if (!g_bootPartition) {
-        HALT("Error: No valid boot partition found!\nPlease reinstall the OS using 'make hdd'.\n");
+        KDBG1("No valid partition found — initializing disk (this runs once on first boot)...");
+        MSDOS->Initialize();
+        MSDOS->ReadPartitions();
+        g_bootPartition = MSDOS->partitions[0];
+        if (!g_bootPartition) {
+            HALT("Error: Failed to initialize disk.\n");
+        }
     }
     g_bootPartition->ListRoot();
     KDBG1("Boot partition mounted. Root listed.");
-    KernelSymbolTable::Load(g_bootPartition, "kernel.map");
-    KDBG1("Kernel symbols loaded from kernel.map");
+    KernelSymbolTable::Load(g_bootPartition, PATH_KERNEL_MAP);
 
     if (!(mbinfo->flags & (1 << 12))) {
         HALT("CRITICAL: Multiboot framebuffer info not available - cannot initialize graphics!\n");
@@ -637,8 +672,7 @@ extern "C" void kernelMain(void* multiboot_structure, uint32_t magicnumber) {
     }
 
     // Load Boot Image
-    char* bootImageName = (char*)"BITMAPS/BOOT.BMP";
-    Bitmap* bootImg = new Bitmap(bootImageName);
+    Bitmap* bootImg = new Bitmap(PATH_BOOT_BMP);
     if (!bootImg) {
         HALT("CRITICAL: Failed to allocate Bitmap for boot image!\n");
     }
@@ -655,24 +689,46 @@ extern "C" void kernelMain(void* multiboot_structure, uint32_t magicnumber) {
 
     delete bootImg;
 
-    // Load Font File
+    // Load Font Files
     bootMSG("[BOOT] Loading fonts");
     g_fManager = new FontManager();
     if (!g_fManager) {
         HALT("CRITICAL: Failed to allocate FontManager!\n");
     }
-    char* fontFileName = (char*)"FONTS/SEGOEUI.BIN";
-    File* fontFile = g_bootPartition->Open(fontFileName);
-    if (fontFile == nullptr || fontFile->size == 0) {
-        KDBG1("Font error, file not found or empty: %s. Please reinstall the OS using 'make hdd'.",
-              fontFileName);
-        while (1) {
-            asm volatile("hlt");
+
+    auto loadFontStyle = [&](const char* path, FontType style, bool critical) {
+        File* f = g_bootPartition->Open(path);
+        if (!f || f->size == 0) {
+            if (critical) {
+                KDBG1("Font error: %s not found. Run 'make hdd'.", path);
+                while (1) asm volatile("hlt");
+            }
+            if (f) { f->Close(); delete f; }
+            return;
+        }
+        g_fManager->LoadFile(f, style, path);
+        f->Close();
+        delete f;
+        KDBG1("Loaded font style %d from %s", (int)style, path);
+    };
+
+    // Load only REGULAR fonts at boot. Bold/Italic variants are loaded on demand.
+    loadFontStyle(PATH_SEGOEUI_FONT, REGULAR, true);
+    loadFontStyle(PATH_CASCADIA_FONT, REGULAR, false);
+
+    // Load icon font (FontAwesome) — icon codepoints start in Unicode PUA range
+    {
+        File* f = g_bootPartition->Open(PATH_ICON_FONT);
+        if (f && f->size > 0) {
+            g_fManager->LoadFile(f, REGULAR, PATH_ICON_FONT, 0xF000, 128);
+            f->Close();
+            delete f;
+            KDBG1("Loaded icon font from %s", PATH_ICON_FONT);
+        } else {
+            if (f) { f->Close(); delete f; }
+            KDBG1("Icon font not found: %s", PATH_ICON_FONT);
         }
     }
-    g_fManager->LoadFile(fontFile);
-    fontFile->Close();
-    delete fontFile;
 
     Font* BOOT = g_fManager->getNewFont();
     if (BOOT != nullptr) {
@@ -758,7 +814,7 @@ extern "C" void kernelMain(void* multiboot_structure, uint32_t magicnumber) {
     }
 
     if (g_AudioMixer) {
-        Wav* sound = new Wav("audio/boot.wav");
+        Wav* sound = new Wav(PATH_BOOT_WAV);
         if (!sound) {
             HALT("CRITICAL: Failed to allocate Wav object for boot sound!\n");
         }

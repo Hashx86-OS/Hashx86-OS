@@ -2,6 +2,7 @@
 #define TERMINALVIEW_H
 
 #include <gui/widget.h>
+#include <gui/fonts/font.h>
 #include <utils/linkedList.h>
 
 class TerminalView : public Widget {
@@ -31,12 +32,9 @@ private:
     int dragStartOffset;
     LinkedList<KeyEvent> keyEventQueue;
 
-    int GlyphScale() const;
-    int GlyphAdvance() const;
-    int LineAdvance() const;
     void PutPixel(int32_t px, int32_t py, uint32_t color);
-    void DrawGlyph(int32_t x, int32_t y, char c, uint32_t color);
     void DrawScrollBar();
+    void DrawCharacter(char c, int32_t x, int32_t y, uint32_t color);
 
     // Scrollbar geometry helpers
     int ScrollBarX() const;
@@ -56,6 +54,7 @@ public:
 
     void setText(const char* newText);
     void setSize(FontSize size);
+    void SetFontSize(int32_t px);
     void setScrollMeta(int totalLines, int visibleLines, int offset);
     int consumeScrollAction();
     bool IsTerminalView() const override {

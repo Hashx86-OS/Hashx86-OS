@@ -34,7 +34,7 @@
 #include <gui/renderer/nina.h>
 #include <stdint.h>
 #include <stdlib.h>
-#include <stdlib/math.h>
+#include <stdlib/fdlibm.h>
 
 // symbols from linker.ld for section addresses
 extern uint8_t __kernel_section_start;

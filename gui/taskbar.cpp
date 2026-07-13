@@ -106,7 +106,7 @@ void StartMenuButton::OnMouseMove(int32_t oldx, int32_t oldy, int32_t newx, int3
 void StartMenuButton::LaunchProgram() {
     if (!g_bootPartition || !g_elfLoader) return;
 
-    File* file = g_bootPartition->Open((char*)binPath);
+    File* file = g_bootPartition->Open(binPath);
     if (file && file->size > 0) {
         ProcessControlBlock* prog = g_elfLoader->loadELF(file, nullptr);
         if (!prog) {

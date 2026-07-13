@@ -78,6 +78,66 @@ const ListViewItem* ListView::GetItem(int index) const {
     return &items[index];
 }
 
+void ListView::SetItemHeight(int h) {
+    if (h < 10) h = 10;
+    int contentH = this->h - LISTVIEW_HEADER_HEIGHT - 2;
+    if (contentH > 0 && h > contentH) h = contentH;
+    itemHeight = h;
+    int visibleItems = contentH > 0 ? contentH / itemHeight : 0;
+    if (visibleItems < 1 && itemCount > 0) {
+        itemHeight = contentH > 0 ? contentH : 10;
+        visibleItems = 1;
+    }
+    int maxOff = itemCount - (visibleItems > 0 ? visibleItems : 1);
+    if (maxOff < 0) maxOff = 0;
+    if (scrollOffset > maxOff) scrollOffset = maxOff;
+    MarkDirty();
+}
+
+void ListView::OnKeyDown(const char* key) {
+    if (!enabled || !isVisible || !key) return;
+    if (key[0] == 0) return;
+
+    if (key[0] == '\r' || key[0] == '\n' || key[0] == ' ') {
+        // Enter or Space → fire click event
+        if (selectedIndex >= 0) {
+            Event* new_event = new Event{this->ID, ON_CLICK};
+            if (!new_event) return;
+            if (!Desktop::activeInstance) { delete new_event; return; }
+            EventHandler* handler = Desktop::activeInstance->getHandler(this->PID);
+            if (!handler) { delete new_event; return; }
+            handler->eventQueue.Add(new_event);
+            if (g_scheduler && handler->thread) {
+                g_scheduler->WakeThread(handler->thread);
+            }
+        }
+    }
+}
+
+void ListView::OnSpecialKeyDown(uint8_t key) {
+    if (!enabled || !isVisible) return;
+
+    if (key == 0x48) {
+        if (selectedIndex > 0) {
+            selectedIndex--;
+            if (selectedIndex < scrollOffset) {
+                scrollOffset = selectedIndex;
+            }
+            MarkDirty();
+        }
+    } else if (key == 0x50) {
+        if (selectedIndex < itemCount - 1) {
+            selectedIndex++;
+            int contentH = h - LISTVIEW_HEADER_HEIGHT - 2;
+            int visibleItems = contentH / itemHeight;
+            if (visibleItems > 0 && selectedIndex >= scrollOffset + visibleItems) {
+                scrollOffset = selectedIndex - visibleItems + 1;
+            }
+            MarkDirty();
+        }
+    }
+}
+
 void ListView::update() {
     MarkDirty();
 }
@@ -90,10 +150,10 @@ void ListView::RedrawToCache() {
     memset(cache, 0, (size_t)w * (size_t)h * sizeof(uint32_t));
 
     // Background
-    NINA::activeInstance->FillRoundedRectangle(cache, w, h, 0, 0, w, h, 4, LISTVIEW_BG_COLOR);
+    NINA::activeInstance->FillRoundedRectangle(cache, w, h, 0, 0, w, h, 4, LISTVIEW_BG);
 
     // Border
-    NINA::activeInstance->DrawRoundedRectangle(cache, w, h, 0, 0, w, h, 4, LISTVIEW_BORDER_COLOR);
+    NINA::activeInstance->DrawRoundedRectangle(cache, w, h, 0, 0, w, h, 4, LISTVIEW_BORDER);
 
     // Header bar
     NINA::activeInstance->FillRectangle(cache, w, h, 1, 1, w - 2, LISTVIEW_HEADER_HEIGHT,
@@ -105,11 +165,11 @@ void ListView::RedrawToCache() {
 
     // Separator under header
     NINA::activeInstance->DrawHorizontalLine(cache, w, h, 1, LISTVIEW_HEADER_HEIGHT, w - 2,
-                                             LISTVIEW_BORDER_COLOR);
+                                             LISTVIEW_BORDER);
 
     // Calculate visible range
     int contentH = h - LISTVIEW_HEADER_HEIGHT - 2;
-    int visibleItems = contentH / LISTVIEW_ITEM_HEIGHT;
+    int visibleItems = contentH / itemHeight;
     int startItem = scrollOffset;
     int endItem = startItem + visibleItems;
     if (endItem > itemCount) endItem = itemCount;
@@ -118,7 +178,7 @@ void ListView::RedrawToCache() {
     for (int i = startItem; i < endItem; i++) {
         if (!items[i].valid) continue;
 
-        int itemY = LISTVIEW_HEADER_HEIGHT + 1 + (i - startItem) * LISTVIEW_ITEM_HEIGHT;
+        int itemY = LISTVIEW_HEADER_HEIGHT + 1 + (i - startItem) * itemHeight;
 
         // Background
         uint32_t bgColor;
@@ -129,7 +189,7 @@ void ListView::RedrawToCache() {
         } else {
             bgColor = (i % 2 == 0) ? LISTVIEW_ITEM_BG_EVEN : LISTVIEW_ITEM_BG_ODD;
         }
-        NINA::activeInstance->FillRectangle(cache, w, h, 1, itemY, w - 2, LISTVIEW_ITEM_HEIGHT,
+        NINA::activeInstance->FillRectangle(cache, w, h, 1, itemY, w - 2, itemHeight,
                                             bgColor);
 
         // Icon indicator (small colored circle)
@@ -145,7 +205,7 @@ void ListView::RedrawToCache() {
                 iconColor = LISTVIEW_ICON_FILE;
                 break;
         }
-        NINA::activeInstance->FillCircle(cache, w, h, 12, itemY + LISTVIEW_ITEM_HEIGHT / 2, 4,
+        NINA::activeInstance->FillCircle(cache, w, h, 12, itemY + itemHeight / 2, 4,
                                          iconColor);
 
         // Name text
@@ -155,11 +215,9 @@ void ListView::RedrawToCache() {
         // Size text (if not directory)
         if (items[i].type != 1) {
             char sizeStr[16];
-            // Simple size formatting
             uint32_t sz = items[i].size;
             if (sz >= 1024) {
                 int kb = sz / 1024;
-                // Manual itoa
                 int pos = 0;
                 char tmp[16];
                 if (kb == 0) {
@@ -170,7 +228,6 @@ void ListView::RedrawToCache() {
                         kb /= 10;
                     }
                 }
-                // Reverse
                 for (int j = 0; j < pos; j++) {
                     sizeStr[j] = tmp[pos - 1 - j];
                 }
@@ -247,12 +304,11 @@ void ListView::OnMouseDown(int32_t mx, int32_t my, uint8_t button) {
     if (localY > LISTVIEW_HEADER_HEIGHT && localY < h && localX >= 0 &&
         localX < w - LISTVIEW_SCROLLBAR_WIDTH) {
         int clickedItem =
-            scrollOffset + (localY - LISTVIEW_HEADER_HEIGHT - 1) / LISTVIEW_ITEM_HEIGHT;
+            scrollOffset + (localY - LISTVIEW_HEADER_HEIGHT - 1) / itemHeight;
         if (clickedItem >= 0 && clickedItem < itemCount) {
             selectedIndex = clickedItem;
             MarkDirty();
 
-            // Fire click event
             Event* new_event = new Event{this->ID, ON_CLICK};
             if (!new_event) {
                 HALT("CRITICAL: Failed to allocate ListView click event!\n");
@@ -275,18 +331,51 @@ void ListView::OnMouseDown(int32_t mx, int32_t my, uint8_t button) {
             }
         }
     }
+
+    // Scrollbar thumb drag
+    if (localX >= w - LISTVIEW_SCROLLBAR_WIDTH - 1 && localX < w &&
+        localY > LISTVIEW_HEADER_HEIGHT && localY < h) {
+        isDraggingThumb = true;
+        dragStartY = my;
+        dragStartOffset = scrollOffset;
+    }
 }
 
-void ListView::OnMouseUp(int32_t, int32_t, uint8_t) {}
+void ListView::OnMouseUp(int32_t, int32_t, uint8_t) {
+    isDraggingThumb = false;
+}
 
 void ListView::OnMouseMove(int32_t, int32_t oldy, int32_t mx, int32_t my) {
     if (!isFocused) return;
+
+    if (isDraggingThumb) {
+        int contentH = h - LISTVIEW_HEADER_HEIGHT - 2;
+        int visibleItems = contentH / itemHeight;
+        if (visibleItems <= 0 || itemCount <= visibleItems) return;
+        int sbH = contentH;
+        int thumbH = (visibleItems * sbH) / itemCount;
+        if (thumbH < 10) thumbH = 10;
+        int travel = sbH - thumbH;
+        if (travel <= 0) return;
+        int dy = my - dragStartY;
+        int deltaOff = (dy * (itemCount - visibleItems)) / travel;
+        int newOff = dragStartOffset + deltaOff;
+        if (newOff < 0) newOff = 0;
+        int maxOff = itemCount - visibleItems;
+        if (newOff > maxOff) newOff = maxOff;
+        if (newOff != scrollOffset) {
+            scrollOffset = newOff;
+            MarkDirty();
+        }
+        return;
+    }
+
     int localY = my - this->y;
     int localX = mx - this->x;
     if (localY > LISTVIEW_HEADER_HEIGHT && localY < h) {
         if (localX >= 0 && localX < w - LISTVIEW_SCROLLBAR_WIDTH) {
             int hovered =
-                scrollOffset + (localY - LISTVIEW_HEADER_HEIGHT - 1) / LISTVIEW_ITEM_HEIGHT;
+                scrollOffset + (localY - LISTVIEW_HEADER_HEIGHT - 1) / itemHeight;
             if (hovered >= 0 && hovered < itemCount && hovered != hoveredIndex) {
                 hoveredIndex = hovered;
                 MarkDirty();

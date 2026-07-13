@@ -2,7 +2,7 @@
 #define TASKBAR_H
 
 #include <core/elf.h>
-#include <core/filesystem/FAT32.h>
+#include <core/filesystem/FileSystem.h>
 #include <core/globals.h>
 #include <gui/label.h>
 #include <gui/widget.h>

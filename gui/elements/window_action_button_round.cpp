@@ -54,14 +54,14 @@ void ACRButton::RedrawToCache() {
     int32_t radius = w / 2;
 
     // Background Fill
-    uint32_t bgColor = isPressed ? WINDOW_CLOSE_BUTTON_BACKGROUND_COLOR_PRESSED
-                                 : WINDOW_CLOSE_BUTTON_BACKGROUND_COLOR_NORMAL;
+    uint32_t bgColor = isPressed ? WINDOW_CLOSE_BTN_BG_PRESSED
+                                 : WINDOW_CLOSE_BTN_BG_NORMAL;
 
     NINA::activeInstance->FillCircle(cache, w, h, radius, radius, radius, bgColor);
 
     // Border
-    uint32_t borderColor = isPressed ? WINDOW_CLOSE_BUTTON_BORDER_COLOR_PRESSED
-                                     : WINDOW_CLOSE_BUTTON_BORDER_COLOR_NORMAL;
+    uint32_t borderColor = isPressed ? WINDOW_CLOSE_BTN_BORDER_PRESSED
+                                     : WINDOW_CLOSE_BTN_BORDER_NORMAL;
 
     NINA::activeInstance->DrawCircle(cache, w, h, radius, radius, radius, borderColor);
 
@@ -73,7 +73,7 @@ void ACRButton::RedrawToCache() {
         int32_t textX = (w - textW) / 2;
         int32_t textY = (h - textH) / 2;
 
-        uint32_t textColor = isPressed ? BUTTON_TEXT_COLOR_PRESSED : BUTTON_TEXT_COLOR_NORMAL;
+        uint32_t textColor = isPressed ? BUTTON_TEXT_PRESSED : BUTTON_TEXT_NORMAL;
 
         NINA::activeInstance->DrawString(cache, w, h, textX, textY - 2, label, this->font,
                                          textColor);

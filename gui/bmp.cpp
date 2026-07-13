@@ -7,8 +7,8 @@
  */
 
 #define KDBG_COMPONENT "GUI:BMP"
-#include <core/filesystem/FAT32.h>
 #include <core/filesystem/msdospart.h>
+#include <core/globals.h>
 #include <gui/bmp.h>
 
 Bitmap::Bitmap(File* file) {
@@ -20,19 +20,18 @@ Bitmap::Bitmap(File* file) {
     Load(file);
 }
 
-Bitmap::Bitmap(char* path) {
+Bitmap::Bitmap(const char* path) {
     this->valid = false;
     this->buffer = 0;
     this->width = 0;
     this->height = 0;
 
-    if (!MSDOSPartitionTable::activeInstance) {
-        KDBG1("Error: No active MSDOS partition table");
+    if (!g_bootPartition) {
+        KDBG1("Error: No active boot partition");
         return;
     }
 
-    FAT32* fs = MSDOSPartitionTable::activeInstance->partitions[0];
-    if (!fs) return;
+    FileSystem* fs = g_bootPartition;
 
     File* file = fs->Open(path);
 

@@ -14,7 +14,7 @@
 #include <core/pci.h>
 #include <core/pmm.h>
 #include <debug.h>
-#include <utils/string.h>
+#include <string.h>
 
 /* ================= IDs ================= */
 #define AC97_VENDOR_ID 0x8086

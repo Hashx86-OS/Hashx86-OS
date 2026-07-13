@@ -158,6 +158,7 @@ uint32_t KeyboardDriver::HandleInterrupt(uint32_t esp) {
     uint8_t key = dataPort.Read();
 
     static bool isExtendedScancode = false;
+    static uint8_t keyStatesExt[128] = {0};
 
     if (key == 0xE0) {
         isExtendedScancode = true;
@@ -185,6 +186,14 @@ uint32_t KeyboardDriver::HandleInterrupt(uint32_t esp) {
 
     if (isExtendedScancode) {
         isExtendedScancode = false;
+        
+        if (key < 0x80) {
+            keyStatesExt[key] = 1;
+        } else {
+            uint8_t releaseScancode = key & 0x7F;
+            if (releaseScancode < 128) keyStatesExt[releaseScancode] = 0;
+        }
+
         // Always update modifier state
         switch (key) {
             case 0x1D:

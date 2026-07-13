@@ -18,13 +18,19 @@ Button::~Button() {}
 
 bool Button::setText(const char* label) {
     this->label = label;
-    /*     WidgetData data = {0, 0, 0, 0, 0, label};
-        return HguiAPI(BUTTON, SET_TEXT, (void*)&data); */
+    WidgetData data = {ID, 0, 0, 0, 0, label};
+    return HguiAPI(BUTTON, SET_TEXT, (void*)&data);
 }
 
-bool Button::setWidth(int32_t w) {}
+bool Button::setWidth(int32_t w) {
+    WidgetData data = {ID, (int32_t)w};
+    return HguiAPI(BUTTON, SET_WIDTH, (void*)&data);
+}
 
-bool Button::setHeight(int32_t h) {}
+bool Button::setHeight(int32_t h) {
+    WidgetData data = {ID, (int32_t)h};
+    return HguiAPI(BUTTON, SET_HEIGHT, (void*)&data);
+}
 
 void Button::OnMouseDown(int32_t x, int32_t y, uint8_t button) {}
 
