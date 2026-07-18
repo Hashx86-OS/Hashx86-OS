@@ -36,6 +36,7 @@ objects = \
 	$(BUILD_DIR)/obj/core/interrupts.o \
 	$(BUILD_DIR)/obj/core/KernelSymbolResolver.o \
 	$(BUILD_DIR)/obj/core/memory.o \
+	$(BUILD_DIR)/obj/core/tlsf/tlsf.o \
 	$(BUILD_DIR)/obj/core/paging.o \
 	$(BUILD_DIR)/obj/core/pci.o \
 	$(BUILD_DIR)/obj/core/pmm.o \
@@ -168,6 +169,26 @@ run:
 	make iso
 	make runq
 
+HDD_RAW = /tmp/hdd_raw.img
+
+# Create a fresh disk image with two 512 MB FAT32 partitions
+hddinit:
+	sudo -v
+	-sudo qemu-nbd --disconnect /dev/nbd0
+	-rm -f $(HDD_RAW)
+	qemu-img create -f raw $(HDD_RAW) 1G
+	sudo modprobe nbd max_part=8
+	sudo qemu-nbd -c /dev/nbd0 -f raw $(HDD_RAW)
+	sudo parted -s /dev/nbd0 mklabel msdos
+	sudo parted -s /dev/nbd0 mkpart primary fat32 1MiB 513MiB
+	sudo parted -s /dev/nbd0 mkpart primary fat32 513MiB 100%
+	sudo mkfs.fat -F32 /dev/nbd0p1
+	sudo mkfs.fat -F32 /dev/nbd0p2
+	sudo qemu-nbd -d /dev/nbd0
+	rm -f $(QEMU_DISK)
+	qemu-img convert -f raw -O vdi $(HDD_RAW) $(QEMU_DISK)
+	rm -f $(HDD_RAW)
+
 hdd:
 # 	Cleanup from previous mounts
 	-sudo umount /mnt/vdi_p1
@@ -256,7 +277,7 @@ prog:
 	@sleep $(RUNQ_DELAY)
 	make runq
 
-.PHONY: clean build hdd check runq run prog runvb iso check-style check-bugs check-headers check-eof fix-style install newapp
+.PHONY: clean build hdd hddinit check runq run prog runvb iso check-style check-bugs check-headers check-eof fix-style install newapp
 
 # -----------------------------------
 # CODE QUALITY TOOLS

@@ -112,45 +112,21 @@ You need a `HDD.vdi` file to store drivers and files. Choose one of the methods 
 
 **Option A: Quick Start (Recommended)**
 
-- Download the pre-formatted `HDD.vdi` from the **Releases** page and place it in the project folder.
+- Download the pre-formatted `HDD.vdi` from the **Releases** page and place it in the project build folder.
 
 **Option B: Manual Setup**
 If you prefer to create a fresh disk:
 1. Create a 1GB VirtualBox Disk Image (VDI):
     ```bash
     mkdir build
-    qemu-img create -f vdi build/HDD.vdi 1G
+    make hddinit
     ```
 
-2. Run the OS for the first time.
-
-      The kernel will detect the empty disk and automatically format it to **FAT32**.
-      ```bash
-      make run
-      ```
-    *Wait for the OS to boot and confirm formatting is complete, then close the QEMU window.*
-
-3. Build Drivers & User Programs
+2. Build the OS
 
     ```bash
-    cd drivers/
-    make
-    cd ../user_prog/
-    make
-    cd ..
+    make build
     ```
-4. Install Drivers & Assets
-
-      Now that the disk is formatted, mount it and copy the required system files (Drivers, Fonts, Bitmaps).
-    ```bash
-    make hdd
-    ```
-
-### 3. Final Boot
-Run the OS again. It will now boot with full graphics and file support!
-```bash
-make runq
-```
 
 ---
 
@@ -162,7 +138,7 @@ This project is licensed under the MIT License. See `LICENSE` for more details.
 
 ## 👤 Author
 
-Hashx86 is developed and maintained by **[Me](https://github.com/sdmdg)**.  
+Hashx86 is developed and maintained by **[@sdmdg](https://github.com/sdmdg)**.  
 Built with ❤️ for learning and having fun with bare-metal programming.
 
 ---
@@ -177,6 +153,8 @@ This project wouldn’t have been possible without the help, guidance and inspir
 
 
 ## 🎨 Credits
+
+* **TLSF 3.1:** Two-Level Segregated Fit memory allocator by **mattconte** (BSD 3-Clause) — [github.com/mattconte/tlsf](https://github.com/mattconte/tlsf)
 
 * **FatFs R0.16:** Generic FAT Filesystem Module by **ChaN** on [elm-chan.org](https://elm-chan.org/fsw/ff/)
 

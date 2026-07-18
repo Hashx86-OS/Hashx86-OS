@@ -1,6 +1,6 @@
 #define KDBG_COMPONENT "FATFS"
 #include <core/filesystem/FatFsWrapper.h>
-#include "diskio.h"
+#include <core/filesystem/FatFs/diskio.h>
 #include <core/filesystem/File.h>
 #include <debug.h>
 #include <string.h>

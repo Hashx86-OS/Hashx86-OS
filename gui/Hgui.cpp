@@ -679,24 +679,39 @@ Widget* HguiHandler::FindWidgetByID(uint32_t searchID) {
 }
 
 void HguiHandler::RemoveAppByPID(uint32_t PID) {
-    bool removed = false;
-    do {
-        Widget* found = nullptr;
-        HguiWidgets.ForEach([&](Widget* c) {
-            if (c->PID == PID) found = c;
-        });
-        if (found) {
-            // Detach from parent tree first to avoid dangling parent references
-            if (found->parent) {
-                found->parent->RemoveChild(found);
+    // Collect all matching widgets first (snapshot).
+    Widget* toRemove[64];
+    uint32_t count = 0;
+    HguiWidgets.ForEach([&](Widget* c) {
+        if (c->PID == PID && count < 64) toRemove[count++] = c;
+    });
+
+    // Determine which widgets are "roots" within the PID set — a widget
+    // whose parent is also being removed will be freed by its parent's
+    // ~CompositeWidget() recursively, so we must skip it here to avoid
+    // double-free.
+    bool skip[64] = {false};
+    for (uint32_t i = 0; i < count; i++) {
+        Widget* w = toRemove[i];
+        if (w->parent) {
+            for (uint32_t j = 0; j < count; j++) {
+                if (toRemove[j] == w->parent) {
+                    skip[i] = true;
+                    break;
+                }
             }
-            HguiWidgets.Remove([&](Widget* c) { return c == found; });
-            delete found;
-            removed = true;
-        } else {
-            removed = false;
         }
-    } while (removed);
+    }
+
+    for (uint32_t i = 0; i < count; i++) {
+        if (skip[i]) continue;
+        Widget* w = toRemove[i];
+        if (w->parent) {
+            w->parent->RemoveChild(w);
+        }
+        HguiWidgets.Remove([&](Widget* c) { return c == w; });
+        delete w;
+    }
 
     if (Desktop::activeInstance) {
         Desktop::activeInstance->deleteEventHandler(PID);

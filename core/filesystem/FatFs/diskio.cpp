@@ -4,8 +4,8 @@
 
 #define KDBG_COMPONENT "DISKIO"
 
-#include "ff.h"         /* FatFs types: BYTE, LBA_t, UINT, DWORD */
-#include "diskio.h"
+#include <core/filesystem/FatFs/ff.h>         /* FatFs types: BYTE, LBA_t, UINT, DWORD */
+#include <core/filesystem/FatFs/diskio.h>
 #include <core/drivers/ata.h>
 #include <debug.h>
 
