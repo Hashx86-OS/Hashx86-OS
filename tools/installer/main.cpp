@@ -1,0 +1,397 @@
+// Order matters: console.h includes debug.h (HALT, printf).
+// We undef HALT and provide our own VGA-text version.
+#include <console.h>
+#include <core/drivers/ata.h>
+#include <core/filesystem/FatFs/ff.h>
+#include <core/filesystem/FatFs/diskio.h>
+#include <core/filesystem/FatFsWrapper.h>
+#include <core/multiboot.h>
+#include <core/pak.h>
+#include <string.h>
+#include <types.h>
+
+#undef HALT
+#define HALT(msg)                             \
+    do {                                      \
+        printf(RED, "\nFATAL: " msg "\n");    \
+        printf(RED, "System halted.\n");      \
+        asm volatile("cli; hlt");             \
+        for (;;) asm volatile("hlt");         \
+    } while (0)
+
+static FRESULT tryMount(BYTE pdrv, AdvancedTechnologyAttachment* ata,
+                        uint32_t start, uint32_t size, FATFS* fs) {
+    fatfs_init(pdrv, ata, start, size);
+    char path[4] = "0:";
+    path[0] = '0' + pdrv;
+    return f_mount(fs, path, 1);
+}
+
+static FRESULT formatPartition(BYTE pdrv, AdvancedTechnologyAttachment* ata,
+                               uint32_t start, uint32_t size) {
+    fatfs_init(pdrv, ata, start, size);
+    char path[4] = "0:";
+    path[0] = '0' + pdrv;
+    MKFS_PARM opt;
+    memset(&opt, 0, sizeof(opt));
+    opt.fmt = FM_FAT32 | FM_SFD;
+    opt.au_size = 0;
+    uint8_t work[4096];
+    return f_mkfs(path, &opt, work, sizeof(work));
+}
+
+static void installGRUB(AdvancedTechnologyAttachment* ata,
+                        const void* bootImg, uint32_t bootImgSize,
+                        const void* coreImg, uint32_t coreImgSize,
+                        uint32_t p1_start, uint32_t p1_size,
+                        uint32_t p2_start, uint32_t p2_size) {
+    (void)p2_start;
+    (void)p2_size;
+
+    uint8_t mbr[512];
+    memcpy(mbr, bootImg, 512);
+
+    memset(&mbr[446], 0, 64);
+    mbr[446 + 0] = 0x80;
+    mbr[446 + 4] = 0x0C;
+    *(uint32_t*)&mbr[446 + 8] = p1_start;
+    *(uint32_t*)&mbr[446 + 12] = p1_size;
+
+    mbr[462 + 0] = 0x00;
+    mbr[462 + 4] = 0x0C;
+    *(uint32_t*)&mbr[462 + 8] = p2_start;
+    *(uint32_t*)&mbr[462 + 12] = p2_size;
+
+    ata->Write28(0, mbr, 512);
+    printf(LIGHT_GRAY, "MBR written\n");
+
+    uint32_t coreSectors = (coreImgSize + 511) / 512;
+    const uint8_t* src = (const uint8_t*)coreImg;
+    for (uint32_t i = 0; i < coreSectors; i++) {
+        uint8_t sector[512];
+        memset(sector, 0, 512);
+        uint32_t remaining = coreImgSize - i * 512;
+        uint32_t chunk = remaining > 512 ? 512 : remaining;
+        memcpy(sector, src + i * 512, chunk);
+        ata->Write28(1 + i, sector, 512);
+    }
+    ata->Flush();
+    printf(LIGHT_GRAY, "core.img written (%u sectors)\n", coreSectors);
+}
+
+// Recursively delete a file or directory tree.
+static void wipePath(const char* path) {
+    DIR d;
+    if (f_opendir(&d, path) != FR_OK) {
+        f_unlink(path);
+        return;
+    }
+    FILINFO info;
+    while (f_readdir(&d, &info) == FR_OK && info.fname[0]) {
+        if (info.fname[0] == '.') continue;
+        char full[256];
+        uint32_t i = 0;
+        while (path[i]) { full[i] = path[i]; i++; }
+        full[i] = '/'; i++;
+        uint32_t j = 0;
+        while (info.fname[j] && i < sizeof(full) - 1) { full[i] = info.fname[j]; i++; j++; }
+        full[i] = 0;
+        wipePath(full);
+    }
+    f_closedir(&d);
+    f_unlink(path);
+}
+
+static void pitSleepMs(uint32_t ms) {
+    while (ms > 0) {
+        uint32_t chunk = ms > 50 ? 50 : ms;
+        uint32_t count = chunk * 1193;
+        outb(0x43, 0x30);
+        outb(0x40, count & 0xFF);
+        outb(0x40, (count >> 8) & 0xFF);
+        for (;;) {
+            outb(0x43, 0x00);
+            uint8_t lo = inb(0x40);
+            uint8_t hi = inb(0x40);
+            if (((uint16_t)lo | ((uint16_t)hi << 8)) == 0) break;
+        }
+        ms -= chunk;
+    }
+}
+
+// Send an ATAPI START STOP UNIT (eject) packet to a drive slot.
+static bool atapiEject(bool master, uint16_t base) {
+    uint16_t cmdPort = base + 7;
+    uint16_t devPort = base + 6;
+
+    outb(devPort, master ? 0xA0 : 0xB0);
+    inb(cmdPort); inb(cmdPort); inb(cmdPort); inb(cmdPort);
+
+    uint32_t w = 0;
+    while ((inb(cmdPort) & 0x80) && w++ < 1000000) {}
+
+    outb(base + 1, 0);
+    outb(base + 2, 0);
+    outb(base + 3, 0);
+    outb(base + 4, 0);
+    outb(base + 5, 0);
+    outb(cmdPort, 0xA0);
+
+    w = 0;
+    uint8_t status = inb(cmdPort);
+    while ((status & 0x80) || !(status & 0x08)) {
+        if (w++ > 1000000) return false;
+        status = inb(cmdPort);
+    }
+    if (status & 0x01) return false;
+
+    uint16_t cdb[6];
+    cdb[0] = 0x001B;
+    cdb[1] = 0x0000;
+    cdb[2] = 0x0002;
+    cdb[3] = 0x0000;
+    cdb[4] = 0x0000;
+    cdb[5] = 0x0000;
+    outsw(base, cdb, 6);
+
+    w = 0;
+    while ((inb(cmdPort) & 0x80) && w++ < 1000000) {}
+    return !(inb(cmdPort) & 0x01);
+}
+
+static void ejectCd() {
+    printf(LIGHT_GRAY, "Ejecting CD-ROM...\n");
+    if (atapiEject(true, 0x1F0) || atapiEject(false, 0x1F0) ||
+        atapiEject(true, 0x170) || atapiEject(false, 0x170))
+        printf(GREEN, "CD ejected\n");
+    else
+        printf(YELLOW, "No CD-ROM drive found, continuing\n");
+}
+
+static void ensurePath(const char* path) {
+    char buf[128];
+    buf[0] = '0';
+    buf[1] = ':';
+    uint32_t j = 2;
+    for (uint32_t i = 0; path[i] && j < sizeof(buf) - 1; i++) {
+        if (path[i] == '/') {
+            buf[j] = 0;
+            f_mkdir(buf);
+        }
+        buf[j++] = path[i];
+    }
+}
+
+extern "C" void kernelMain(void* multiboot_structure, uint32_t magicnumber) {
+    if (magicnumber != 0x2BADB002) {
+        for (;;) asm volatile("hlt");
+    }
+
+    MultibootInfo* mbinfo = (MultibootInfo*)multiboot_structure;
+
+    clearScreen();
+    printf(WHITE, "Hashx86-OS Installer v1.0\n");
+    printf(LIGHT_GRAY, "Booting installer kernel...\n");
+
+    void* pakData = nullptr;
+    uint32_t pakSize = 0;
+    if (mbinfo->flags & (1 << 3) && mbinfo->mods_count > 0) {
+        struct multiboot_module* modules = (struct multiboot_module*)mbinfo->mods_addr;
+        for (uint32_t i = 0; i < mbinfo->mods_count; i++) {
+            const char* cmdline = (const char*)modules[i].cmdline;
+            if (!cmdline) {
+                if (mbinfo->mods_count == 1) {
+                    pakData = (void*)modules[i].mod_start;
+                    pakSize = modules[i].mod_end - modules[i].mod_start;
+                }
+                continue;
+            }
+            const char* name = cmdline;
+            for (const char* p = name; *p; p++)
+                if (*p == '/') name = p + 1;
+            if (strcmp(name, "installer.pak") == 0) {
+                pakData = (void*)modules[i].mod_start;
+                pakSize = modules[i].mod_end - modules[i].mod_start;
+                break;
+            }
+        }
+    }
+
+    if (!pakData)
+        HALT("installer.pak not found. Boot with: module /installer.pak");
+
+    printf(LIGHT_GREEN, "Found installer.pak (%u bytes)\n", pakSize);
+
+    if (pakSize < sizeof(PakHeader))
+        HALT("PAK file too small");
+    PakHeader* phdr = (PakHeader*)pakData;
+    if (phdr->magic[0] != 'P' || phdr->magic[1] != 'A' ||
+        phdr->magic[2] != 'C' || phdr->magic[3] != 'K')
+        HALT("Invalid PAK magic");
+
+    const PakDirEntry* dir = (const PakDirEntry*)((uint8_t*)pakData + phdr->dirOffset);
+    uint32_t numEntries = phdr->dirSize / sizeof(PakDirEntry);
+    printf(LIGHT_GRAY, "PAK: %u entries\n", numEntries);
+
+    AdvancedTechnologyAttachment ata0(true, 0x1F0);
+    AdvancedTechnologyAttachment ata1(false, 0x1F0);
+    AdvancedTechnologyAttachment ata2(true, 0x170);
+    AdvancedTechnologyAttachment ata3(false, 0x170);
+
+    AdvancedTechnologyAttachment* ata = nullptr;
+    uint32_t totalSectors = 0;
+
+    for (int i = 0; i < 4; i++) {
+        AdvancedTechnologyAttachment* dev =
+            i == 0 ? &ata0 : i == 1 ? &ata1 : i == 2 ? &ata2 : &ata3;
+        totalSectors = dev->Identify();
+        if (totalSectors > 0) {
+            ata = dev;
+            printf(WHITE, "Using drive %d (%u sectors)\n", i, totalSectors);
+            break;
+        }
+    }
+
+    if (!ata) HALT("No ATA drive detected");
+    if (totalSectors <= 63) HALT("Disk too small");
+
+    uint32_t available = totalSectors - 63;
+    uint32_t p1_size = available / 2;
+    uint32_t p2_size = available - p1_size;
+    uint32_t p1_start = 63;
+    uint32_t p2_start = 63 + p1_size;
+
+    printf(LIGHT_GRAY, "Part 1: LBA %u +%u  Part 2: LBA %u +%u\n",
+           p1_start, p1_size, p2_start, p2_size);
+
+    const void* bootImg = nullptr;
+    uint32_t bootImgSize = 0;
+    const void* coreImg = nullptr;
+    uint32_t coreImgSize = 0;
+    for (uint32_t i = 0; i < numEntries; i++) {
+        const void* data = (uint8_t*)pakData + dir[i].offset;
+        if (strcmp(dir[i].name, "boot/boot.img") == 0) {
+            bootImg = data; bootImgSize = dir[i].size;
+        } else if (strcmp(dir[i].name, "boot/core.img") == 0) {
+            coreImg = data; coreImgSize = dir[i].size;
+        }
+    }
+
+    if (!bootImg || bootImgSize < 512) HALT("boot.img missing or too small");
+    if (!coreImg || coreImgSize == 0) HALT("core.img missing");
+
+    printf(LIGHT_BLUE, "Installing GRUB...\n");
+    installGRUB(ata, bootImg, bootImgSize, coreImg, coreImgSize,
+                p1_start, p1_size, p2_start, p2_size);
+
+    // Partition 1 — format only if not already a valid FAT32 volume
+    {
+        FATFS testFs;
+        int mounted = tryMount(0, ata, p1_start, p1_size, &testFs);
+        if (mounted == FR_OK) {
+            printf(LIGHT_GRAY, "Partition 1 already FAT32, skipping format\n");
+            f_mount(nullptr, "0:", 0);
+        } else {
+            printf(WHITE, "Formatting partition 1...\n");
+            FRESULT res = formatPartition(0, ata, p1_start, p1_size);
+            if (res != FR_OK)
+                HALT("Format partition 1 failed");
+            printf(LIGHT_GRAY, "Partition 1 formatted\n");
+        }
+    }
+
+    // Partition 2 — same check
+    {
+        FATFS testFs;
+        int mounted = tryMount(1, ata, p2_start, p2_size, &testFs);
+        if (mounted == FR_OK) {
+            printf(LIGHT_GRAY, "Partition 2 already FAT32, skipping format\n");
+            f_mount(nullptr, "1:", 0);
+        } else {
+            printf(WHITE, "Formatting partition 2...\n");
+            FRESULT res = formatPartition(1, ata, p2_start, p2_size);
+            if (res != FR_OK)
+                HALT("Format partition 2 failed");
+            printf(LIGHT_GRAY, "Partition 2 formatted\n");
+        }
+    }
+
+    // Mount partition 1 and extract files
+    FATFS fatfs;
+    fatfs_init(0, ata, p1_start, p1_size);
+    {
+        FRESULT res = f_mount(&fatfs, "0:", 1);
+        if (res != FR_OK) {
+            printf(RED, "Mount failed: %d\n", res);
+            HALT("Mount partition 1 failed");
+        }
+    }
+
+    printf(LIGHT_GRAY, "Cleaning partition 1...\n");
+    wipePath("0:");
+
+    printf(WHITE, "Extracting files...\n");
+    uint32_t extracted = 0;
+    uint32_t skipped = 0;
+    for (uint32_t i = 0; i < numEntries; i++) {
+        const char* name = dir[i].name;
+        const uint8_t* data = (const uint8_t*)pakData + dir[i].offset;
+        uint32_t size = dir[i].size;
+
+        if (strcmp(name, "boot/boot.img") == 0 ||
+            strcmp(name, "boot/core.img") == 0) {
+            skipped++;
+            continue;
+        }
+
+        ensurePath(name);
+
+        char fatPath[128];
+        fatPath[0] = '0';
+        fatPath[1] = ':';
+        uint32_t j = 2;
+        for (uint32_t k = 0; name[k] && j < sizeof(fatPath) - 1; k++)
+            fatPath[j++] = name[k];
+        fatPath[j] = 0;
+
+        if (size > 0) {
+            FIL fil;
+            FRESULT res = f_open(&fil, fatPath, FA_CREATE_ALWAYS | FA_WRITE);
+            if (res == FR_OK) {
+                UINT bw;
+                f_write(&fil, data, size, &bw);
+                f_close(&fil);
+                if (bw != size)
+                    printf(YELLOW, "  short write: %s\n", name);
+            } else {
+                printf(YELLOW, "  failed: %s (%d)\n", name, res);
+            }
+        } else {
+            FIL fil;
+            FRESULT res = f_open(&fil, fatPath, FA_CREATE_NEW | FA_WRITE);
+            if (res == FR_OK) f_close(&fil);
+        }
+        extracted++;
+    }
+
+    printf(GREEN, "%u files extracted (%u skipped)\n", extracted, skipped);
+    f_mount(nullptr, "0:", 0);
+
+    printf(WHITE, "\n");
+    printf(WHITE, "==============================================================\n");
+    printf(LIGHT_GREEN,  "  Installation complete. Remove installation media and reset.\n");
+    printf(WHITE, "==============================================================\n");
+
+    ejectCd();
+
+    printf(YELLOW, "Rebooting in 5 seconds...\n");
+    for (int i = 5; i > 0; i--) {
+        printf(LIGHT_GRAY, "%d...", i);
+        pitSleepMs(1000);
+    }
+    printf(WHITE, "\nRebooting now!\n");
+    pitSleepMs(500);
+
+    outb(0x64, 0xFE);
+    for (;;) asm volatile("hlt");
+}

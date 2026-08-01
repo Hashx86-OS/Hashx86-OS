@@ -124,10 +124,77 @@ $(BUILD_DIR)/obj/%.o: %.asm
 	mkdir -p $(dir $@)
 	nasm $(ASM_NASM_PARAMS) -o $@ $<
 
-# Linking the kernel binary
+# Linking the main kernel binary
 $(KERNEL_BIN): linker.ld $(objects)
 	mkdir -p $(BUILD_DIR)
 	ld $(LD_PARAMS) -Map $(KERNEL_MAP) -T $< -o $@ $(objects)
+
+# Installer kernel — minimal heap-free build (VGA text mode, no GUI/scheduler/paging)
+# Uses stub headers under tools/installer/include/ to bypass the bloated kernel includes.
+INSTALLER_INCLUDES = -Itools/installer/include -Iinclude -I.
+INSTALLER_CFLAGS = -m32 -g -ffreestanding $(INSTALLER_INCLUDES) -fno-use-cxa-atexit -nostdlib -fno-builtin -fno-rtti -fno-exceptions -fno-common -fno-omit-frame-pointer -DKDBG_ENABLE=0 -DKDBG_LEVEL=0
+INSTALLER_ASMFLAGS = $(ASM_NASM_PARAMS)
+
+INSTALLER_OBJECTS = \
+	$(BUILD_DIR)/obj/installer/loader.o \
+	$(BUILD_DIR)/obj/installer/main.o \
+	$(BUILD_DIR)/obj/installer/ata.o \
+	$(BUILD_DIR)/obj/installer/diskio.o \
+	$(BUILD_DIR)/obj/core/ports.o \
+	$(BUILD_DIR)/obj/core/filesystem/FatFs/ff.o \
+	$(BUILD_DIR)/obj/core/filesystem/FatFs/ffunicode.o \
+	$(BUILD_DIR)/obj/core/constructors.o \
+	$(BUILD_DIR)/obj/console.o \
+	$(BUILD_DIR)/obj/stdlib.o \
+	$(BUILD_DIR)/obj/stdlib/string/strlen.o \
+	$(BUILD_DIR)/obj/stdlib/string/strcmp.o \
+	$(BUILD_DIR)/obj/stdlib/string/strncmp.o \
+	$(BUILD_DIR)/obj/stdlib/string/strcpy.o \
+	$(BUILD_DIR)/obj/stdlib/string/strncpy.o \
+	$(BUILD_DIR)/obj/stdlib/string/strcat.o \
+	$(BUILD_DIR)/obj/stdlib/string/strncat.o \
+	$(BUILD_DIR)/obj/stdlib/string/strchr.o \
+	$(BUILD_DIR)/obj/stdlib/string/strrchr.o \
+	$(BUILD_DIR)/obj/stdlib/string/strstr.o \
+	$(BUILD_DIR)/obj/stdlib/string/strtok.o \
+	$(BUILD_DIR)/obj/stdlib/string/strspn.o \
+	$(BUILD_DIR)/obj/stdlib/string/strcspn.o \
+	$(BUILD_DIR)/obj/stdlib/string/strpbrk.o \
+	$(BUILD_DIR)/obj/stdlib/string/memmove.o \
+	$(BUILD_DIR)/obj/stdlib/string/memchr.o \
+	$(BUILD_DIR)/obj/stdlib/string/memcmp.o \
+	$(BUILD_DIR)/obj/stdlib/string/memcpy.o \
+	$(BUILD_DIR)/obj/stdlib/string/memset.o \
+	$(BUILD_DIR)/obj/stdlib/string/HexStrToInt.o
+
+# Installer-specific compile rules (with stub header override)
+$(BUILD_DIR)/obj/installer/loader.o: tools/installer/loader.asm
+	mkdir -p $(dir $@)
+	nasm $(INSTALLER_ASMFLAGS) -o $@ $<
+
+$(BUILD_DIR)/obj/installer/main.o: tools/installer/main.cpp
+	mkdir -p $(dir $@)
+	g++ $(INSTALLER_CFLAGS) -o $@ -c $<
+
+$(BUILD_DIR)/obj/installer/ata.o: core/drivers/ata.cpp
+	mkdir -p $(dir $@)
+	g++ $(INSTALLER_CFLAGS) -o $@ -c $<
+
+$(BUILD_DIR)/obj/installer/diskio.o: core/filesystem/FatFs/diskio.cpp
+	mkdir -p $(dir $@)
+	g++ $(INSTALLER_CFLAGS) -o $@ -c $<
+
+# console.o is not part of the main kernel build, so compile it here
+$(BUILD_DIR)/obj/console.o: console.cpp
+	mkdir -p $(dir $@)
+	g++ $(INSTALLER_CFLAGS) -o $@ -c $<
+
+KERNEL_INSTALLER_BIN = $(BUILD_DIR)/kernel_installer.bin
+KERNEL_INSTALLER_MAP = $(BUILD_DIR)/kernel_installer.map
+
+$(KERNEL_INSTALLER_BIN): linker.ld $(INSTALLER_OBJECTS)
+	mkdir -p $(BUILD_DIR)
+	ld $(LD_PARAMS) -Map $(KERNEL_INSTALLER_MAP) -T $< -o $@ $(INSTALLER_OBJECTS)
 
 # Install the kernel binary (updated path)
 install: $(KERNEL_BIN)
@@ -182,7 +249,7 @@ hddinit:
 	sudo parted -s /dev/nbd0 mklabel msdos
 	sudo parted -s /dev/nbd0 mkpart primary fat32 1MiB 513MiB
 	sudo parted -s /dev/nbd0 mkpart primary fat32 513MiB 100%
-	sudo mkfs.fat -F32 /dev/nbd0p1
+	sudo mkfs				.fat -F32 /dev/nbd0p1
 	sudo mkfs.fat -F32 /dev/nbd0p2
 	sudo qemu-nbd -d /dev/nbd0
 	rm -f $(QEMU_DISK)
@@ -271,13 +338,102 @@ iso: $(KERNEL_BIN)
 	grub-mkrescue --output=$(KERNEL_ISO) --modules="video gfxterm video_bochs video_cirrus" $(BUILD_DIR)/iso
 	rm -rf $(BUILD_DIR)/iso
 
+INSTALLER_PAK = $(BUILD_DIR)/installer.pak
+INSTALLER_ISO = $(BUILD_DIR)/installer.iso
+INSTALLER_CORE_IMG = $(BUILD_DIR)/installer_core.img
+INSTALLER_PAK_DIR = $(BUILD_DIR)/installer_data
+
+# Build GRUB core.img for the installer (fat + biosdisk + part_msdos)
+$(INSTALLER_CORE_IMG):
+	grub-mkimage -O i386-pc -o $@ --prefix='(hd0,msdos1)/boot/grub' fat part_msdos biosdisk
+
+# Build host-side packer tool
+$(BUILD_DIR)/packer: tools/installer/packer.cpp
+	g++ -std=c++11 -o $@ $<
+
+# Prepare installer data directory (mirrors the HDD layout)
+$(INSTALLER_PAK_DIR): $(KERNEL_BIN) $(INSTALLER_CORE_IMG)
+	rm -rf $@
+	# GRUB boot files
+	mkdir -p $@/boot/grub
+	cp /usr/lib/grub/i386-pc/boot.img $@/boot/
+	cp $(INSTALLER_CORE_IMG) $@/boot/core.img
+	# grub.cfg for the installed system
+	echo 'set timeout=0' > $@/boot/grub/grub.cfg
+	echo 'set default=0' >> $@/boot/grub/grub.cfg
+	echo 'terminal_output gfxterm' >> $@/boot/grub/grub.cfg
+	echo '' >> $@/boot/grub/grub.cfg
+	echo 'menuentry "Hashx86-OS" {' >> $@/boot/grub/grub.cfg
+	echo '  multiboot /boot/kernel.bin' >> $@/boot/grub/grub.cfg
+	echo '  boot' >> $@/boot/grub/grub.cfg
+	echo '}' >> $@/boot/grub/grub.cfg
+	# All GRUB platform modules (needed by core.img + grub.cfg)
+	mkdir -p $@/boot/grub/i386-pc
+	cp /usr/lib/grub/i386-pc/*.mod $@/boot/grub/i386-pc/
+	cp /usr/lib/grub/i386-pc/*.lst $@/boot/grub/i386-pc/ 2>/dev/null || true
+	# Kernel (for booting after install — normal kernel, not the installer)
+	mkdir -p $@/boot
+	cp $(KERNEL_BIN) $@/boot/kernel.bin
+	cp $(KERNEL_MAP) $@/
+	# Apps (all except Game3D which goes to its own directory)
+	mkdir -p $@/Hashx86/apps
+	for app in $(BUILD_DIR)/user/*.bin; do \
+		base=$$(basename $$app); \
+		if [ "$$base" != "Game3D.bin" ]; then \
+			cp $$app $@/Hashx86/apps/; \
+		fi; \
+	done
+	# Game3D — binary + data together
+	mkdir -p $@/Apps/Game3D
+	cp $(BUILD_DIR)/user/Game3D.bin $@/Apps/Game3D/ 2>/dev/null || true
+	cp bin/ProgFile/Game3D/* $@/Apps/Game3D/ 2>/dev/null || true
+	# Graphics
+	mkdir -p $@/Hashx86/gfx
+	cp bin/bitmaps/*.bmp $@/Hashx86/gfx/
+	# Fonts
+	mkdir -p $@/Hashx86/fonts
+	cp bin/fonts/*.ttf $@/Hashx86/fonts/
+	# Audio
+	mkdir -p $@/Hashx86/audio
+	cp bin/audio/boot.wav $@/Hashx86/audio/
+	# Drivers
+	mkdir -p $@/Hashx86/drivers
+	cp $(BUILD_DIR)/drivers/*.sys $@/Hashx86/drivers/
+
+# Build installer.pak from the prepared data directory
+$(INSTALLER_PAK): $(BUILD_DIR)/packer $(INSTALLER_PAK_DIR)
+	$(BUILD_DIR)/packer $(INSTALLER_PAK_DIR) $(INSTALLER_PAK)
+
+# Build the installer ISO (uses kernel_installer.bin, not the main kernel)
+installer-iso: $(KERNEL_INSTALLER_BIN) $(INSTALLER_PAK)
+	mkdir -p $(BUILD_DIR)/iso/boot/grub
+	cp $(KERNEL_INSTALLER_BIN) $(BUILD_DIR)/iso/boot/kernel.bin
+	cp $(INSTALLER_PAK) $(BUILD_DIR)/iso/installer.pak
+	echo 'set timeout=0' > $(BUILD_DIR)/iso/boot/grub/grub.cfg
+	echo 'set default=0' >> $(BUILD_DIR)/iso/boot/grub/grub.cfg
+	echo 'terminal_output gfxterm' >> $(BUILD_DIR)/iso/boot/grub/grub.cfg
+	echo '' >> $(BUILD_DIR)/iso/boot/grub/grub.cfg
+	echo 'menuentry "Hashx86-OS Installer" {' >> $(BUILD_DIR)/iso/boot/grub/grub.cfg
+	echo '  multiboot /boot/kernel.bin' >> $(BUILD_DIR)/iso/boot/grub/grub.cfg
+	echo '  module /installer.pak installer.pak' >> $(BUILD_DIR)/iso/boot/grub/grub.cfg
+	echo '  boot' >> $(BUILD_DIR)/iso/boot/grub/grub.cfg
+	echo '}' >> $(BUILD_DIR)/iso/boot/grub/grub.cfg
+	grub-mkrescue --output=$(INSTALLER_ISO) --modules="video gfxterm video_bochs video_cirrus" $(BUILD_DIR)/iso
+	rm -rf $(BUILD_DIR)/iso
+
+# Run installer in QEMU (uses a blank disk image)
+run-installer: installer-iso
+	qemu-img create -f qcow2 $(BUILD_DIR)/install_disk.qcow2 1G
+	qemu-system-i386 -cdrom $(INSTALLER_ISO) -boot d -vga std -serial stdio -m 1G \
+	  -drive file=$(BUILD_DIR)/install_disk.qcow2,format=qcow2
+
 prog:
 	make hdd
 	@echo "[PROG] Waiting $(RUNQ_DELAY)s before runq..."
 	@sleep $(RUNQ_DELAY)
 	make runq
 
-.PHONY: clean build hdd hddinit check runq run prog runvb iso check-style check-bugs check-headers check-eof fix-style install newapp
+.PHONY: clean build hdd hddinit check runq run prog runvb iso installer-iso run-installer check-style check-bugs check-headers check-eof fix-style install newapp
 
 # -----------------------------------
 # CODE QUALITY TOOLS
