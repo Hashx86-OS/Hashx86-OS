@@ -9,6 +9,7 @@
 #define KDBG_COMPONENT "KERNEL"
 #include <kernel.h>
 #include <core/filesystem/Paths.h>
+#include <core/kstack.h>
 
 #define DEBUG_ENABLED TRUE;
 #define PIT_COMMAND_PORT 0x43
@@ -298,6 +299,13 @@ void init_memory(MultibootInfo* mbinfo) {
     // Mark FREE Region, but SKIP the bitmap!
     pmm_init_region(heap_start_addr + bitmap_size, g_kmap.available.end_addr);
 
+    // Reserve the dedicated kernel-stack zone BEFORE the heap is carved out,
+    // so the heap allocator and user allocations skip this region entirely.
+    // Kernel thread stacks live here (with guard pages), never in the heap.
+    if (kstack_init() != 0) {
+        HALT("CRITICAL: Failed to initialize kernel stack zone!\n");
+    }
+
     // HEAP ALLOCATION
     uint32_t actual_heap_start = heap_start_addr + bitmap_size;
     if ((actual_heap_start & 0xFFF) != 0) {
@@ -309,8 +317,7 @@ void init_memory(MultibootInfo* mbinfo) {
     // These MUST stay below 256MB because the kernel accesses them via
     // identity-mapped physical addresses after paging is activated.
     // The kernel heap only needs a modest amount for kmalloc (PCBs, TCBs, buffers, etc.).
-    uint32_t heap_size_bytes =
-        128 * 1024 * 1024;  // 128 MB for kernel objects, GUI, font data, stacks
+    uint32_t heap_size_bytes = 64 * 1024 * 1024;  // 64 MB for kernel objects, GUI, font data
     uint32_t blocks_needed = heap_size_bytes / PMM_BLOCK_SIZE;
 
     KDBG1("Kernel Heap: Start=0x%x Size=%d MB (%d blocks)", actual_heap_start,
@@ -607,6 +614,10 @@ extern "C" void kernelMain(void* multiboot_structure, uint32_t magicnumber) {
         HALT("CRITICAL: Failed to allocate Paging object!\n");
     }
     g_paging->Activate();
+
+    // Paging is now live: unmap every kernel-stack guard page so a stack
+    // overflow faults instead of corrupting memory.
+    kstack_zone_activate(g_paging->KernelPageDirectory);
 
     // Initialize ATA
     AdvancedTechnologyAttachment* ata = nullptr;

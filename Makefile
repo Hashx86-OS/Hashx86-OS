@@ -35,6 +35,7 @@ objects = \
 	$(BUILD_DIR)/obj/core/globals.o \
 	$(BUILD_DIR)/obj/core/interrupts.o \
 	$(BUILD_DIR)/obj/core/KernelSymbolResolver.o \
+	$(BUILD_DIR)/obj/core/kstack.o \
 	$(BUILD_DIR)/obj/core/memory.o \
 	$(BUILD_DIR)/obj/core/tlsf/tlsf.o \
 	$(BUILD_DIR)/obj/core/paging.o \

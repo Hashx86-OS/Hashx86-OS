@@ -7,12 +7,13 @@
  */
 
 #define KDBG_COMPONENT "IDT"
-#include <core/filesystem/Paths.h>
 #include <core/CrashReporter.h>
 #include <core/Iguard.h>
 #include <core/KernelSymbolResolver.h>
 #include <core/filesystem/FileSystem.h>
+#include <core/filesystem/Paths.h>
 #include <core/interrupts.h>
+#include <core/kstack.h>
 #include <gui/Hgui.h>
 
 static uint16_t HWInterruptOffset = 0x20;
@@ -300,6 +301,21 @@ uint32_t InterruptManager::DohandleException(uint8_t interruptNumber, uint32_t e
         KDBG1("FAULT IN USER MODE: TID=%d PID=%d", scheduler->currentThread->tid,
               scheduler->currentThread->pid);
     }
+
+    // Kernel stack overflow detection: a kernel-mode page fault into one of
+    // the dedicated kernel-stack guard pages means the current thread's
+    // kernel stack grew past its end.  Report it explicitly.
+    if (interruptNumber == 0x0E && !isUserFault && kstack_is_guard_page(faulting_addr)) {
+        KDBG1("*** KERNEL STACK OVERFLOW ***");
+        if (scheduler && scheduler->currentThread) {
+            KDBG1("  TID=%u PID=%u EIP=0x%x ESP=0x%x CR2=0x%x", scheduler->currentThread->tid,
+                  scheduler->currentThread->pid, state->eip, state->esp, faulting_addr);
+        } else {
+            KDBG1("  EIP=0x%x ESP=0x%x CR2=0x%x", state->eip, state->esp, faulting_addr);
+        }
+        FlushSerial();
+    }
+
     KernelSymbolTable::PrintStackTrace(20);
     // FLUSH serial NOW before Deactivate/BSOD, because BSOD code may fault
     FlushSerial();
