@@ -42,7 +42,7 @@ int32_t syscall_clone(uint32_t clone_flags, void* child_stack, void* parent_tid,
                       void* child_tid);
 int32_t syscall_getdents(uint32_t fd, struct linux_dirent* dirp, uint32_t count);
 void syscall_nanosleep(struct timespec* req, struct timespec* rem);
-
+int32_t syscall_getcwd(char* buf, uint32_t bufSize);
 void syscall_debug(const char* str);
 uint32_t syscall_peek_memory(uint32_t address, uint32_t size);
 

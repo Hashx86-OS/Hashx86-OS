@@ -119,6 +119,8 @@ ProcessControlBlock* Scheduler::CreateProcess(bool isKernel, void (*entrypoint)(
     pcb->cliHostViewId = 0;
     pcb->cliHostPid = 0;
     pcb->cliAttachedViewId = 0;
+    pcb->cwd[0] = '/';
+    pcb->cwd[1] = '\0';
     for (uint32_t fd = FD_MIN; fd < FD_MAX; fd++) {
         pcb->fdTable[fd] = nullptr;
     }
