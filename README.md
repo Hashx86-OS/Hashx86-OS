@@ -107,25 +107,47 @@ cd Hashx86-OS
 > The original Hashx86 repository is archived and no longer maintained.
 > https://github.com/sdmdg/Hashx86
 
-### 2. Setup the Hard Disk
-You need a `HDD.vdi` file to store drivers and files. Choose one of the methods below:
+### 2. Install the OS
+Choose one of the methods below:
 
 **Option A: Quick Start (Recommended)**
 
-- Download the pre-formatted `HDD.vdi` from the **Releases** page and place it in the project build folder.
+- Download the installer ISO from the **Releases** page, then boot it to install the OS onto a disk.
+
+To install onto an ATA disk in VirtualBox:
+
+1. Create a new VM (e.g. *My Operating System*), OS type *Other/Unknown*, at least **1 GB RAM**.
+2. Create a virtual **IDE (ATA)** hard disk (VDI, dynamically sized, at least **1 GB**). The installer only targets ATA disks, so use an IDE controller rather than SATA.
+3. Mount the downloaded **installer ISO** as the VM's **Optical Drive**.
+4. Start the VM. The installer will format the ATA disk and install the OS.
+5. After installation, eject the ISO from the Optical Drive and reboot the VM to boot the installed system.
 
 **Option B: Manual Setup**
 If you prefer to create a fresh disk:
-1. Create a 1GB VirtualBox Disk Image (VDI):
+1. Clone the repository
+
+    ```bash
+    git clone https://github.com/Hashx86-OS/Hashx86-OS
+    cd Hashx86-OS
+    ```
+
+2. Create a 1GB VirtualBox Disk Image (VDI):
+
     ```bash
     mkdir build
     make hddinit
     ```
 
-2. Build the OS
+3. Build the OS
 
     ```bash
     make build
+    ```
+
+4. Boot the OS in QEMU
+
+    ```bash
+    make runq
     ```
 
 ---

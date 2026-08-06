@@ -17,6 +17,10 @@
 // it uses a static bitmap rather than heap-backed data structures.
 // --------------------------------------------------------------------------
 
+// Minimum size the kernel-stack zone must retain after clamping so that it
+// can hold a useful number of slots (16 MiB).
+static const uint32_t KSTACK_ZONE_MIN_SIZE = 16 * 1024 * 1024;
+
 static bool g_zoneReady = false;
 static uint32_t g_zoneBase = 0;
 static uint32_t g_zoneEnd = 0;
@@ -49,7 +53,7 @@ int kstack_init() {
     uint32_t cap = (avail_end < 0x10000000) ? avail_end : 0x10000000;
 
     if ((uint64_t)base + size > cap) {
-        if (cap <= base + 16 * 1024 * 1024) {
+        if (cap <= base + KSTACK_ZONE_MIN_SIZE) {
             KDBG1(
                 "kstack_init FAILED: not enough low memory for stack zone "
                 "(avail_end=0x%x)",
@@ -58,7 +62,7 @@ int kstack_init() {
         }
         size = cap - base;
         size -= size % KSTACK_SLOT_SIZE;
-        if (size < 16 * 1024 * 1024) {
+        if (size < KSTACK_ZONE_MIN_SIZE) {
             KDBG1("kstack_init FAILED: zone too small after clamping (0x%x)", size);
             return -1;
         }

@@ -9,6 +9,7 @@
 #define KDBG_COMPONENT "GUI:DESKTOP"
 #include <gui/desktop.h>
 #include <core/filesystem/Paths.h>
+#include <core/Iguard.h>
 
 Desktop* Desktop::activeInstance = nullptr;
 
@@ -92,6 +93,9 @@ EventHandler* Desktop::getHandler(uint32_t pid) {
 }
 
 void Desktop::Draw(GraphicsDriver* gc) {
+    // serialize against concurrent tree mutation
+    InterruptGuard guard;
+
     uint32_t screenW = gc->GetWidth();
     uint32_t screenH = gc->GetHeight();
     uint32_t* vesaBuffer = gc->GetBackBuffer();
@@ -206,6 +210,9 @@ uint32_t Desktop::getNewID() {
 }
 
 void Desktop::RemoveAppByPID(uint32_t pid) {
+    // serialize against a concurrent Desktop::Draw/CompositeWidget::Draw
+    InterruptGuard guard;
+
     Widget* result = nullptr;
     childrenList.ForEach([&](Widget* c) {
         if (!result && c->PID == pid) result = c;

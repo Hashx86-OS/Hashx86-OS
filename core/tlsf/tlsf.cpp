@@ -6,7 +6,7 @@
 #define CHAR_BIT 8
 
 #if KDBG_LEVEL >= 3
-#define tlsf_assert(x) do { if (!(x)) { printf("TLSF assert: %s\n", #x); asm volatile("hlt"); } } while(0)
+#define tlsf_assert(x) do { if (!(x)) { printf("TLSF assert: %s\n", #x); asm volatile("cli; 1: hlt; jmp 1b"); } } while(0)
 #else
 #define tlsf_assert(x) ((void)0)
 #endif

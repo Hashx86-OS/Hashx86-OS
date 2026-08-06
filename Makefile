@@ -214,8 +214,12 @@ build:
 	make -C drivers
 	make iso
 	make hdd
+
+build-run:
+	make build
 	@echo "[BUILD] Waiting $(RUNQ_DELAY)s to release the HDD file..."
 	@sleep $(RUNQ_DELAY)
+	make runq
 	make runq
 
 runq: iso
@@ -250,7 +254,9 @@ hddinit:
 	sudo parted -s /dev/nbd0 mklabel msdos
 	sudo parted -s /dev/nbd0 mkpart primary fat32 1MiB 513MiB
 	sudo parted -s /dev/nbd0 mkpart primary fat32 513MiB 100%
-	sudo mkfs				.fat -F32 /dev/nbd0p1
+	sudo partprobe /dev/nbd0
+	-sudo udevadm settle
+	sudo mkfs.fat -F32 /dev/nbd0p1
 	sudo mkfs.fat -F32 /dev/nbd0p2
 	sudo qemu-nbd -d /dev/nbd0
 	rm -f $(QEMU_DISK)
@@ -343,6 +349,7 @@ INSTALLER_PAK = $(BUILD_DIR)/installer.pak
 INSTALLER_ISO = $(BUILD_DIR)/installer.iso
 INSTALLER_CORE_IMG = $(BUILD_DIR)/installer_core.img
 INSTALLER_PAK_DIR = $(BUILD_DIR)/installer_data
+INSTALLER_GRUB_PLATFORM_DIR ?= /usr/lib/grub/i386-pc
 
 # Build GRUB core.img for the installer (fat + biosdisk + part_msdos)
 $(INSTALLER_CORE_IMG):
@@ -353,56 +360,65 @@ $(BUILD_DIR)/packer: tools/installer/packer.cpp
 	g++ -std=c++11 -o $@ $<
 
 # Prepare installer data directory (mirrors the HDD layout)
-$(INSTALLER_PAK_DIR): $(KERNEL_BIN) $(INSTALLER_CORE_IMG)
-	rm -rf $@
+# A stamp file (rather than the directory itself) is the target so that
+# changes to binaries, fonts, and assets reliably trigger a repack.
+INSTALLER_PAK_STAMP = $(BUILD_DIR)/.installer_data.stamp
+$(INSTALLER_PAK_STAMP): $(KERNEL_BIN) $(INSTALLER_CORE_IMG)
+	rm -rf $(INSTALLER_PAK_DIR)
+	mkdir -p $(INSTALLER_PAK_DIR)
+	# Validate the GRUB platform directory exists before copying any GRUB files
+	test -d $(INSTALLER_GRUB_PLATFORM_DIR) || \
+		(echo "GRUB platform directory missing: $(INSTALLER_GRUB_PLATFORM_DIR)"; \
+		 echo "Install grub-pc-bin or set INSTALLER_GRUB_PLATFORM_DIR"; exit 1)
 	# GRUB boot files
-	mkdir -p $@/boot/grub
-	cp /usr/lib/grub/i386-pc/boot.img $@/boot/
-	cp $(INSTALLER_CORE_IMG) $@/boot/core.img
+	mkdir -p $(INSTALLER_PAK_DIR)/boot/grub
+	cp $(INSTALLER_GRUB_PLATFORM_DIR)/boot.img $(INSTALLER_PAK_DIR)/boot/
+	cp $(INSTALLER_CORE_IMG) $(INSTALLER_PAK_DIR)/boot/core.img
 	# grub.cfg for the installed system
-	echo 'set timeout=0' > $@/boot/grub/grub.cfg
-	echo 'set default=0' >> $@/boot/grub/grub.cfg
-	echo 'terminal_output gfxterm' >> $@/boot/grub/grub.cfg
-	echo '' >> $@/boot/grub/grub.cfg
-	echo 'menuentry "Hashx86-OS" {' >> $@/boot/grub/grub.cfg
-	echo '  multiboot /boot/kernel.bin' >> $@/boot/grub/grub.cfg
-	echo '  boot' >> $@/boot/grub/grub.cfg
-	echo '}' >> $@/boot/grub/grub.cfg
+	echo 'set timeout=0' > $(INSTALLER_PAK_DIR)/boot/grub/grub.cfg
+	echo 'set default=0' >> $(INSTALLER_PAK_DIR)/boot/grub/grub.cfg
+	echo 'terminal_output gfxterm' >> $(INSTALLER_PAK_DIR)/boot/grub/grub.cfg
+	echo '' >> $(INSTALLER_PAK_DIR)/boot/grub/grub.cfg
+	echo 'menuentry "Hashx86-OS" {' >> $(INSTALLER_PAK_DIR)/boot/grub/grub.cfg
+	echo '  multiboot /boot/kernel.bin' >> $(INSTALLER_PAK_DIR)/boot/grub/grub.cfg
+	echo '  boot' >> $(INSTALLER_PAK_DIR)/boot/grub/grub.cfg
+	echo '}' >> $(INSTALLER_PAK_DIR)/boot/grub/grub.cfg
 	# All GRUB platform modules (needed by core.img + grub.cfg)
-	mkdir -p $@/boot/grub/i386-pc
-	cp /usr/lib/grub/i386-pc/*.mod $@/boot/grub/i386-pc/
-	cp /usr/lib/grub/i386-pc/*.lst $@/boot/grub/i386-pc/ 2>/dev/null || true
+	mkdir -p $(INSTALLER_PAK_DIR)/boot/grub/i386-pc
+	cp $(INSTALLER_GRUB_PLATFORM_DIR)/*.mod $(INSTALLER_PAK_DIR)/boot/grub/i386-pc/
+	cp $(INSTALLER_GRUB_PLATFORM_DIR)/*.lst $(INSTALLER_PAK_DIR)/boot/grub/i386-pc/ 2>/dev/null || true
 	# Kernel (for booting after install — normal kernel, not the installer)
-	mkdir -p $@/boot
-	cp $(KERNEL_BIN) $@/boot/kernel.bin
-	cp $(KERNEL_MAP) $@/
+	mkdir -p $(INSTALLER_PAK_DIR)/boot
+	cp $(KERNEL_BIN) $(INSTALLER_PAK_DIR)/boot/kernel.bin
+	cp $(KERNEL_MAP) $(INSTALLER_PAK_DIR)/
 	# Apps (all except Game3D which goes to its own directory)
-	mkdir -p $@/Hashx86/apps
+	mkdir -p $(INSTALLER_PAK_DIR)/Hashx86/apps
 	for app in $(BUILD_DIR)/user/*.bin; do \
 		base=$$(basename $$app); \
 		if [ "$$base" != "Game3D.bin" ]; then \
-			cp $$app $@/Hashx86/apps/; \
+			cp $$app $(INSTALLER_PAK_DIR)/Hashx86/apps/; \
 		fi; \
 	done
 	# Game3D — binary + data together
-	mkdir -p $@/Apps/Game3D
-	cp $(BUILD_DIR)/user/Game3D.bin $@/Apps/Game3D/ 2>/dev/null || true
-	cp bin/ProgFile/Game3D/* $@/Apps/Game3D/ 2>/dev/null || true
+	mkdir -p $(INSTALLER_PAK_DIR)/Apps/Game3D
+	cp $(BUILD_DIR)/user/Game3D.bin $(INSTALLER_PAK_DIR)/Apps/Game3D/ 2>/dev/null || true
+	cp bin/ProgFile/Game3D/* $(INSTALLER_PAK_DIR)/Apps/Game3D/ 2>/dev/null || true
 	# Graphics
-	mkdir -p $@/Hashx86/gfx
-	cp bin/bitmaps/*.bmp $@/Hashx86/gfx/
+	mkdir -p $(INSTALLER_PAK_DIR)/Hashx86/gfx
+	cp bin/bitmaps/*.bmp $(INSTALLER_PAK_DIR)/Hashx86/gfx/
 	# Fonts
-	mkdir -p $@/Hashx86/fonts
-	cp bin/fonts/*.ttf $@/Hashx86/fonts/
+	mkdir -p $(INSTALLER_PAK_DIR)/Hashx86/fonts
+	cp bin/fonts/*.ttf $(INSTALLER_PAK_DIR)/Hashx86/fonts/
 	# Audio
-	mkdir -p $@/Hashx86/audio
-	cp bin/audio/boot.wav $@/Hashx86/audio/
+	mkdir -p $(INSTALLER_PAK_DIR)/Hashx86/audio
+	cp bin/audio/boot.wav $(INSTALLER_PAK_DIR)/Hashx86/audio/
 	# Drivers
-	mkdir -p $@/Hashx86/drivers
-	cp $(BUILD_DIR)/drivers/*.sys $@/Hashx86/drivers/
+	mkdir -p $(INSTALLER_PAK_DIR)/Hashx86/drivers
+	cp $(BUILD_DIR)/drivers/*.sys $(INSTALLER_PAK_DIR)/Hashx86/drivers/
+	touch $@
 
 # Build installer.pak from the prepared data directory
-$(INSTALLER_PAK): $(BUILD_DIR)/packer $(INSTALLER_PAK_DIR)
+$(INSTALLER_PAK): $(BUILD_DIR)/packer $(INSTALLER_PAK_STAMP)
 	$(BUILD_DIR)/packer $(INSTALLER_PAK_DIR) $(INSTALLER_PAK)
 
 # Build the installer ISO (uses kernel_installer.bin, not the main kernel)
@@ -434,7 +450,7 @@ prog:
 	@sleep $(RUNQ_DELAY)
 	make runq
 
-.PHONY: clean build hdd hddinit check runq run prog runvb iso installer-iso run-installer check-style check-bugs check-headers check-eof fix-style install newapp
+.PHONY: clean build build-run hdd hddinit check runq run prog runvb iso installer-iso run-installer check-style check-bugs check-headers check-eof fix-style install newapp
 
 # -----------------------------------
 # CODE QUALITY TOOLS

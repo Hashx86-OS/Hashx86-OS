@@ -241,6 +241,11 @@ static bool AllocUserStack(ThreadControlBlock* tcb, Paging* pager, uint32_t* pag
     }
 
     uint32_t top_page_phys = 0;
+    // The user-stack slot reserves page 0 as an unmapped guard page; it needs
+    // at least one additional mapped page to form a usable stack.
+    static_assert(USER_STACK_PAGES >= 2,
+                  "USER_STACK_PAGES must be >= 2 so that page 0 can remain an "
+                  "unmapped guard page while leaving at least one usable stack page");
     for (uint32_t p = 1; p < USER_STACK_PAGES; p++) {
         uint32_t phys = (uint32_t)pmm_alloc_block_low(256 * 1024 * 1024);
         if (!phys) {

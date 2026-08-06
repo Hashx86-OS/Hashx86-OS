@@ -53,7 +53,9 @@ static void collectFiles(const std::string& baseDir, const std::string& subDir,
         std::string relPath = subDir.empty() ? ent->d_name : subDir + "/" + ent->d_name;
         std::string fullPath = baseDir + "/" + relPath;
         struct stat st;
-        if (stat(fullPath.c_str(), &st) != 0) continue;
+        // lstat so symlinks are detected and skipped rather than followed.
+        if (lstat(fullPath.c_str(), &st) != 0) continue;
+        if (S_ISLNK(st.st_mode)) continue;
         if (S_ISDIR(st.st_mode)) {
             collectFiles(baseDir, relPath, entries);
         } else if (S_ISREG(st.st_mode)) {
@@ -92,19 +94,42 @@ int main(int argc, char** argv) {
 
     std::vector<PakDirEntry> dir;
     for (auto& e : entries) {
+        // Reject names the PAK format cannot store rather than truncating them.
+        size_t nameLen = e.name.size();
+        if (nameLen >= PAK_NAME_LEN) {
+            fprintf(stderr, "ERROR: entry name exceeds %d chars: %s\n", PAK_NAME_LEN,
+                    e.name.c_str());
+            return 1;
+        }
+        if (e.data.size() > UINT32_MAX) {
+            fprintf(stderr, "ERROR: entry %s too large to represent (%zu bytes)\n",
+                    e.name.c_str(), e.data.size());
+            return 1;
+        }
+        if (pak.size() > UINT32_MAX) {
+            fprintf(stderr, "ERROR: PAK data offset would overflow at entry: %s\n",
+                    e.name.c_str());
+            return 1;
+        }
         PakDirEntry de;
         memset(&de, 0, sizeof(de));
-        size_t nameLen = e.name.size();
-        if (nameLen >= PAK_NAME_LEN) nameLen = PAK_NAME_LEN - 1;
         memcpy(de.name, e.name.c_str(), nameLen);
-        de.offset = pak.size();
-        de.size = e.data.size();
+        de.offset = (uint32_t)pak.size();
+        de.size = (uint32_t)e.data.size();
         dir.push_back(de);
         pak.insert(pak.end(), e.data.begin(), e.data.end());
     }
 
-    hdr.dirOffset = pak.size();
-    hdr.dirSize = dir.size() * sizeof(PakDirEntry);
+    hdr.dirOffset = (uint32_t)pak.size();
+    if ((size_t)hdr.dirOffset != pak.size()) {
+        fprintf(stderr, "ERROR: PAK directory offset exceeds format limit\n");
+        return 1;
+    }
+    if ((uint64_t)dir.size() * sizeof(PakDirEntry) > UINT32_MAX) {
+        fprintf(stderr, "ERROR: PAK directory size exceeds format limit\n");
+        return 1;
+    }
+    hdr.dirSize = (uint32_t)(dir.size() * sizeof(PakDirEntry));
     for (auto& de : dir) {
         const uint8_t* ptr = reinterpret_cast<const uint8_t*>(&de);
         pak.insert(pak.end(), ptr, ptr + sizeof(de));
@@ -117,8 +142,17 @@ int main(int argc, char** argv) {
         fprintf(stderr, "Error: cannot write %s\n", outputPak);
         return 1;
     }
-    fwrite(pak.data(), 1, pak.size(), out);
-    fclose(out);
+    size_t written = fwrite(pak.data(), 1, pak.size(), out);
+    if (written != pak.size()) {
+        fprintf(stderr, "Error: short write to %s (%zu of %zu bytes)\n", outputPak, written,
+                pak.size());
+        fclose(out);
+        return 1;
+    }
+    if (fclose(out) == EOF) {
+        fprintf(stderr, "Error: failed to flush/close %s\n", outputPak);
+        return 1;
+    }
 
     fprintf(stderr, "Wrote %s: %zu files, %zu bytes\n", outputPak, entries.size(), pak.size());
     return 0;

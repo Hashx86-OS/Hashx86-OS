@@ -92,6 +92,14 @@ uint32_t AdvancedTechnologyAttachment::Identify() {
 
         uint16_t data = dataPort.Read();
 
+        // Word 0 holds the general configuration: bit 15 = ATAPI, bit 7 =
+        // removable media.
+        if (i == 0) {
+            identify_general_config = data;
+            isAtapi = (data & 0x8000) != 0;
+            isRemovable = (data & 0x0080) != 0;
+        }
+
         // Words 60 and 61 contain the total sector count for LBA28
         if (i == 60) {
             totalSectors = data;

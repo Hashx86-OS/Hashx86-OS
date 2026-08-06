@@ -19,14 +19,6 @@
         for (;;) asm volatile("hlt");         \
     } while (0)
 
-static FRESULT tryMount(BYTE pdrv, AdvancedTechnologyAttachment* ata,
-                        uint32_t start, uint32_t size, FATFS* fs) {
-    fatfs_init(pdrv, ata, start, size);
-    char path[4] = "0:";
-    path[0] = '0' + pdrv;
-    return f_mount(fs, path, 1);
-}
-
 static FRESULT formatPartition(BYTE pdrv, AdvancedTechnologyAttachment* ata,
                                uint32_t start, uint32_t size) {
     fatfs_init(pdrv, ata, start, size);
@@ -48,6 +40,17 @@ static void installGRUB(AdvancedTechnologyAttachment* ata,
     (void)p2_start;
     (void)p2_size;
 
+    // core.img is written into the MBR gap (sectors 1..p1_start-1) between
+    // the boot sector and partition 1.  Validate it fits before writing any
+    // sector, otherwise the tail would overwrite the start of partition 1.
+    uint32_t coreSectors = (coreImgSize + 511) / 512;
+    if (coreSectors > p1_start - 1) {
+        printf(RED,
+               "core.img needs %u sectors but MBR gap (LBA 1..%u) only holds %u\n",
+               coreSectors, p1_start - 1, p1_start - 1);
+        HALT("core.img too large for MBR gap");
+    }
+
     uint8_t mbr[512];
     memcpy(mbr, bootImg, 512);
 
@@ -65,7 +68,6 @@ static void installGRUB(AdvancedTechnologyAttachment* ata,
     ata->Write28(0, mbr, 512);
     printf(LIGHT_GRAY, "MBR written\n");
 
-    uint32_t coreSectors = (coreImgSize + 511) / 512;
     const uint8_t* src = (const uint8_t*)coreImg;
     for (uint32_t i = 0; i < coreSectors; i++) {
         uint8_t sector[512];
@@ -88,13 +90,21 @@ static void wipePath(const char* path) {
     }
     FILINFO info;
     while (f_readdir(&d, &info) == FR_OK && info.fname[0]) {
-        if (info.fname[0] == '.') continue;
+        // Skip only "." and ".." — dot-prefixed names like ".config" are real
+        // files and must still be deleted.
+        if (strcmp(info.fname, ".") == 0 || strcmp(info.fname, "..") == 0) continue;
         char full[256];
+        uint32_t baseLen = 0;
+        while (path[baseLen]) baseLen++;
+        uint32_t nameLen = 0;
+        while (info.fname[nameLen]) nameLen++;
+        // Complete path needs base + '/' + name + null terminator.
+        if (baseLen + 1 + nameLen + 1 > sizeof(full)) continue;
         uint32_t i = 0;
         while (path[i]) { full[i] = path[i]; i++; }
         full[i] = '/'; i++;
         uint32_t j = 0;
-        while (info.fname[j] && i < sizeof(full) - 1) { full[i] = info.fname[j]; i++; j++; }
+        while (info.fname[j]) { full[i] = info.fname[j]; i++; j++; }
         full[i] = 0;
         wipePath(full);
     }
@@ -168,18 +178,40 @@ static void ejectCd() {
         printf(YELLOW, "No CD-ROM drive found, continuing\n");
 }
 
+// Read a single PS/2 scancode, draining any queued bytes.
+static uint8_t readScancode(void) {
+    while (!(inb(0x64) & 0x01)) {}
+    uint8_t sc = inb(0x60);
+    while (inb(0x64) & 0x01) inb(0x60);
+    return sc;
+}
+
+// Require explicit confirmation before destructive disk writes.
+static bool confirmDestructive(const char* what) {
+    printf(LIGHT_GRAY, "%s", what);
+    printf(LIGHT_GRAY, " Type 'y' to confirm, any other key to abort: ");
+    uint8_t sc = readScancode();
+    if (sc == 0x15) return true;  // 'y' make code
+    return false;
+}
+
 static void ensurePath(const char* path) {
     char buf[128];
     buf[0] = '0';
     buf[1] = ':';
     uint32_t j = 2;
-    for (uint32_t i = 0; path[i] && j < sizeof(buf) - 1; i++) {
+    for (uint32_t i = 0; path[i]; i++) {
+        if (j >= sizeof(buf) - 1) {
+            printf(YELLOW, "WARN: path too long for FatFs buffer (truncated): %s\n", path);
+            return;
+        }
         if (path[i] == '/') {
             buf[j] = 0;
             f_mkdir(buf);
         }
         buf[j++] = path[i];
     }
+    buf[j] = 0;
 }
 
 extern "C" void kernelMain(void* multiboot_structure, uint32_t magicnumber) {
@@ -229,6 +261,12 @@ extern "C" void kernelMain(void* multiboot_structure, uint32_t magicnumber) {
         phdr->magic[2] != 'C' || phdr->magic[3] != 'K')
         HALT("Invalid PAK magic");
 
+    // Validate the directory region immediately: it must lie entirely within
+    // the module payload and hold a whole number of entries.
+    if (phdr->dirOffset > pakSize || phdr->dirSize > pakSize - phdr->dirOffset ||
+        phdr->dirSize % sizeof(PakDirEntry) != 0)
+        HALT("PAK directory out of bounds");
+
     const PakDirEntry* dir = (const PakDirEntry*)((uint8_t*)pakData + phdr->dirOffset);
     uint32_t numEntries = phdr->dirSize / sizeof(PakDirEntry);
     printf(LIGHT_GRAY, "PAK: %u entries\n", numEntries);
@@ -246,14 +284,31 @@ extern "C" void kernelMain(void* multiboot_structure, uint32_t magicnumber) {
             i == 0 ? &ata0 : i == 1 ? &ata1 : i == 2 ? &ata2 : &ata3;
         totalSectors = dev->Identify();
         if (totalSectors > 0) {
+            // Skip CD-ROMs (ATAPI) and removable media 
+            // valid installation targets.
+            if (dev->isAtapi) {
+                printf(LIGHT_GRAY, "Drive %d is ATAPI (CD-ROM), skipping\n", i);
+                continue;
+            }
+            if (dev->isRemovable) {
+                printf(LIGHT_GRAY, "Drive %d is removable media, skipping\n", i);
+                continue;
+            }
             ata = dev;
-            printf(WHITE, "Using drive %d (%u sectors)\n", i, totalSectors);
+            printf(WHITE, "Using drive %d (%u sectors), media type: fixed disk\n", i,
+                   totalSectors);
             break;
         }
     }
 
     if (!ata) HALT("No ATA drive detected");
     if (totalSectors <= 63) HALT("Disk too small");
+
+    // Explicit confirmation before any partition creation or disk write.
+    if (!confirmDestructive("\nWARNING: ALL data on the selected drive will be erased.")) {
+        printf(RED, "\nInstallation aborted — no changes were made.\n");
+        for (;;) asm volatile("hlt");
+    }
 
     uint32_t available = totalSectors - 63;
     uint32_t p1_size = available / 2;
@@ -269,6 +324,10 @@ extern "C" void kernelMain(void* multiboot_structure, uint32_t magicnumber) {
     const void* coreImg = nullptr;
     uint32_t coreImgSize = 0;
     for (uint32_t i = 0; i < numEntries; i++) {
+        if (dir[i].offset > pakSize || dir[i].size > pakSize - dir[i].offset) {
+            printf(YELLOW, "WARN: entry %u out of bounds, skipping\n", i);
+            continue;
+        }
         const void* data = (uint8_t*)pakData + dir[i].offset;
         if (strcmp(dir[i].name, "boot/boot.img") == 0) {
             bootImg = data; bootImgSize = dir[i].size;
@@ -284,36 +343,22 @@ extern "C" void kernelMain(void* multiboot_structure, uint32_t magicnumber) {
     installGRUB(ata, bootImg, bootImgSize, coreImg, coreImgSize,
                 p1_start, p1_size, p2_start, p2_size);
 
-    // Partition 1 — format only if not already a valid FAT32 volume
+    // Partition 1 — always format so the installed filesystem is known-good
     {
-        FATFS testFs;
-        int mounted = tryMount(0, ata, p1_start, p1_size, &testFs);
-        if (mounted == FR_OK) {
-            printf(LIGHT_GRAY, "Partition 1 already FAT32, skipping format\n");
-            f_mount(nullptr, "0:", 0);
-        } else {
-            printf(WHITE, "Formatting partition 1...\n");
-            FRESULT res = formatPartition(0, ata, p1_start, p1_size);
-            if (res != FR_OK)
-                HALT("Format partition 1 failed");
-            printf(LIGHT_GRAY, "Partition 1 formatted\n");
-        }
+        printf(WHITE, "Formatting partition 1...\n");
+        FRESULT res = formatPartition(0, ata, p1_start, p1_size);
+        if (res != FR_OK)
+            HALT("Format partition 1 failed");
+        printf(LIGHT_GRAY, "Partition 1 formatted\n");
     }
 
-    // Partition 2 — same check
+    // Partition 2 — format unconditionally as well
     {
-        FATFS testFs;
-        int mounted = tryMount(1, ata, p2_start, p2_size, &testFs);
-        if (mounted == FR_OK) {
-            printf(LIGHT_GRAY, "Partition 2 already FAT32, skipping format\n");
-            f_mount(nullptr, "1:", 0);
-        } else {
-            printf(WHITE, "Formatting partition 2...\n");
-            FRESULT res = formatPartition(1, ata, p2_start, p2_size);
-            if (res != FR_OK)
-                HALT("Format partition 2 failed");
-            printf(LIGHT_GRAY, "Partition 2 formatted\n");
-        }
+        printf(WHITE, "Formatting partition 2...\n");
+        FRESULT res = formatPartition(1, ata, p2_start, p2_size);
+        if (res != FR_OK)
+            HALT("Format partition 2 failed");
+        printf(LIGHT_GRAY, "Partition 2 formatted\n");
     }
 
     // Mount partition 1 and extract files
@@ -333,8 +378,14 @@ extern "C" void kernelMain(void* multiboot_structure, uint32_t magicnumber) {
     printf(WHITE, "Extracting files...\n");
     uint32_t extracted = 0;
     uint32_t skipped = 0;
+    uint32_t failed = 0;
     for (uint32_t i = 0; i < numEntries; i++) {
         const char* name = dir[i].name;
+        if (dir[i].offset > pakSize || dir[i].size > pakSize - dir[i].offset) {
+            printf(YELLOW, "WARN: entry %u out of bounds, skipping\n", i);
+            failed++;
+            continue;
+        }
         const uint8_t* data = (const uint8_t*)pakData + dir[i].offset;
         uint32_t size = dir[i].size;
 
@@ -344,12 +395,22 @@ extern "C" void kernelMain(void* multiboot_structure, uint32_t magicnumber) {
             continue;
         }
 
+        char fatPath[128];
+
+        // The full path must fit: "0:" prefix + name + null terminator.
+        if (strlen(name) + 2 > sizeof(fatPath)) {
+            printf(YELLOW, "WARN: entry name too long, skipping: %s\n", name);
+            failed++;
+            continue;
+        }
+
         ensurePath(name);
 
-        char fatPath[128];
         fatPath[0] = '0';
         fatPath[1] = ':';
         uint32_t j = 2;
+        // Loop bound retained for safety; the shared name-length check above
+        // guarantees the complete name already fits, so no truncation occurs.
         for (uint32_t k = 0; name[k] && j < sizeof(fatPath) - 1; k++)
             fatPath[j++] = name[k];
         fatPath[j] = 0;
@@ -374,7 +435,7 @@ extern "C" void kernelMain(void* multiboot_structure, uint32_t magicnumber) {
         extracted++;
     }
 
-    printf(GREEN, "%u files extracted (%u skipped)\n", extracted, skipped);
+    printf(GREEN, "%u files extracted (%u skipped, %u failed)\n", extracted, skipped, failed);
     f_mount(nullptr, "0:", 0);
 
     printf(WHITE, "\n");

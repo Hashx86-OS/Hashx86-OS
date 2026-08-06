@@ -18,7 +18,17 @@ int kheap_init(void* start_addr, void* end_addr) {
 
     size_t pool_size = (uint8_t*)end_addr - (uint8_t*)start_addr;
 
-    // TLSF needs its control structure at the start of the pool.
+    // TLSF needs its control structure at the start of the pool plus enough
+    // remaining space for at least one minimum-sized allocatable block.
+    // Mirror tlsf_add_pool's alignment logic so the pre-check is exact.
+    size_t pool_bytes = (pool_size - tlsf_size() - tlsf_pool_overhead()) & ~(size_t)(tlsf_align_size() - 1);
+    if (pool_bytes < tlsf_block_size_min()) {
+        KDBG1("kheap_init FAILED: pool too small (%u bytes) for TLSF (need >= %u)",
+              (unsigned int)pool_size,
+              (unsigned int)(tlsf_size() + tlsf_pool_overhead() + tlsf_block_size_min()));
+        return -1;
+    }
+
     // tlsf_create_with_pool carves out the control structure from the
     // beginning and uses the rest as the allocatable pool.
     g_tlsf = tlsf_create_with_pool(start_addr, pool_size);
@@ -26,6 +36,17 @@ int kheap_init(void* start_addr, void* end_addr) {
         KDBG1("tlsf_create_with_pool failed");
         return -1;
     }
+
+    // Confirm an allocatable pool was actually added rather than relying only
+    // on the non-null control pointer: a minimum-size probe allocation must
+    // succeed (and be freed again) for the heap to be usable.
+    void* probe = tlsf_malloc(g_tlsf, tlsf_block_size_min());
+    if (!probe) {
+        KDBG1("kheap_init FAILED: no allocatable block in TLSF pool");
+        g_tlsf = NULL;
+        return -1;
+    }
+    tlsf_free(g_tlsf, probe);
 
     KDBG1("Heap 0x%x-0x%x (%u MB), TLSF control=0x%x pool=0x%x",
           start_addr, end_addr,

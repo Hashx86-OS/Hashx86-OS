@@ -22,6 +22,7 @@ loader:
     mov esp, kernel_stack
     push eax
     push ebx
+    cld
     call callConstructors
     call kernelMain
 _stop:
