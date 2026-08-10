@@ -108,6 +108,7 @@ cd Hashx86-OS
 > https://github.com/sdmdg/Hashx86
 
 ### 2. Install the OS
+
 Choose one of the methods below:
 
 **Option A: Quick Start (Recommended)**

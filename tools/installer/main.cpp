@@ -271,6 +271,21 @@ extern "C" void kernelMain(void* multiboot_structure, uint32_t magicnumber) {
     uint32_t numEntries = phdr->dirSize / sizeof(PakDirEntry);
     printf(LIGHT_GRAY, "PAK: %u entries\n", numEntries);
 
+    // Validate every entry name before it reaches strcmp/strlen/%s: the name
+    // field must hold a NUL terminator within the fixed-size field, otherwise
+    // string operations would read past the directory entry.
+    for (uint32_t i = 0; i < numEntries; i++) {
+        bool terminated = false;
+        for (uint32_t j = 0; j < sizeof(dir[i].name); j++) {
+            if (dir[i].name[j] == '\0') {
+                terminated = true;
+                break;
+            }
+        }
+        if (!terminated)
+            HALT("PAK entry name is not NUL-terminated");
+    }
+
     AdvancedTechnologyAttachment ata0(true, 0x1F0);
     AdvancedTechnologyAttachment ata1(false, 0x1F0);
     AdvancedTechnologyAttachment ata2(true, 0x170);
@@ -415,24 +430,41 @@ extern "C" void kernelMain(void* multiboot_structure, uint32_t magicnumber) {
             fatPath[j++] = name[k];
         fatPath[j] = 0;
 
+        bool ok = false;
         if (size > 0) {
             FIL fil;
             FRESULT res = f_open(&fil, fatPath, FA_CREATE_ALWAYS | FA_WRITE);
             if (res == FR_OK) {
-                UINT bw;
-                f_write(&fil, data, size, &bw);
-                f_close(&fil);
-                if (bw != size)
-                    printf(YELLOW, "  short write: %s\n", name);
+                UINT bw = 0;
+                res = f_write(&fil, data, size, &bw);
+                FRESULT closeRes = f_close(&fil);
+                if (res == FR_OK && closeRes == FR_OK && bw == size) {
+                    ok = true;
+                } else {
+                    printf(YELLOW, "  failed: %s (write=%d close=%d bw=%u/%u)\n", name,
+                           res, closeRes, (unsigned int)bw, (unsigned int)size);
+                }
             } else {
                 printf(YELLOW, "  failed: %s (%d)\n", name, res);
             }
         } else {
             FIL fil;
             FRESULT res = f_open(&fil, fatPath, FA_CREATE_NEW | FA_WRITE);
-            if (res == FR_OK) f_close(&fil);
+            if (res == FR_OK) {
+                FRESULT closeRes = f_close(&fil);
+                if (closeRes == FR_OK) {
+                    ok = true;
+                } else {
+                    printf(YELLOW, "  failed: %s (close=%d)\n", name, closeRes);
+                }
+            } else {
+                printf(YELLOW, "  failed: %s (%d)\n", name, res);
+            }
         }
-        extracted++;
+        if (ok)
+            extracted++;
+        else
+            failed++;
     }
 
     printf(GREEN, "%u files extracted (%u skipped, %u failed)\n", extracted, skipped, failed);

@@ -158,6 +158,7 @@ uint32_t KeyboardDriver::HandleInterrupt(uint32_t esp) {
     uint8_t key = dataPort.Read();
 
     static bool isExtendedScancode = false;
+    static uint8_t keyStatesNormal[128] = {0};
     static uint8_t keyStatesExt[128] = {0};
 
     if (key == 0xE0) {
@@ -189,12 +190,12 @@ uint32_t KeyboardDriver::HandleInterrupt(uint32_t esp) {
         
         if (key < 0x80) {
             keyStatesExt[key] = 1;
-            keyStates[key] = 1;
+            keyStates[key] = keyStatesNormal[key] || keyStatesExt[key];
         } else {
             uint8_t releaseScancode = key & 0x7F;
             if (releaseScancode < 128) {
                 keyStatesExt[releaseScancode] = 0;
-                keyStates[releaseScancode] = 0;
+                keyStates[releaseScancode] = keyStatesNormal[releaseScancode] || keyStatesExt[releaseScancode];
             }
         }
 
@@ -241,7 +242,8 @@ uint32_t KeyboardDriver::HandleInterrupt(uint32_t esp) {
 
     // Normal scancodes
     if (key < 0x80) {
-        keyStates[key] = 1;
+        keyStatesNormal[key] = 1;
+        keyStates[key] = keyStatesNormal[key] || keyStatesExt[key];
         // Always update modifier state
         switch (key) {
             case 0x2A:
@@ -315,7 +317,10 @@ uint32_t KeyboardDriver::HandleInterrupt(uint32_t esp) {
         }
     } else {
         uint8_t releaseScancode = key & 0x7F;
-        if (releaseScancode < 128) keyStates[releaseScancode] = 0;
+        if (releaseScancode < 128) {
+            keyStatesNormal[releaseScancode] = 0;
+            keyStates[releaseScancode] = keyStatesNormal[releaseScancode] || keyStatesExt[releaseScancode];
+        }
         // Always update modifier state
         switch (key) {
             case 0xAA:

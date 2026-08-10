@@ -18,6 +18,16 @@ int kheap_init(void* start_addr, void* end_addr) {
 
     size_t pool_size = (uint8_t*)end_addr - (uint8_t*)start_addr;
 
+    // Guard before subtracting: the subtraction below underflows for pool
+    // sizes smaller than the TLSF control structure plus pool overhead.
+    if (pool_size < tlsf_size() + tlsf_pool_overhead()) {
+        KDBG1("kheap_init FAILED: pool too small (%u bytes) for TLSF control "
+              "(need >= %u)",
+              (unsigned int)pool_size,
+              (unsigned int)(tlsf_size() + tlsf_pool_overhead()));
+        return -1;
+    }
+
     // TLSF needs its control structure at the start of the pool plus enough
     // remaining space for at least one minimum-sized allocatable block.
     // Mirror tlsf_add_pool's alignment logic so the pre-check is exact.

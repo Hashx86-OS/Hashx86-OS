@@ -363,7 +363,16 @@ $(BUILD_DIR)/packer: tools/installer/packer.cpp
 # A stamp file (rather than the directory itself) is the target so that
 # changes to binaries, fonts, and assets reliably trigger a repack.
 INSTALLER_PAK_STAMP = $(BUILD_DIR)/.installer_data.stamp
-$(INSTALLER_PAK_STAMP): $(KERNEL_BIN) $(INSTALLER_CORE_IMG)
+# The stamp must invalidate whenever any staged installer input changes, so the
+# repack picks up new binaries, drivers, fonts, bitmaps, audio, and Game3D assets.
+INSTALLER_PAK_INPUTS = $(KERNEL_BIN) $(INSTALLER_CORE_IMG) \
+	$(wildcard $(BUILD_DIR)/user/*.bin) \
+	$(wildcard $(BUILD_DIR)/drivers/*.sys) \
+	$(wildcard bin/fonts/*.ttf) \
+	$(wildcard bin/bitmaps/*.bmp) \
+	bin/audio/boot.wav \
+	$(wildcard bin/ProgFile/Game3D/*)
+$(INSTALLER_PAK_STAMP): $(INSTALLER_PAK_INPUTS)
 	rm -rf $(INSTALLER_PAK_DIR)
 	mkdir -p $(INSTALLER_PAK_DIR)
 	# Validate the GRUB platform directory exists before copying any GRUB files
@@ -422,7 +431,7 @@ $(INSTALLER_PAK): $(BUILD_DIR)/packer $(INSTALLER_PAK_STAMP)
 	$(BUILD_DIR)/packer $(INSTALLER_PAK_DIR) $(INSTALLER_PAK)
 
 # Build the installer ISO (uses kernel_installer.bin, not the main kernel)
-installer-iso: $(KERNEL_INSTALLER_BIN) $(INSTALLER_PAK)
+build-installer: $(KERNEL_INSTALLER_BIN) $(INSTALLER_PAK)
 	mkdir -p $(BUILD_DIR)/iso/boot/grub
 	cp $(KERNEL_INSTALLER_BIN) $(BUILD_DIR)/iso/boot/kernel.bin
 	cp $(INSTALLER_PAK) $(BUILD_DIR)/iso/installer.pak
@@ -439,7 +448,7 @@ installer-iso: $(KERNEL_INSTALLER_BIN) $(INSTALLER_PAK)
 	rm -rf $(BUILD_DIR)/iso
 
 # Run installer in QEMU (uses a blank disk image)
-run-installer: installer-iso
+run-installer: build-installer
 	qemu-img create -f qcow2 $(BUILD_DIR)/install_disk.qcow2 1G
 	qemu-system-i386 -cdrom $(INSTALLER_ISO) -boot d -vga std -serial stdio -m 1G \
 	  -drive file=$(BUILD_DIR)/install_disk.qcow2,format=qcow2
@@ -450,7 +459,7 @@ prog:
 	@sleep $(RUNQ_DELAY)
 	make runq
 
-.PHONY: clean build build-run hdd hddinit check runq run prog runvb iso installer-iso run-installer check-style check-bugs check-headers check-eof fix-style install newapp
+.PHONY: clean build build-run hdd hddinit check runq run prog runvb iso build-installer run-installer check-style check-bugs check-headers check-eof fix-style install newapp
 
 # -----------------------------------
 # CODE QUALITY TOOLS
