@@ -220,7 +220,6 @@ build-run:
 	@echo "[BUILD] Waiting $(RUNQ_DELAY)s to release the HDD file..."
 	@sleep $(RUNQ_DELAY)
 	make runq
-	make runq
 
 runq: iso
 	qemu-system-i386 -cdrom $(KERNEL_ISO) -boot d -vga std -serial stdio -m 1G \
@@ -355,6 +354,9 @@ INSTALLER_GRUB_PLATFORM_DIR ?= /usr/lib/grub/i386-pc
 $(INSTALLER_CORE_IMG):
 	grub-mkimage -O i386-pc -o $@ --prefix='(hd0,msdos1)/boot/grub' fat part_msdos biosdisk
 
+# Always-regenerated prerequisite used by the installer manifest rule.
+FORCE:
+
 # Build host-side packer tool
 $(BUILD_DIR)/packer: tools/installer/packer.cpp
 	g++ -std=c++11 -o $@ $<
@@ -363,16 +365,18 @@ $(BUILD_DIR)/packer: tools/installer/packer.cpp
 # A stamp file (rather than the directory itself) is the target so that
 # changes to binaries, fonts, and assets reliably trigger a repack.
 INSTALLER_PAK_STAMP = $(BUILD_DIR)/.installer_data.stamp
-# The stamp must invalidate whenever any staged installer input changes, so the
-# repack picks up new binaries, drivers, fonts, bitmaps, audio, and Game3D assets.
-INSTALLER_PAK_INPUTS = $(KERNEL_BIN) $(INSTALLER_CORE_IMG) \
-	$(wildcard $(BUILD_DIR)/user/*.bin) \
-	$(wildcard $(BUILD_DIR)/drivers/*.sys) \
-	$(wildcard bin/fonts/*.ttf) \
-	$(wildcard bin/bitmaps/*.bmp) \
-	bin/audio/boot.wav \
-	$(wildcard bin/ProgFile/Game3D/*)
-$(INSTALLER_PAK_STAMP): $(INSTALLER_PAK_INPUTS)
+# Content manifest covering every staged installer path (kernels, binaries,
+# drivers, fonts, bitmaps, audio, Game3D assets, the map, and this Makefile).
+# It is regenerated on every invocation but only rewritten when its contents
+# change, so the stamp below rebuilds the package exactly when inputs change.
+INSTALLER_PAK_MANIFEST = $(BUILD_DIR)/.installer_pak.manifest
+$(INSTALLER_PAK_MANIFEST): FORCE
+	@find $(KERNEL_BIN) $(INSTALLER_CORE_IMG) $(KERNEL_MAP) Makefile \
+	  $(BUILD_DIR)/user $(BUILD_DIR)/drivers bin/fonts bin/bitmaps bin/audio \
+	  bin/ProgFile/Game3D -type f -printf '%p %s %T@\n' 2>/dev/null | sort > $@.tmp
+	@cmp -s $@.tmp $@ || cp $@.tmp $@
+	@rm -f $@.tmp
+$(INSTALLER_PAK_STAMP): $(INSTALLER_PAK_MANIFEST) $(KERNEL_BIN) $(INSTALLER_CORE_IMG) $(KERNEL_MAP) Makefile
 	rm -rf $(INSTALLER_PAK_DIR)
 	mkdir -p $(INSTALLER_PAK_DIR)
 	# Validate the GRUB platform directory exists before copying any GRUB files
@@ -447,9 +451,10 @@ build-installer: $(KERNEL_INSTALLER_BIN) $(INSTALLER_PAK)
 	grub-mkrescue --output=$(INSTALLER_ISO) --modules="video gfxterm video_bochs video_cirrus" $(BUILD_DIR)/iso
 	rm -rf $(BUILD_DIR)/iso
 
-# Run installer in QEMU (uses a blank disk image)
+# Run installer in QEMU (uses a blank disk image; created only when absent so
+# re-runs with an existing disk keep the previous installation).
 run-installer: build-installer
-	qemu-img create -f qcow2 $(BUILD_DIR)/install_disk.qcow2 1G
+	test -f $(BUILD_DIR)/install_disk.qcow2 || qemu-img create -f qcow2 $(BUILD_DIR)/install_disk.qcow2 1G
 	qemu-system-i386 -cdrom $(INSTALLER_ISO) -boot d -vga std -serial stdio -m 1G \
 	  -drive file=$(BUILD_DIR)/install_disk.qcow2,format=qcow2
 
@@ -459,7 +464,7 @@ prog:
 	@sleep $(RUNQ_DELAY)
 	make runq
 
-.PHONY: clean build build-run hdd hddinit check runq run prog runvb iso build-installer run-installer check-style check-bugs check-headers check-eof fix-style install newapp
+.PHONY: clean build build-run hdd hddinit check runq run prog runvb iso build-installer run-installer check-style check-bugs check-headers check-eof fix-style install newapp FORCE
 
 # -----------------------------------
 # CODE QUALITY TOOLS

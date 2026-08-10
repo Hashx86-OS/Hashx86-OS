@@ -137,8 +137,14 @@ static bool atapiEject(bool master, uint16_t base) {
     outb(devPort, master ? 0xA0 : 0xB0);
     inb(cmdPort); inb(cmdPort); inb(cmdPort); inb(cmdPort);
 
+    // No device present: the status register reads 0xFF (bus floats high) or
+    // 0x00. Bail immediately instead of spinning through the busy-wait
+    // timeouts below (which each allow 1M port reads and are very slow under
+    // emulation).
     uint32_t w = 0;
-    while ((inb(cmdPort) & 0x80) && w++ < 1000000) {}
+    uint8_t status = inb(cmdPort);
+    if (status == 0xFF || status == 0x00) return false;
+    while ((status & 0x80) && w++ < 1000000) status = inb(cmdPort);
 
     outb(base + 1, 0);
     outb(base + 2, 0);
@@ -148,8 +154,12 @@ static bool atapiEject(bool master, uint16_t base) {
     outb(cmdPort, 0xA0);
 
     w = 0;
-    uint8_t status = inb(cmdPort);
+    status = inb(cmdPort);
     while ((status & 0x80) || !(status & 0x08)) {
+        // A non-packet device (e.g. a fixed ATA disk) aborts the PACKET
+        // command with ERR set; stop waiting the moment that happens instead
+        // of exhausting the full timeout.
+        if (status & 0x01) return false;
         if (w++ > 1000000) return false;
         status = inb(cmdPort);
     }
@@ -469,6 +479,14 @@ extern "C" void kernelMain(void* multiboot_structure, uint32_t magicnumber) {
 
     printf(GREEN, "%u files extracted (%u skipped, %u failed)\n", extracted, skipped, failed);
     f_mount(nullptr, "0:", 0);
+
+    // Any failed extraction leaves the installed volume incomplete; do not
+    // reboot into a broken installation.
+    if (failed > 0) {
+        printf(RED, "\nInstallation FAILED: %u file(s) could not be written.\n", failed);
+        printf(RED, "Remove installation media and retry.\n");
+        for (;;) asm volatile("hlt");
+    }
 
     printf(WHITE, "\n");
     printf(WHITE, "==============================================================\n");

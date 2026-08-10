@@ -9,12 +9,15 @@ static tlsf_t g_tlsf = NULL;
 void *g_kheap_start_addr = NULL, *g_kheap_end_addr = NULL;
 
 int kheap_init(void* start_addr, void* end_addr) {
+    // Do not publish heap boundaries until validation and probe succeed: every
+    // failure path below leaves these globals cleared and g_tlsf NULL.
+    g_kheap_start_addr = NULL;
+    g_kheap_end_addr = NULL;
+
     if (start_addr > end_addr) {
         KDBG1("Init failed start=0x%x end=0x%x", start_addr, end_addr);
         return -1;
     }
-    g_kheap_start_addr = start_addr;
-    g_kheap_end_addr = end_addr;
 
     size_t pool_size = (uint8_t*)end_addr - (uint8_t*)start_addr;
 
@@ -58,6 +61,10 @@ int kheap_init(void* start_addr, void* end_addr) {
     }
     tlsf_free(g_tlsf, probe);
 
+    // All validation passed — only now publish the heap boundaries.
+    g_kheap_start_addr = start_addr;
+    g_kheap_end_addr = end_addr;
+
     KDBG1("Heap 0x%x-0x%x (%u MB), TLSF control=0x%x pool=0x%x",
           start_addr, end_addr,
           (unsigned int)(pool_size / (1024 * 1024)),
@@ -67,6 +74,7 @@ int kheap_init(void* start_addr, void* end_addr) {
 }
 
 void kheap_print_blocks() {
+    InterruptGuard guard;
     if (!g_tlsf) return;
     KDBG3("--- kheap blocks (via tlsf_walk_pool) ---");
     pool_t pool = tlsf_get_pool(g_tlsf);
@@ -81,6 +89,13 @@ void* kmalloc(size_t size) {
     return ptr;
 }
 
+// TLSF uses 32-bit internal size fields; reject requests that exceed the
+// wrapper limit before calling into it, accounting for alignment headroom.
+static bool tlsf_request_valid(size_t size, size_t extra) {
+    if (size > 0x7FFFFFFF) return false;
+    return extra <= 0x7FFFFFFF && size + extra <= 0x7FFFFFFF;
+}
+
 void* kbrk(size_t size) {
     return kmalloc(size);
 }
@@ -88,7 +103,7 @@ void* kbrk(size_t size) {
 void* aligned_kmalloc(size_t size, size_t alignment) {
     InterruptGuard guard;
     if (alignment == 0 || (alignment & (alignment - 1)) != 0) return NULL;
-    if (!g_tlsf) return NULL;
+    if (!g_tlsf || !tlsf_request_valid(size, alignment)) return NULL;
 
     void* ptr = tlsf_memalign(g_tlsf, alignment, size);
     if (!ptr) KDBG1("AlignedOOM size=%u align=%u", (unsigned int)size, (unsigned int)alignment);
@@ -113,7 +128,7 @@ void* kcalloc(int n, int size) {
 
 void* krealloc(void* ptr, size_t size) {
     InterruptGuard guard;
-    if (!g_tlsf) {
+    if (!g_tlsf || !tlsf_request_valid(size, 0)) {
         if (ptr) kfree(ptr);
         return NULL;
     }
