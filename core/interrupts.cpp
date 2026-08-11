@@ -316,9 +316,11 @@ uint32_t InterruptManager::DohandleException(uint8_t interruptNumber, uint32_t e
         FlushSerial();
     }
 
-    KernelSymbolTable::PrintStackTrace(20);
-    // FLUSH serial NOW before Deactivate/BSOD, because BSOD code may fault
-    FlushSerial();
+    if (!isUserFault) {
+        KernelSymbolTable::PrintStackTrace(20);
+        // FLUSH serial NOW before Deactivate/BSOD, because BSOD code may fault
+        FlushSerial();
+    }
 
     // User-mode stack trace: walk EBP chain via physical address translation
     if (isUserFault && scheduler && scheduler->currentThread && scheduler->currentThread->parent) {

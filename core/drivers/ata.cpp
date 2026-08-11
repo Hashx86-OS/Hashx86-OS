@@ -41,12 +41,24 @@ uint32_t AdvancedTechnologyAttachment::Identify() {
         return 0;
     }
 
+    // Read the device signature latched on device select: ATAPI packet devices
+    // report 0x01/0x01 in sector-count/LBA-low with 0x14/0xEB in LBA mid/high.
+    // Use IDENTIFY PACKET DEVICE (0xA1) for them and IDENTIFY DEVICE (0xEC)
+    // otherwise, so the identification block (and word 0 decode below) is
+    // always obtained from the command the device actually implements.
+    uint8_t sigSectorCount = sectorCountPort.Read();
+    uint8_t sigLbaLow = lbaLowPort.Read();
+    uint8_t sigLbaMid = lbaMidPort.Read();
+    uint8_t sigLbaHigh = lbaHiPort.Read();
+    bool packetDevice = (sigLbaMid == 0x14 && sigLbaHigh == 0xEB) ||
+                        (sigSectorCount == 0x01 && sigLbaLow == 0x01);
+
     devicePort.Write(master ? 0xA0 : 0xB0);
     sectorCountPort.Write(0);
     lbaLowPort.Write(0);
     lbaMidPort.Write(0);
     lbaHiPort.Write(0);
-    commandPort.Write(0xEC);  // Identify command
+    commandPort.Write(packetDevice ? 0xA1 : 0xEC);  // Identify command
 
     status = commandPort.Read();
     if (status == 0x00) {

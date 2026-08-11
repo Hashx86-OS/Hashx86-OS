@@ -357,6 +357,15 @@ $(INSTALLER_CORE_IMG):
 # Always-regenerated prerequisite used by the installer manifest rule.
 FORCE:
 
+# Build user programs and drivers (the sub-makes are themselves incremental) so
+# the installer manifest scans the freshly built binaries in build/user and
+# build/drivers.
+user:
+	@$(MAKE) -C user_prog
+
+drivers:
+	@$(MAKE) -C drivers
+
 # Build host-side packer tool
 $(BUILD_DIR)/packer: tools/installer/packer.cpp
 	g++ -std=c++11 -o $@ $<
@@ -370,7 +379,7 @@ INSTALLER_PAK_STAMP = $(BUILD_DIR)/.installer_data.stamp
 # It is regenerated on every invocation but only rewritten when its contents
 # change, so the stamp below rebuilds the package exactly when inputs change.
 INSTALLER_PAK_MANIFEST = $(BUILD_DIR)/.installer_pak.manifest
-$(INSTALLER_PAK_MANIFEST): FORCE
+$(INSTALLER_PAK_MANIFEST): FORCE $(KERNEL_BIN) $(INSTALLER_CORE_IMG) $(KERNEL_MAP) user drivers
 	@find $(KERNEL_BIN) $(INSTALLER_CORE_IMG) $(KERNEL_MAP) Makefile \
 	  $(BUILD_DIR)/user $(BUILD_DIR)/drivers bin/fonts bin/bitmaps bin/audio \
 	  bin/ProgFile/Game3D -type f -printf '%p %s %T@\n' 2>/dev/null | sort > $@.tmp
@@ -464,7 +473,7 @@ prog:
 	@sleep $(RUNQ_DELAY)
 	make runq
 
-.PHONY: clean build build-run hdd hddinit check runq run prog runvb iso build-installer run-installer check-style check-bugs check-headers check-eof fix-style install newapp FORCE
+.PHONY: clean build build-run hdd hddinit check runq run prog runvb iso build-installer run-installer check-style check-bugs check-headers check-eof fix-style install newapp FORCE user drivers
 
 # -----------------------------------
 # CODE QUALITY TOOLS

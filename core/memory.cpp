@@ -89,11 +89,25 @@ void* kmalloc(size_t size) {
     return ptr;
 }
 
-// TLSF uses 32-bit internal size fields; reject requests that exceed the
-// wrapper limit before calling into it, accounting for alignment headroom.
+// TLSF stores sizes in 32-bit fields and caps allocatable blocks at
+// tlsf_block_size_max(); reject requests that would exceed that limit before
+// calling into it. tlsf_memalign additionally pads the request with the
+// alignment plus a block-header gap (gap_minimum), so aligned allocations must
+// leave headroom for that padding or the post-header gap calculation collapses
+// to zero.
 static bool tlsf_request_valid(size_t size, size_t extra) {
-    if (size > 0x7FFFFFFF) return false;
-    return extra <= 0x7FFFFFFF && size + extra <= 0x7FFFFFFF;
+    if (size == 0) return true;
+    const size_t max_size = tlsf_block_size_max();
+    if (size > max_size) return false;
+    if (extra) {
+        if (extra > max_size) return false;
+        const size_t gap_minimum = tlsf_block_size_min() + tlsf_alloc_overhead();
+        const size_t padded = size + extra + gap_minimum;
+        if (padded < size) return false;
+        const size_t aligned = (padded + extra - 1) & ~(extra - 1);
+        return aligned < max_size;
+    }
+    return true;
 }
 
 void* kbrk(size_t size) {
@@ -128,10 +142,11 @@ void* kcalloc(int n, int size) {
 
 void* krealloc(void* ptr, size_t size) {
     InterruptGuard guard;
-    if (!g_tlsf || !tlsf_request_valid(size, 0)) {
+    if (!g_tlsf) {
         if (ptr) kfree(ptr);
         return NULL;
     }
+    if (!tlsf_request_valid(size, 0)) return NULL;
     return tlsf_realloc(g_tlsf, ptr, size);
 }
 
