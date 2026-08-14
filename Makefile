@@ -359,15 +359,34 @@ FORCE:
 
 # Build user programs and drivers (the sub-makes are themselves incremental) so
 # the installer manifest scans the freshly built binaries in build/user and
-# build/drivers.
+# build/drivers. Declared output lists mirror user_prog/Makefile (SUBDIRS) and
+# drivers/Makefile (DRIVERS); stale binaries not on those lists are pruned
+# before the incremental sub-make runs so obsolete files never reach the package.
+USER_APPS = MeMView test Explorer Terminal Game3D CLIHello
+USER_BINS = $(addprefix $(BUILD_DIR)/user/,$(addsuffix .bin,$(USER_APPS)))
+DRIVER_SYS = $(addprefix $(BUILD_DIR)/drivers/,bga.sys ac97.sys)
+
 user:
+	@for bin in $(BUILD_DIR)/user/*.bin; do \
+		[ -e "$$bin" ] || continue; \
+		case " $(USER_BINS) " in *" $$bin "*) ;; *) \
+			echo "Removing stale $$bin"; rm -f "$$bin";; \
+		esac; \
+	done
 	@$(MAKE) -C user_prog
 
 drivers:
+	@for sys in $(BUILD_DIR)/drivers/*.sys; do \
+		[ -e "$$sys" ] || continue; \
+		case " $(DRIVER_SYS) " in *" $$sys "*) ;; *) \
+			echo "Removing stale $$sys"; rm -f "$$sys";; \
+		esac; \
+	done
 	@$(MAKE) -C drivers
 
 # Build host-side packer tool
-$(BUILD_DIR)/packer: tools/installer/packer.cpp
+$(BUILD_DIR)/packer: tools/installer/packer.cpp include/core/pak.h
+	mkdir -p $(BUILD_DIR)
 	g++ -std=c++11 -o $@ $<
 
 # Prepare installer data directory (mirrors the HDD layout)
@@ -382,10 +401,13 @@ INSTALLER_PAK_MANIFEST = $(BUILD_DIR)/.installer_pak.manifest
 $(INSTALLER_PAK_MANIFEST): FORCE $(KERNEL_BIN) $(INSTALLER_CORE_IMG) $(KERNEL_MAP) user drivers
 	@find $(KERNEL_BIN) $(INSTALLER_CORE_IMG) $(KERNEL_MAP) Makefile \
 	  $(BUILD_DIR)/user $(BUILD_DIR)/drivers bin/fonts bin/bitmaps bin/audio \
-	  bin/ProgFile/Game3D -type f -printf '%p %s %T@\n' 2>/dev/null | sort > $@.tmp
+	  bin/ProgFile/Game3D $(INSTALLER_GRUB_PLATFORM_DIR) -type f -printf '%p %s %T@\n' 2>/dev/null | sort > $@.tmp
 	@cmp -s $@.tmp $@ || cp $@.tmp $@
 	@rm -f $@.tmp
 $(INSTALLER_PAK_STAMP): $(INSTALLER_PAK_MANIFEST) $(KERNEL_BIN) $(INSTALLER_CORE_IMG) $(KERNEL_MAP) Makefile
+	# Invalidate the stamp first so a failed or interrupted rebuild cannot
+	# leave a stale stamp that lets later make invocations skip rebuilding.
+	rm -f $(INSTALLER_PAK_STAMP)
 	rm -rf $(INSTALLER_PAK_DIR)
 	mkdir -p $(INSTALLER_PAK_DIR)
 	# Validate the GRUB platform directory exists before copying any GRUB files
@@ -418,13 +440,13 @@ $(INSTALLER_PAK_STAMP): $(INSTALLER_PAK_MANIFEST) $(KERNEL_BIN) $(INSTALLER_CORE
 	for app in $(BUILD_DIR)/user/*.bin; do \
 		base=$$(basename $$app); \
 		if [ "$$base" != "Game3D.bin" ]; then \
-			cp $$app $(INSTALLER_PAK_DIR)/Hashx86/apps/; \
+			cp $$app $(INSTALLER_PAK_DIR)/Hashx86/apps/ || exit 1; \
 		fi; \
 	done
 	# Game3D — binary + data together
 	mkdir -p $(INSTALLER_PAK_DIR)/Apps/Game3D
-	cp $(BUILD_DIR)/user/Game3D.bin $(INSTALLER_PAK_DIR)/Apps/Game3D/ 2>/dev/null || true
-	cp bin/ProgFile/Game3D/* $(INSTALLER_PAK_DIR)/Apps/Game3D/ 2>/dev/null || true
+	cp $(BUILD_DIR)/user/Game3D.bin $(INSTALLER_PAK_DIR)/Apps/Game3D/
+	cp bin/ProgFile/Game3D/* $(INSTALLER_PAK_DIR)/Apps/Game3D/
 	# Graphics
 	mkdir -p $(INSTALLER_PAK_DIR)/Hashx86/gfx
 	cp bin/bitmaps/*.bmp $(INSTALLER_PAK_DIR)/Hashx86/gfx/
