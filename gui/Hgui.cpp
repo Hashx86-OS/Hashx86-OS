@@ -8,6 +8,7 @@
 
 #define KDBG_COMPONENT "GUI"
 #include <core/globals.h>
+#include <core/Iguard.h>
 #include <gui/Hgui.h>
 
 namespace {
@@ -174,6 +175,10 @@ int32_t HguiHandler::HandleWidget(CPUState* cpu, const WidgetData* _data) {
     ProcessControlBlock* proc = GetCurrentProcSafe();
     if (!proc) return -1;
 
+    // Mutating the widget tree from the app thread races with the GUI task's
+    // concurrent Draw/input iteration, so serialize this whole syscall.
+    InterruptGuard guard;
+
     if ((uint32_t)cpu->ebx == ADD_CHILD) {
         Widget* parentBase = this->FindWidgetByID(_data->param0);
         if (!parentBase || !parentBase->IsComposite()) return -1;
@@ -243,6 +248,10 @@ int32_t HguiHandler::HandleWindow(CPUState* cpu, const WidgetData* _data) {
     if (!cpu || !_data) return -1;
     ProcessControlBlock* proc = GetCurrentProcSafe();
     if (!proc) return -1;
+
+    // Serialize tree mutation against the GUI task's concurrent render/input.
+    InterruptGuard guard;
+
     char titleBuf[MAX_USER_TEXT];
 
     if ((uint32_t)cpu->ebx == CREATE) {
@@ -679,24 +688,37 @@ Widget* HguiHandler::FindWidgetByID(uint32_t searchID) {
 }
 
 void HguiHandler::RemoveAppByPID(uint32_t PID) {
-    bool removed = false;
-    do {
-        Widget* found = nullptr;
-        HguiWidgets.ForEach([&](Widget* c) {
-            if (c->PID == PID) found = c;
-        });
-        if (found) {
-            // Detach from parent tree first to avoid dangling parent references
-            if (found->parent) {
-                found->parent->RemoveChild(found);
-            }
-            HguiWidgets.Remove([&](Widget* c) { return c == found; });
-            delete found;
-            removed = true;
-        } else {
-            removed = false;
+    // Serialize against the GUI task's concurrent render.
+    InterruptGuard guard;
+
+    // Collect all matching widgets first (snapshot).
+    LinkedList<Widget*> toRemove;
+    HguiWidgets.ForEach([&](Widget* c) {
+        if (c->PID == PID) toRemove.PushBack(c);
+    });
+
+    // Determine which widgets are "roots" within the PID set — a widget
+    // whose parent is also being removed will be freed by its parent's
+    // ~CompositeWidget() recursively, so we must skip it here to avoid
+    // double-free.
+    LinkedList<Widget*> roots;
+    toRemove.ForEach([&](Widget* w) {
+        bool parentInSet = false;
+        if (w->parent) {
+            toRemove.ForEach([&](Widget* j) {
+                if (j == w->parent) parentInSet = true;
+            });
         }
-    } while (removed);
+        if (!parentInSet) roots.PushBack(w);
+    });
+
+    roots.ForEach([&](Widget* w) {
+        if (w->parent) {
+            w->parent->RemoveChild(w);
+        }
+        HguiWidgets.Remove([&](Widget* c) { return c == w; });
+        delete w;
+    });
 
     if (Desktop::activeInstance) {
         Desktop::activeInstance->deleteEventHandler(PID);

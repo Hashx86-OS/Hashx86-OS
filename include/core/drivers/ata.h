@@ -27,6 +27,11 @@ public:
     AdvancedTechnologyAttachment(bool master, uint16_t portBase);
     ~AdvancedTechnologyAttachment();
 
+    // ATA IDENTIFY results (word 0 = general configuration).
+    uint16_t identify_general_config = 0;
+    bool isAtapi = false;
+    bool isRemovable = false;
+
     uint32_t Identify();
     void Read28(uint32_t sectorNum, uint8_t* data, int count = 512);
 

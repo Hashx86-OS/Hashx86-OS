@@ -267,6 +267,10 @@ uint32_t SyscallHandler::HandleInterrupt(uint32_t esp) {
                                                                (struct timespec*)cpu->ecx);
             break;
 
+        case sys_getcwd:
+            return_val = SyscallHandlers::Handle_sys_getcwd((char*)cpu->ebx, cpu->ecx);
+            break;
+
         case sys_debug:
             return_val = SyscallHandlers::Handle_sys_debug((char*)cpu->ebx);
             break;
@@ -601,6 +605,27 @@ int32_t SyscallHandlers::Handle_sys_execve(const char* path, char* const argv[],
             delete f;
             if (child) {
                 child->programArgs = args;
+                // Set getcwd()
+                {
+                    size_t klen = strlen(kpath);
+                    char* lastSlash = nullptr;
+                    for (size_t i = 0; i < klen; i++) {
+                        if (kpath[i] == '/') lastSlash = &kpath[i];
+                    }
+                    if (lastSlash) {
+                        size_t dirlen = (size_t)(lastSlash - kpath);
+                        if (dirlen == 0) {
+                            child->cwd[0] = '/';
+                            child->cwd[1] = '\0';
+                        } else {
+                            memcpy(child->cwd, kpath, dirlen);
+                            child->cwd[dirlen] = '\0';
+                        }
+                    } else {
+                        child->cwd[0] = '/';
+                        child->cwd[1] = '\0';
+                    }
+                }
                 if (current_process && current_process->isCliHost &&
                     current_process->cliHostViewId != 0 && child->appType == APP_BINARY_CLI) {
                     child->cliHostPid = current_process->pid;
@@ -870,6 +895,21 @@ int32_t SyscallHandlers::Handle_sys_nanosleep(struct timespec* req, struct times
         if (!CopyToUser(process, rem, &k_rem, sizeof(k_rem))) return -1;
     }
     return 0;
+}
+
+int32_t SyscallHandlers::Handle_sys_getcwd(char* buf, uint32_t size) {
+    ProcessControlBlock* process =
+        Scheduler::activeInstance ? Scheduler::activeInstance->GetCurrentProcess() : nullptr;
+    if (!process) return -1;
+
+    size_t len = strlen(process->cwd);
+    if (!buf || size == 0) return -1;
+    if (len + 1 > size) return (int32_t)(len + 1);  // Buffer too small
+
+    char kbuf[256];
+    memcpy(kbuf, process->cwd, len + 1);
+    if (!CopyToUser(process, buf, kbuf, len + 1)) return -1;
+    return (int32_t)len;
 }
 
 int32_t SyscallHandlers::Handle_sys_debug(char* str) {
