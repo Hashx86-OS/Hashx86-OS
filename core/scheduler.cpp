@@ -306,7 +306,7 @@ ThreadControlBlock* Scheduler::CreateThread(ProcessControlBlock* parent, void (*
     tcb->tid = _tidCounter++;
     tcb->parent = parent;
     tcb->pid = parent ? parent->pid : 0;
-    tcb->stackSlotIdx = 0;
+    tcb->stackSlotIdx = UINT32_MAX;
 
     // Allocate 64KB kernel stack from the dedicated guarded stack zone
     tcb->stack = (uint8_t*)kstack_alloc();

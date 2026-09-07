@@ -271,7 +271,10 @@ bool AdvancedTechnologyAttachment::Flush() {
     devicePort.Write(master ? 0xE0 : 0xF0);
     commandPort.Write(0xE7);
     uint8_t status = commandPort.Read();
-    if (status == 0x00) return true;
+    if (status == 0x00) {
+        KDBG1("FLUSH ERROR: device returned status 0x00");
+        return false;
+    }
     uint32_t flushWait = 0;
     while ((status & 0x80) == 0x80) {
         if ((status & 0x01) == 0x01) {
@@ -285,13 +288,21 @@ bool AdvancedTechnologyAttachment::Flush() {
         status = commandPort.Read();
     }
 
-    // Check for error flags after BSY clears
+    // Completion status must be BSY=0, ERR=0, DF=0, DRQ=0 and DRDY=1
     if ((status & 0x01) == 0x01) {
         KDBG1("FLUSH ERROR: ERR set after BSY");
         return false;
     }
     if ((status & 0x20) == 0x20) {
         KDBG1("FLUSH ERROR: DF set after BSY");
+        return false;
+    }
+    if ((status & 0x08) == 0x08) {
+        KDBG1("FLUSH ERROR: DRQ set after BSY");
+        return false;
+    }
+    if ((status & 0x40) != 0x40) {
+        KDBG1("FLUSH ERROR: DRDY not set after BSY");
         return false;
     }
     return true;
