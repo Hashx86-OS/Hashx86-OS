@@ -65,7 +65,9 @@ static void installGRUB(AdvancedTechnologyAttachment* ata,
     *(uint32_t*)&mbr[462 + 8] = p2_start;
     *(uint32_t*)&mbr[462 + 12] = p2_size;
 
-    ata->Write28(0, mbr, 512);
+    if (!ata->Write28(0, mbr, 512)) {
+        HALT("MBR write failed - disk may be dead or rejected the write");
+    }
     printf(LIGHT_GRAY, "MBR written\n");
 
     const uint8_t* src = (const uint8_t*)coreImg;
@@ -75,9 +77,13 @@ static void installGRUB(AdvancedTechnologyAttachment* ata,
         uint32_t remaining = coreImgSize - i * 512;
         uint32_t chunk = remaining > 512 ? 512 : remaining;
         memcpy(sector, src + i * 512, chunk);
-        ata->Write28(1 + i, sector, 512);
+        if (!ata->Write28(1 + i, sector, 512)) {
+            HALT("core.img write failed — installation aborted");
+        }
     }
-    ata->Flush();
+    if (!ata->Flush()) {
+        HALT("disk flush failed after core.img write");
+    }
     printf(LIGHT_GRAY, "core.img written (%u sectors)\n", coreSectors);
 }
 
@@ -335,11 +341,17 @@ extern "C" void kernelMain(void* multiboot_structure, uint32_t magicnumber) {
         for (;;) asm volatile("hlt");
     }
 
-    uint32_t available = totalSectors - 63;
-    uint32_t p1_size = available / 2;
-    uint32_t p2_size = available - p1_size;
-    uint32_t p1_start = 63;
-    uint32_t p2_start = 63 + p1_size;
+    // 1MiB alignment (2048 sectors): the modern standard for SSD/HDD partition
+    // layouts, and leaves a large MBR gap for core.img.
+    const uint32_t ALIGNMENT = 2048;
+    // Need p1_start + two aligned partitions; guard so neither can round to zero.
+    if (totalSectors <= 3 * ALIGNMENT) HALT("Disk too small for aligned partitions");
+
+    uint32_t p1_start = ALIGNMENT;
+    uint32_t available = totalSectors - p1_start;
+    uint32_t p1_size = (available / 2) & ~(ALIGNMENT - 1);  // Aligned size
+    uint32_t p2_size = available - p1_size;                  // Remainder, also aligned
+    uint32_t p2_start = p1_start + p1_size;
 
     printf(LIGHT_GRAY, "Part 1: LBA %u +%u  Part 2: LBA %u +%u\n",
            p1_start, p1_size, p2_start, p2_size);

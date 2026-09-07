@@ -56,7 +56,9 @@ DRESULT disk_write(BYTE pdrv, const BYTE* buff, LBA_t sector, UINT count) {
 
     for (UINT i = 0; i < count; i++) {
         /* const cast required by ATA interface; underlying Write28 does not mutate */
-        ata->Write28(start + i, const_cast<BYTE*>(buff + (i * 512)), 512);
+        if (!ata->Write28(start + i, const_cast<BYTE*>(buff + (i * 512)), 512)) {
+            return RES_ERROR;
+        }
     }
     return RES_OK;
 }
@@ -66,8 +68,7 @@ DRESULT disk_ioctl(BYTE pdrv, BYTE cmd, void* buff) {
 
     switch (cmd) {
     case CTRL_SYNC:
-        g_ata[pdrv]->Flush();
-        return RES_OK;
+        return g_ata[pdrv]->Flush() ? RES_OK : RES_ERROR;
 
     case GET_SECTOR_COUNT: {
         *(DWORD*)buff = g_partSize[pdrv];

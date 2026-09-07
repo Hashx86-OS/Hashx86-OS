@@ -35,9 +35,9 @@ public:
     uint32_t Identify();
     void Read28(uint32_t sectorNum, uint8_t* data, int count = 512);
 
-    void Write28(uint32_t sectorNum, uint8_t* data, uint32_t count);
-    void Flush();
-
+    bool Write28(uint32_t sectorNum, uint8_t* data, uint32_t count);
+    bool Flush();
+    
     uint32_t GetSizeInSectors() {
         return ata_size;
     }

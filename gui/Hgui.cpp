@@ -133,6 +133,12 @@ uint32_t HguiHandler::HandleInterrupt(uint32_t esp) {
         data_ptr = &data;
     }
 
+    // All widget handlers mutate the widget tree that the GUI task renders and
+    // polls concurrently, so serialize the whole dispatch against interrupts.
+    // InterruptGuard is nested-safe: inner instances (HandleWidget/HandleWindow)
+    // simply observe IF already cleared and leave restoration to the outer guard.
+    InterruptGuard guard;
+
     switch ((uint32_t)cpu->eax) {
         case WIDGET:
             ret = HandleWidget(cpu, data_ptr);

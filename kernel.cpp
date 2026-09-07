@@ -639,6 +639,12 @@ extern "C" void kernelMain(void* multiboot_structure, uint32_t magicnumber) {
 
         if (ata_size == 0) continue;  // No Drive detected
 
+        // Skip CD-ROMs (ATAPI)
+        if (SATAList[i]->isAtapi) {
+            KDBG1("Drive %d is ATAPI (CD-ROM), skipping", i);
+            continue;
+        }
+
         ata = SATAList[i];
 
         // Use the FIRST drive found.

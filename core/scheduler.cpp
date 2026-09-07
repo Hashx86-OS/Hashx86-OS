@@ -514,6 +514,9 @@ ThreadControlBlock* Scheduler::CloneCurrentProcess(CPUState* parentContext, uint
     childProc->isKernelProcess = false;
     childProc->appType = parent->appType;
     childProc->parent = parent;
+    // Inherit the working directory so sys_getcwd works in the child.
+    memcpy(childProc->cwd, parent->cwd, sizeof(childProc->cwd));
+    childProc->cwd[sizeof(childProc->cwd) - 1] = '\0';
     childProc->page_directory = _pager->CreateProcessDirectory();
     childProc->heap = parent->heap;
     childProc->stdinHead = 0;
@@ -610,43 +613,24 @@ ThreadControlBlock* Scheduler::CloneCurrentProcess(CPUState* parentContext, uint
     memcpy(tcb->context, parentContext, sizeof(CPUState));
     tcb->context->eax = 0;
 
-    // When child_stack is null in a CLONE_VM context, allocate a distinct user stack
+    // When child_stack is null, allocate a distinct user stack from the slot
+    // pool. AllocUserStack reserves page 0 as an unmapped guard page so a
+    // stack overflow faults instead of corrupting the child's address space.
     if (child_stack) {
         tcb->context->esp = (uint32_t)child_stack;
     } else {
-        uint32_t user_stack_size = 4096;
-        uint32_t user_stack_phys = (uint32_t)pmm_alloc_block_low(256 * 1024 * 1024);
-        if (!user_stack_phys) {
-            kstack_free(tcb->stack);
-            delete tcb;
+        uint32_t user_stack_base;
+        uint32_t top_page_phys;
+        if (!AllocUserStack(tcb, _pager, childProc->page_directory, "CloneCurrentProcess",
+                            &user_stack_base, &top_page_phys)) {
             if (childProc->page_directory) freeChildAddressSpace();
             delete childProc;
             return nullptr;
         }
-        memset((void*)user_stack_phys, 0, 4096);
-        uint64_t stack_virt64 = (uint64_t)0xBFFF0000 - ((uint64_t)tcb->tid * 4096ULL);
-        if (stack_virt64 < 0x10000000ULL || stack_virt64 > 0xFFFFFFFFULL) {
-            pmm_free_block((void*)user_stack_phys);
-            kstack_free(tcb->stack);
-            delete tcb;
-            if (childProc->page_directory) freeChildAddressSpace();
-            delete childProc;
-            return nullptr;
-        }
-        uint32_t user_stack_virt = (uint32_t)stack_virt64;
-        if (!_pager->MapPage(childProc->page_directory, user_stack_virt, user_stack_phys,
-                             PAGE_PRESENT | PAGE_RW | PAGE_USER)) {
-            pmm_free_block((void*)user_stack_phys);
-            kstack_free(tcb->stack);
-            delete tcb;
-            if (childProc->page_directory) freeChildAddressSpace();
-            delete childProc;
-            return nullptr;
-        }
-        uint32_t* stack_top_phys = (uint32_t*)(user_stack_phys + 4096);
-        stack_top_phys[-1] = 0;
-        stack_top_phys[-2] = USER_EXIT_TRAMPOLINE_VIRT;
-        tcb->context->esp = user_stack_virt + 4096 - 8;
+        tcb->context->esp = user_stack_base + USER_STACK_PAGES * PAGE_SIZE - 8;
+        uint32_t* user_stack_top_phys = (uint32_t*)(top_page_phys + PAGE_SIZE);
+        user_stack_top_phys[-2] = USER_EXIT_TRAMPOLINE_VIRT;
+        user_stack_top_phys[-1] = 0;
     }
 
     constexpr uint32_t CLONE_PARENT_SETTID = 0x00100000;

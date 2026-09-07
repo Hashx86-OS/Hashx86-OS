@@ -6,6 +6,7 @@
 #include <string>
 #include <sys/stat.h>
 #include <dirent.h>
+#include <algorithm>
 
 #include "../../include/core/pak.h"
 
@@ -69,6 +70,16 @@ int main(int argc, char** argv) {
 
     std::vector<FileEntry> entries;
     collectFiles(inputDir, "", entries);
+
+    if (entries.empty()) {
+        fprintf(stderr, "Error: no files found under %s — refusing to pack an empty PAK\n",
+                inputDir);
+        return 1;
+    }
+
+    // Sort by name so the PAK bytes are reproducible across packaging runs.
+    std::sort(entries.begin(), entries.end(),
+              [](const FileEntry& a, const FileEntry& b) { return a.name < b.name; });
 
     // Build PAK: header + file data + directory
     std::vector<uint8_t> pak;
