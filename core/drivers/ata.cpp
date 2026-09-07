@@ -220,6 +220,35 @@ static bool ata_wait_drq(Port8Bit& commandPort, const char* op) {
     return true;
 }
 
+static bool ata_wait_ready(Port8Bit& commandPort, const char* op) {
+    uint8_t status = commandPort.Read();
+    uint32_t wait = 0;
+    while ((status & 0x80) == 0x80) {
+        if ((status & 0x01) == 0x01) {
+            KDBG1("%s ERROR: ERR set while waiting for completion", op);
+            return false;
+        }
+        if (wait++ > 1000000) {
+            KDBG1("%s ERROR: completion timeout", op);
+            return false;
+        }
+        status = commandPort.Read();
+    }
+    if ((status & 0x01) == 0x01) {
+        KDBG1("%s ERROR: ERR set after completion", op);
+        return false;
+    }
+    if ((status & 0x20) == 0x20) {
+        KDBG1("%s ERROR: DF set after completion", op);
+        return false;
+    }
+    if ((status & 0x08) == 0x08) {
+        KDBG1("%s ERROR: DRQ still set after completion", op);
+        return false;
+    }
+    return true;
+}
+
 bool AdvancedTechnologyAttachment::Write28(uint32_t sectorNum, uint8_t* data, uint32_t count) {
     if (sectorNum > 0x0FFFFFFF) return false;
     if (data == nullptr || count <= 0) return false;  // No-op: reject null or zero-length
@@ -263,6 +292,9 @@ bool AdvancedTechnologyAttachment::Write28(uint32_t sectorNum, uint8_t* data, ui
         if (!ata_wait_drq(commandPort, "WRITE")) return false;
         outsw(dataPort.getPortNumber(), sectorBuffer, 256);
     }
+
+    // Wait for the WRITE SECTOR transfer to complete before issuing FLUSH
+    if (!ata_wait_ready(commandPort, "WRITE")) return false;
 
     return Flush();
 }

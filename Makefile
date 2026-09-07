@@ -249,6 +249,7 @@ HDD_RAW = $(BUILD_DIR)/hdd_raw.img
 hddinit:
 	sudo -v
 	-sudo qemu-nbd --disconnect /dev/nbd0
+	mkdir -p $(BUILD_DIR)
 	-rm -f $(HDD_RAW)
 	qemu-img create -f raw $(HDD_RAW) 1G
 	sudo modprobe nbd max_part=8

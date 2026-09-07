@@ -210,9 +210,29 @@ static bool AllocUserStack(ThreadControlBlock* tcb, Paging* pager, uint32_t* pag
                            uint32_t* out_top_page_phys) {
     uint32_t user_stack_size = USER_STACK_PAGES * PAGE_SIZE;
 
+    // Prefer recycling a pool slot, but only if its virtual range is not
+    // already mapped in the destination page directory.
+    uint32_t slotIdx = UINT32_MAX;
     if (!g_freeStackOffsets.IsEmpty()) {
-        tcb->stackSlotIdx = g_freeStackOffsets.PopFront();
-    } else {
+        uint32_t candidate = g_freeStackOffsets.PopFront();
+        uint32_t candidateBase = USER_STACK_VIRT_TOP -
+                                 (uint32_t)(((uint64_t)candidate + 1) *
+                                            (uint64_t)user_stack_size);
+        bool candidateMapped = false;
+        for (uint32_t p = 0; p < USER_STACK_PAGES; p++) {
+            if (pager->GetPhysicalAddress(page_directory, candidateBase + p * PAGE_SIZE) !=
+                0xFFFFFFFF) {
+                candidateMapped = true;
+                break;
+            }
+        }
+        if (candidateMapped) {
+            g_freeStackOffsets.Add(candidate);
+        } else {
+            slotIdx = candidate;
+        }
+    }
+    if (slotIdx == UINT32_MAX) {
         uint32_t nextOffset = g_nextStackSlotIdx * user_stack_size;
         if (nextOffset / user_stack_size != g_nextStackSlotIdx ||
             nextOffset >= USER_STACK_VIRT_TOP - USER_STACK_VIRT_BOTTOM - user_stack_size) {
@@ -220,8 +240,9 @@ static bool AllocUserStack(ThreadControlBlock* tcb, Paging* pager, uint32_t* pag
             delete tcb;
             return false;
         }
-        tcb->stackSlotIdx = g_nextStackSlotIdx++;
+        slotIdx = g_nextStackSlotIdx++;
     }
+    tcb->stackSlotIdx = slotIdx;
 
     auto recycleSlot = [&]() { g_freeStackOffsets.Add(tcb->stackSlotIdx); };
 
