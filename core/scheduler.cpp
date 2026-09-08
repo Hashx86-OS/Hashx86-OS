@@ -210,26 +210,34 @@ static bool AllocUserStack(ThreadControlBlock* tcb, Paging* pager, uint32_t* pag
                            uint32_t* out_top_page_phys) {
     uint32_t user_stack_size = USER_STACK_PAGES * PAGE_SIZE;
 
-    // Prefer recycling a pool slot, but only if its virtual range is not
-    // already mapped in the destination page directory.
+    // Prefer recycling a pool slot: scan the pool's current size once,
+    // requeue mapped candidates, and pick the first unmapped one. A slot
+    // whose virtual range is already mapped in the destination page directory
+    // was inherited from an older address space and reusing it via MapPage
+    // would overwrite the inherited PTEs and leak their frames. Only after all
+    // recycled candidates have been checked does a fresh slot past the current
+    // top get allocated.
     uint32_t slotIdx = UINT32_MAX;
     if (!g_freeStackOffsets.IsEmpty()) {
-        uint32_t candidate = g_freeStackOffsets.PopFront();
-        uint32_t candidateBase = USER_STACK_VIRT_TOP -
-                                 (uint32_t)(((uint64_t)candidate + 1) *
-                                            (uint64_t)user_stack_size);
-        bool candidateMapped = false;
-        for (uint32_t p = 0; p < USER_STACK_PAGES; p++) {
-            if (pager->GetPhysicalAddress(page_directory, candidateBase + p * PAGE_SIZE) !=
-                0xFFFFFFFF) {
-                candidateMapped = true;
-                break;
+        int poolSize = g_freeStackOffsets.GetSize();
+        for (int i = 0; i < poolSize && slotIdx == UINT32_MAX; i++) {
+            uint32_t candidate = g_freeStackOffsets.PopFront();
+            uint32_t candidateBase = USER_STACK_VIRT_TOP -
+                                     (uint32_t)(((uint64_t)candidate + 1) *
+                                                (uint64_t)user_stack_size);
+            bool candidateMapped = false;
+            for (uint32_t p = 0; p < USER_STACK_PAGES; p++) {
+                if (pager->GetPhysicalAddress(page_directory, candidateBase + p * PAGE_SIZE) !=
+                    0xFFFFFFFF) {
+                    candidateMapped = true;
+                    break;
+                }
             }
-        }
-        if (candidateMapped) {
-            g_freeStackOffsets.Add(candidate);
-        } else {
-            slotIdx = candidate;
+            if (candidateMapped) {
+                g_freeStackOffsets.Add(candidate);
+            } else {
+                slotIdx = candidate;
+            }
         }
     }
     if (slotIdx == UINT32_MAX) {
