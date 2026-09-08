@@ -41,12 +41,23 @@ uint32_t AdvancedTechnologyAttachment::Identify() {
         return 0;
     }
 
+    // Read the device signature latched on device select: ATAPI packet devices
+    // report 0x14/0xEB in LBA mid/high (the definitive signature; some ATA
+    // drives also report 0x01/0x01 in sector-count/LBA-low, so that weaker
+    // pattern is not used). Use IDENTIFY PACKET DEVICE (0xA1) for them and
+    // IDENTIFY DEVICE (0xEC) otherwise, so the identification block (and word 0
+    // decode below) is always obtained from the command the device actually
+    // implements.
+    uint8_t sigLbaMid = lbaMidPort.Read();
+    uint8_t sigLbaHigh = lbaHiPort.Read();
+    bool packetDevice = (sigLbaMid == 0x14 && sigLbaHigh == 0xEB);
+
     devicePort.Write(master ? 0xA0 : 0xB0);
     sectorCountPort.Write(0);
     lbaLowPort.Write(0);
     lbaMidPort.Write(0);
     lbaHiPort.Write(0);
-    commandPort.Write(0xEC);  // Identify command
+    commandPort.Write(packetDevice ? 0xA1 : 0xEC);  // Identify command
 
     status = commandPort.Read();
     if (status == 0x00) {
@@ -91,6 +102,14 @@ uint32_t AdvancedTechnologyAttachment::Identify() {
         }
 
         uint16_t data = dataPort.Read();
+
+        // Word 0 holds the general configuration: bit 15 = ATAPI, bit 7 =
+        // removable media.
+        if (i == 0) {
+            identify_general_config = data;
+            isAtapi = (data & 0x8000) != 0;
+            isRemovable = (data & 0x0080) != 0;
+        }
 
         // Words 60 and 61 contain the total sector count for LBA28
         if (i == 60) {
@@ -201,9 +220,38 @@ static bool ata_wait_drq(Port8Bit& commandPort, const char* op) {
     return true;
 }
 
-void AdvancedTechnologyAttachment::Write28(uint32_t sectorNum, uint8_t* data, uint32_t count) {
-    if (sectorNum > 0x0FFFFFFF) return;
-    if (data == nullptr || count <= 0) return;  // No-op: reject null or zero-length
+static bool ata_wait_ready(Port8Bit& commandPort, const char* op) {
+    uint8_t status = commandPort.Read();
+    uint32_t wait = 0;
+    while ((status & 0x80) == 0x80) {
+        if ((status & 0x01) == 0x01) {
+            KDBG1("%s ERROR: ERR set while waiting for completion", op);
+            return false;
+        }
+        if (wait++ > 1000000) {
+            KDBG1("%s ERROR: completion timeout", op);
+            return false;
+        }
+        status = commandPort.Read();
+    }
+    if ((status & 0x01) == 0x01) {
+        KDBG1("%s ERROR: ERR set after completion", op);
+        return false;
+    }
+    if ((status & 0x20) == 0x20) {
+        KDBG1("%s ERROR: DF set after completion", op);
+        return false;
+    }
+    if ((status & 0x08) == 0x08) {
+        KDBG1("%s ERROR: DRQ still set after completion", op);
+        return false;
+    }
+    return true;
+}
+
+bool AdvancedTechnologyAttachment::Write28(uint32_t sectorNum, uint8_t* data, uint32_t count) {
+    if (sectorNum > 0x0FFFFFFF) return false;
+    if (data == nullptr || count <= 0) return false;  // No-op: reject null or zero-length
     if (count > 512) count = 512;
 
     devicePort.Write((master ? 0xE0 : 0xF0) | ((sectorNum & 0x0F000000) >> 24));
@@ -216,12 +264,12 @@ void AdvancedTechnologyAttachment::Write28(uint32_t sectorNum, uint8_t* data, ui
     if (count == 512) {
         // Full sector write: issue WRITE and send data directly
         commandPort.Write(0x30);
-        if (!ata_wait_drq(commandPort, "WRITE")) return;
+        if (!ata_wait_drq(commandPort, "WRITE")) return false;
         outsw(dataPort.getPortNumber(), data, 256);
     } else {
         // Partial write: Read current sector first, merge, then write back
         commandPort.Write(0x20);  // READ SECTOR
-        if (!ata_wait_drq(commandPort, "READ")) return;
+        if (!ata_wait_drq(commandPort, "READ")) return false;
 
         uint8_t sectorBuffer[512];
         insw(dataPort.getPortNumber(), sectorBuffer, 256);
@@ -241,38 +289,53 @@ void AdvancedTechnologyAttachment::Write28(uint32_t sectorNum, uint8_t* data, ui
         lbaMidPort.Write((sectorNum & 0x0000FF00) >> 8);
         lbaHiPort.Write((sectorNum & 0x00FF0000) >> 16);
         commandPort.Write(0x30);  // WRITE SECTOR
-        if (!ata_wait_drq(commandPort, "WRITE")) return;
+        if (!ata_wait_drq(commandPort, "WRITE")) return false;
         outsw(dataPort.getPortNumber(), sectorBuffer, 256);
     }
 
-    Flush();
+    // Wait for the WRITE SECTOR transfer to complete before issuing FLUSH
+    if (!ata_wait_ready(commandPort, "WRITE")) return false;
+
+    return Flush();
 }
 
-void AdvancedTechnologyAttachment::Flush() {
+bool AdvancedTechnologyAttachment::Flush() {
     devicePort.Write(master ? 0xE0 : 0xF0);
     commandPort.Write(0xE7);
     uint8_t status = commandPort.Read();
-    if (status == 0x00) return;
+    if (status == 0x00) {
+        KDBG1("FLUSH ERROR: device returned status 0x00");
+        return false;
+    }
     uint32_t flushWait = 0;
     while ((status & 0x80) == 0x80) {
         if ((status & 0x01) == 0x01) {
             KDBG1("FLUSH ERROR: ERR set while waiting for BSY");
-            return;
+            return false;
         }
         if (flushWait++ > 1000000) {
             KDBG1("FLUSH ERROR: BSY timeout");
-            return;
+            return false;
         }
         status = commandPort.Read();
     }
 
-    // Check for error flags after BSY clears
+    // Completion status must be BSY=0, ERR=0, DF=0, DRQ=0 and DRDY=1
     if ((status & 0x01) == 0x01) {
         KDBG1("FLUSH ERROR: ERR set after BSY");
-        return;
+        return false;
     }
     if ((status & 0x20) == 0x20) {
         KDBG1("FLUSH ERROR: DF set after BSY");
-        return;
+        return false;
     }
+    if ((status & 0x08) == 0x08) {
+        KDBG1("FLUSH ERROR: DRQ set after BSY");
+        return false;
+    }
+    if ((status & 0x40) != 0x40) {
+        KDBG1("FLUSH ERROR: DRDY not set after BSY");
+        return false;
+    }
+    return true;
 }

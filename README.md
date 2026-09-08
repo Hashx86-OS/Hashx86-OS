@@ -107,50 +107,49 @@ cd Hashx86-OS
 > The original Hashx86 repository is archived and no longer maintained.
 > https://github.com/sdmdg/Hashx86
 
-### 2. Setup the Hard Disk
-You need a `HDD.vdi` file to store drivers and files. Choose one of the methods below:
+### 2. Install the OS
+
+Choose one of the methods below:
 
 **Option A: Quick Start (Recommended)**
 
-- Download the pre-formatted `HDD.vdi` from the **Releases** page and place it in the project folder.
+- Download the installer ISO from the **Releases** page, then boot it to install the OS onto a disk.
+
+To install onto an ATA disk in VirtualBox:
+
+1. Create a new VM (e.g. *My Operating System*), OS type *Other/Unknown*, at least **1 GB RAM**.
+2. Create a virtual **IDE (ATA)** hard disk (VDI, dynamically sized, at least **1 GB**). The installer only targets ATA disks, so use an IDE controller rather than SATA.
+3. Mount the downloaded **installer ISO** as the VM's **Optical Drive**.
+4. Start the VM. The installer will format the ATA disk and install the OS.
+5. After installation, eject the ISO from the Optical Drive and reboot the VM to boot the installed system.
 
 **Option B: Manual Setup**
 If you prefer to create a fresh disk:
-1. Create a 1GB VirtualBox Disk Image (VDI):
+1. Clone the repository
+
+    ```bash
+    git clone https://github.com/Hashx86-OS/Hashx86-OS
+    cd Hashx86-OS
+    ```
+
+2. Create a 1GB VirtualBox Disk Image (VDI):
+
     ```bash
     mkdir build
-    qemu-img create -f vdi build/HDD.vdi 1G
+    make hddinit
     ```
 
-2. Run the OS for the first time.
-
-      The kernel will detect the empty disk and automatically format it to **FAT32**.
-      ```bash
-      make run
-      ```
-    *Wait for the OS to boot and confirm formatting is complete, then close the QEMU window.*
-
-3. Build Drivers & User Programs
+3. Build the OS
 
     ```bash
-    cd drivers/
-    make
-    cd ../user_prog/
-    make
-    cd ..
+    make build
     ```
-4. Install Drivers & Assets
 
-      Now that the disk is formatted, mount it and copy the required system files (Drivers, Fonts, Bitmaps).
+4. Boot the OS in QEMU
+
     ```bash
-    make hdd
+    make runq
     ```
-
-### 3. Final Boot
-Run the OS again. It will now boot with full graphics and file support!
-```bash
-make runq
-```
 
 ---
 
@@ -162,7 +161,7 @@ This project is licensed under the MIT License. See `LICENSE` for more details.
 
 ## 👤 Author
 
-Hashx86 is developed and maintained by **[Me](https://github.com/sdmdg)**.  
+Hashx86 is developed and maintained by **[@sdmdg](https://github.com/sdmdg)**.  
 Built with ❤️ for learning and having fun with bare-metal programming.
 
 ---
@@ -177,6 +176,8 @@ This project wouldn’t have been possible without the help, guidance and inspir
 
 
 ## 🎨 Credits
+
+* **TLSF 3.1:** Two-Level Segregated Fit memory allocator by **mattconte** (BSD 3-Clause) — [github.com/mattconte/tlsf](https://github.com/mattconte/tlsf)
 
 * **FatFs R0.16:** Generic FAT Filesystem Module by **ChaN** on [elm-chan.org](https://elm-chan.org/fsw/ff/)
 

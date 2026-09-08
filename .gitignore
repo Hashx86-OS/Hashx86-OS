@@ -8,3 +8,4 @@
 kernel.map
 kernel.iso
 kernel.bin
+build/

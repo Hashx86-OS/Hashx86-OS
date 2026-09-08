@@ -90,6 +90,7 @@ struct ProcessControlBlock {
     HeapSegment heap;
     File* fdTable[FD_MAX];
     ProgramArguments* programArgs;  // Owned by PCB, freed in KillProcess
+    char cwd[256];                  // Current working directory of the process
 
     // PTY-style stdin queue: input is routed per process instead of globally.
     char stdinQueue[STDIN_QUEUE_SIZE];
