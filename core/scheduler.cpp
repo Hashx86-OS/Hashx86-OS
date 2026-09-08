@@ -326,6 +326,32 @@ static bool AllocUserStack(ThreadControlBlock* tcb, Paging* pager, uint32_t* pag
     return true;
 }
 
+// Unmap and free the pages of a user-stack slot in the given page directory.
+// Page 0 of the slot is an unmapped guard page and is never present. Called
+// exactly once per slot at thread exit; KillProcess's later page-table sweep
+// skips the cleared PTEs, so the frames are not reclaimed twice. Forked
+// children own separate copies of those frames and are unaffected, and
+// AllocUserStack's mapped-slot check keeps a recycled slot from being
+// re-mapped into an address space that still carries inherited PTEs.
+static void FreeUserStackSlot(uint32_t* page_directory, uint32_t slotIdx) {
+    uint32_t user_stack_size = USER_STACK_PAGES * PAGE_SIZE;
+    uint32_t base = USER_STACK_VIRT_TOP -
+                    (uint32_t)(((uint64_t)slotIdx + 1) * (uint64_t)user_stack_size);
+    if (base < USER_STACK_VIRT_BOTTOM) return;
+    for (uint32_t p = 1; p < USER_STACK_PAGES; p++) {
+        uint32_t va = base + p * PAGE_SIZE;
+        uint32_t pd_idx = va >> 22;
+        if (!(page_directory[pd_idx] & PAGE_PRESENT)) continue;
+        uint32_t pt_idx = (va >> 12) & 0x3FF;
+        uint32_t* pt = (uint32_t*)(page_directory[pd_idx] & 0xFFFFF000);
+        if (!(pt[pt_idx] & PAGE_PRESENT)) continue;
+        uint32_t phys = pt[pt_idx] & 0xFFFFF000;
+        pt[pt_idx] = 0;
+        asm volatile("invlpg %0" : : "m"(*(uint8_t*)va) : "memory");
+        pmm_free_block((void*)phys);
+    }
+}
+
 ThreadControlBlock* Scheduler::CreateThread(ProcessControlBlock* parent, void (*entrypoint)(void*),
                                             void* arg) {
     InterruptGuard guard;
@@ -726,8 +752,8 @@ bool Scheduler::KillProcess(uint32_t pid) {
     }
 
     // All stack slot indices have already been collected in the process's
-    // deferredStackSlots array by TerminateThread.  Recycling is deferred
-    // until the page-table sweep has freed the physical pages.
+    // All user-stack slots were already reclaimed by TerminateThread at each
+    // thread exit; this array is kept for completeness and stays empty.
     int slotCount = target->deferredSlotCount;
 
     // Terminate all threads (removes from scheduler queues, frees kernel stacks)
@@ -783,8 +809,8 @@ bool Scheduler::KillProcess(uint32_t pid) {
         pmm_free_block(target->page_directory);
     }
 
-    // Recycle user-stack slots only after the page-table sweep has freed
-    // the physical pages and cleared the PTEs.
+    // Residual no-op: slots were already reclaimed by TerminateThread at each
+    // thread exit; kept for forward compatibility with deferred slot layouts.
     for (int i = 0; i < slotCount; i++) {
         g_freeStackOffsets.Add(target->deferredStackSlots[i]);
     }
@@ -816,13 +842,20 @@ void Scheduler::TerminateThread(ThreadControlBlock* thread) {
     readyQueue.Remove([thread](ThreadControlBlock* t) { return t == thread; });
     blockedQueue.Remove([thread](ThreadControlBlock* t) { return t == thread; });
 
-    // Preserve the stack slot index on the parent process so KillProcess
-    // can recycle it after the page-table sweep.
+    // Reclaim the exited thread's user-stack slot exactly once, at thread
+    // exit: free its frames and clear its PTEs (so KillProcess's sweep won't
+    // touch them), then return the slot to the pool. ExitCurrentThread only
+    // calls KillProcess for the last active thread, so deferring this reclaim
+    // would otherwise let a long-lived multi-threaded process leak one slot
+    // and its physical pages per thread exit, eventually exhausting the
+    // user-stack range.
     if (thread->parent && thread->stackSlotIdx != UINT32_MAX) {
         ProcessControlBlock* p = thread->parent;
-        if (p->deferredSlotCount < 256) {
-            p->deferredStackSlots[p->deferredSlotCount++] = thread->stackSlotIdx;
+        if (p->page_directory) {
+            FreeUserStackSlot(p->page_directory, thread->stackSlotIdx);
         }
+        g_freeStackOffsets.Add(thread->stackSlotIdx);
+        thread->stackSlotIdx = UINT32_MAX;
     }
 
     // Remove from parent's thread list to prevent KillProcess from
@@ -831,9 +864,8 @@ void Scheduler::TerminateThread(ThreadControlBlock* thread) {
         thread->parent->threads.Remove([thread](ThreadControlBlock* t) { return t == thread; });
     }
 
-    // Slot recycling is deferred to KillProcess (after the page-table sweep),
-    // because the physical user-stack pages are still mapped in the process
-    // page directory at this point.
+    // The user stack (and its slot) was reclaimed above; the kernel stack is
+    // freed now (self-exit) or deferred via pendingReclaims (Schedule()).
     if (thread == currentThread) {
         // Defer cleanup: this thread is still running on its own kernel stack.
         // Freeing it now would corrupt the stack we are executing on.
