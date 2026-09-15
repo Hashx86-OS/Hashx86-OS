@@ -27,12 +27,17 @@ public:
     AdvancedTechnologyAttachment(bool master, uint16_t portBase);
     ~AdvancedTechnologyAttachment();
 
+    // ATA IDENTIFY results (word 0 = general configuration).
+    uint16_t identify_general_config = 0;
+    bool isAtapi = false;
+    bool isRemovable = false;
+
     uint32_t Identify();
     void Read28(uint32_t sectorNum, uint8_t* data, int count = 512);
 
-    void Write28(uint32_t sectorNum, uint8_t* data, uint32_t count);
-    void Flush();
-
+    bool Write28(uint32_t sectorNum, uint8_t* data, uint32_t count);
+    bool Flush();
+    
     uint32_t GetSizeInSectors() {
         return ata_size;
     }

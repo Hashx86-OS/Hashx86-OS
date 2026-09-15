@@ -9,6 +9,7 @@
 #define KDBG_COMPONENT "GUI:WIDGET"
 #include <gui/Hgui.h>
 #include <gui/widget.h>
+#include <core/Iguard.h>
 
 // Widget Base Class
 
@@ -33,6 +34,10 @@ Widget::Widget(Widget* parent, int32_t x, int32_t y, int32_t w, int32_t h) {
 }
 
 Widget::~Widget() {
+    // Defensive invariant: a widget being freed must never remain linked in a
+    // living parent's childrenList, otherwise a later CompositeWidget redraw
+    // dereferences freed memory.  Detach from the parent before freeing.
+    if (parent) parent->RemoveChild(this);
     HguiHandler::RemoveWidget(this);
     if (cache) delete[] cache;
 }
@@ -223,10 +228,16 @@ CompositeWidget::CompositeWidget(CompositeWidget* parent, int32_t x, int32_t y, 
     : Widget(parent, x, y, w, h), focusedChild(nullptr) {}
 
 CompositeWidget::~CompositeWidget() {
-    // Delete all children — they are owned by this CompositeWidget
-    // via AddChild() which pushes them into childrenList.
-    childrenList.ForEach([&](Widget* child) { delete child; });
-    childrenList.Clear();
+    // Delete all children — they are owned by this CompositeWidget via
+    // AddChild() which pushes them into childrenList.  Pop each child off the
+    // list first and null its parent link so no child is ever freed while it
+    // is still linked in a parent's childrenList, and so ~Widget's defensive
+    // detach is a no-op instead of touching this (already torn down) list.
+    while (childrenList.GetSize() > 0) {
+        Widget* child = childrenList.PopFront();
+        child->parent = nullptr;
+        delete child;
+    }
 }
 
 bool CompositeWidget::IsComposite() const {
@@ -272,6 +283,10 @@ bool CompositeWidget::RemoveChild(Widget* child) {
 }
 
 void CompositeWidget::Draw(GraphicsDriver* gc) {
+    // Serialize against concurrent tree mutation (process-exit teardown and
+    // widget syscalls run on other threads and can free children mid-iteration).
+    InterruptGuard guard;
+
     // Draw self
     Widget::Draw(gc);
 

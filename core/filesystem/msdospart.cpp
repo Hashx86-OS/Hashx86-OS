@@ -25,6 +25,12 @@ MSDOSPartitionTable::~MSDOSPartitionTable(){};
 void MSDOSPartitionTable::Initialize() {
     KDBG1("Initializing Disk...");
 
+    // CD-ROMs (ATAPI) check
+    if (ata->isAtapi) {
+        KDBG1("Skipping ATAPI device (CD-ROM), no partition table present.");
+        return;
+    }
+
     // Get Drive Size from ATA
     uint32_t totalSectors = ata->GetSizeInSectors();
     if (totalSectors == 0) {
@@ -85,7 +91,10 @@ void MSDOSPartitionTable::Initialize() {
     mbr.primaryPartition[1].end_head = 0;
 
     // Write MBR
-    ata->Write28(0, (uint8_t*)&mbr, 512);
+    if (!ata->Write28(0, (uint8_t*)&mbr, 512)) {
+        KDBG1("Error: MBR write failed.");
+        return;
+    }
 
     // FORMAT Partitions using FatFs f_mkfs (creates a valid FAT32 that FatFs recognizes)
     {

@@ -20,8 +20,8 @@
 
 
 #include <string.h>
-#include "ff.h"			/* Basic definitions and declarations of API */
-#include "diskio.h"		/* Declarations of MAI */
+#include <core/filesystem/FatFs/ff.h>		/* Basic definitions and declarations of API */
+#include <core/filesystem/FatFs/diskio.h>	/* Declarations of MAI */
 
 /*--------------------------------------------------------------------------
 

@@ -6,3 +6,7 @@ reviews:
     - "!include/stb/**"
     - "!include/stdlib/**"
     - "!include/etl/**"
+    - "!core/tlsf/**"
+    - "!include/core/tlsf/**"
+    - "!core/filesystem/FatFs/**/*.c"
+    - "!include/core/filesystem/FatFs/**"

@@ -110,6 +110,15 @@ void syscall_nanosleep(struct timespec* req, struct timespec* rem) {
     asm volatile("int $0x80" : : "a"(sys_nanosleep), "b"(req), "c"(rem) : "memory");
 }
 
+int32_t syscall_getcwd(char* buf, uint32_t bufSize) {
+    int32_t return_data = -1;
+    asm volatile("int $0x80"
+                 : "=a"(return_data)
+                 : "a"(sys_getcwd), "b"(buf), "c"(bufSize)
+                 : "memory");
+    return return_data;
+}
+
 void syscall_debug(const char* str) {
     asm volatile("int $0x80" : : "a"(sys_debug), "b"(str));
 }
