@@ -322,7 +322,6 @@ hdd:
 	-sudo cp $(BUILD_DIR)/user/Terminal.bin /mnt/vdi_p1/Hashx86/apps/Terminal.bin
 	-sudo cp $(BUILD_DIR)/user/CLIHello.bin /mnt/vdi_p1/Hashx86/apps/CLIHello.bin
 	-sudo cp $(BUILD_DIR)/user/Game3D.bin /mnt/vdi_p1/Apps/Game3D/Game3D.bin
-	-sudo cp $(BUILD_DIR)/user/Notepad.bin /mnt/vdi_p1/Hashx86/apps/Notepad.bin
 
 # 	5. Cleanup
 	sudo umount /mnt/vdi_p1

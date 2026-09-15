@@ -230,7 +230,10 @@ static bool ata_wait_drq(Port8Bit& commandPort, const char* op) {
 static bool ata_wait_ready(Port8Bit& commandPort, const char* op) {
     uint8_t status = commandPort.Read();
     uint32_t wait = 0;
-    while ((status & 0x80) == 0x80) {
+    // Poll until the PIO data transfer is fully absorbed: both BSY and DRQ
+    // must clear. A controller may legitimately keep DRQ asserted as BSY
+    // drops, so only a fully-idle status (BSY=0, DRQ=0) is "completion".
+    while (((status & 0x80) == 0x80) || ((status & 0x08) == 0x08)) {
         if ((status & 0x01) == 0x01) {
             KDBG1("%s ERROR: ERR set while waiting for completion", op);
             return false;
@@ -247,10 +250,6 @@ static bool ata_wait_ready(Port8Bit& commandPort, const char* op) {
     }
     if ((status & 0x20) == 0x20) {
         KDBG1("%s ERROR: DF set after completion", op);
-        return false;
-    }
-    if ((status & 0x08) == 0x08) {
-        KDBG1("%s ERROR: DRQ still set after completion", op);
         return false;
     }
     return true;
