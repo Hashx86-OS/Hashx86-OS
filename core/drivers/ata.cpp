@@ -41,6 +41,13 @@ uint32_t AdvancedTechnologyAttachment::Identify() {
         return 0;
     }
 
+    // Device-select settle delay before latching the signature registers: the
+    // ATA spec requires ~400ns after SEL, which 4 consecutive status reads
+    // provide (same port-access pattern used on the other ATA paths).
+    for (int i = 0; i < 4; i++) {
+        status = commandPort.Read();
+    }
+
     // Read the device signature latched on device select: ATAPI packet devices
     // report 0x14/0xEB in LBA mid/high (the definitive signature; some ATA
     // drives also report 0x01/0x01 in sector-count/LBA-low, so that weaker
@@ -278,6 +285,10 @@ bool AdvancedTechnologyAttachment::Write28(uint32_t sectorNum, uint8_t* data, ui
         for (int i = 0; i < (int)count; i++) {
             sectorBuffer[i] = data[i];
         }
+
+        // Wait for the READ SECTOR transfer to complete before re-issuing a
+        // new command; the device must be done (BSY=0, DRQ=0, ERR=0, DF=0).
+        if (!ata_wait_ready(commandPort, "READ")) return false;
 
         // Write merged sector back
         // Re-select device and restore LBA registers; the preceding READ may

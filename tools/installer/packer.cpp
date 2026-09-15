@@ -18,9 +18,19 @@ struct FileEntry {
 static bool readFile(const std::string& path, std::vector<uint8_t>& data) {
     FILE* f = fopen(path.c_str(), "rb");
     if (!f) return false;
-    fseek(f, 0, SEEK_END);
+    if (fseek(f, 0, SEEK_END) != 0) {
+        fclose(f);
+        return false;
+    }
     long sz = ftell(f);
-    fseek(f, 0, SEEK_SET);
+    if (sz < 0 || (uint64_t)sz > UINT32_MAX) {
+        fclose(f);
+        return false;
+    }
+    if (fseek(f, 0, SEEK_SET) != 0) {
+        fclose(f);
+        return false;
+    }
     data.resize(sz);
     if (sz > 0 && fread(data.data(), 1, sz, f) != (size_t)sz) {
         fclose(f);

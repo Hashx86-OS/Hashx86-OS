@@ -909,7 +909,7 @@ int32_t SyscallHandlers::Handle_sys_getcwd(char* buf, uint32_t size) {
     char kbuf[256];
     memcpy(kbuf, process->cwd, len + 1);
     if (!CopyToUser(process, buf, kbuf, len + 1)) return -1;
-    return (int32_t)len;
+    return (int32_t)(len + 1);
 }
 
 int32_t SyscallHandlers::Handle_sys_debug(char* str) {

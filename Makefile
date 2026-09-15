@@ -126,9 +126,12 @@ $(BUILD_DIR)/obj/%.o: %.asm
 	nasm $(ASM_NASM_PARAMS) -o $@ $<
 
 # Linking the main kernel binary
-$(KERNEL_BIN): linker.ld $(objects)
+# Grouped targets (&:) run the recipe once and produce both files, so targets
+# that depend on $(KERNEL_MAP) (e.g. the installer manifest) have a producer
+# rule and are safe under parallel make.
+$(KERNEL_BIN) $(KERNEL_MAP) &: linker.ld $(objects)
 	mkdir -p $(BUILD_DIR)
-	ld $(LD_PARAMS) -Map $(KERNEL_MAP) -T $< -o $@ $(objects)
+	ld $(LD_PARAMS) -Map $(KERNEL_MAP) -T linker.ld -o $(KERNEL_BIN) $(objects)
 
 # Installer kernel — minimal heap-free build (VGA text mode, no GUI/scheduler/paging)
 # Uses stub headers under tools/installer/include/ to bypass the bloated kernel includes.
@@ -355,7 +358,10 @@ INSTALLER_PAK_DIR = $(BUILD_DIR)/installer_data
 INSTALLER_GRUB_PLATFORM_DIR ?= /usr/lib/grub/i386-pc
 
 # Build GRUB core.img for the installer (fat + biosdisk + part_msdos)
-$(INSTALLER_CORE_IMG):
+# The recipe embeds the specific platform modules below, so any change to them
+# must force core.img to regenerate.
+INSTALLER_GRUB_MODS = $(addprefix $(INSTALLER_GRUB_PLATFORM_DIR)/,fat.mod part_msdos.mod biosdisk.mod)
+$(INSTALLER_CORE_IMG): $(INSTALLER_GRUB_MODS)
 	mkdir -p $(dir $@)
 	grub-mkimage -O i386-pc -o $@ --prefix='(hd0,msdos1)/boot/grub' fat part_msdos biosdisk
 
@@ -467,8 +473,11 @@ $(INSTALLER_PAK_STAMP): $(INSTALLER_PAK_MANIFEST) $(KERNEL_BIN) $(INSTALLER_CORE
 	touch $@
 
 # Build installer.pak from the prepared data directory
+# Pack to a temp file in the same directory; rename only on success so a
+# failed/interrupted pack never leaves a half-written installer.pak.
 $(INSTALLER_PAK): $(BUILD_DIR)/packer $(INSTALLER_PAK_STAMP)
-	$(BUILD_DIR)/packer $(INSTALLER_PAK_DIR) $(INSTALLER_PAK)
+	$(BUILD_DIR)/packer $(INSTALLER_PAK_DIR) $(INSTALLER_PAK).tmp || { rm -f $(INSTALLER_PAK).tmp; exit 1; }
+	mv $(INSTALLER_PAK).tmp $(INSTALLER_PAK)
 
 # Build the installer ISO (uses kernel_installer.bin, not the main kernel)
 # Staged into its own directory so it never shares/interferes with the kernel
