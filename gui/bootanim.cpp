@@ -14,6 +14,7 @@
 // Boot animation thread: dot row with a travelling pulse.
 
 volatile bool g_bootSplashDone = false;  // set by BootMain to stop the animator
+volatile bool g_bootSplashExited = false;  // set by the animator before exiting
 
 constexpr int BOOTDOTS_N = 5;        // dots in the row (minimal, cinematic)
 constexpr int BOOTDOTS_SPACING = 32;  // px between dot centers
@@ -154,6 +155,7 @@ void BootSplashAnimator(void* arg) {
     }
 
     FreeBootAnimFrames();  // animator is the last frameset user
+    g_bootSplashExited = true;  // handshake: boot worker may take the framebuffer
     KDBG1("Boot dots animator exiting");
 }
 

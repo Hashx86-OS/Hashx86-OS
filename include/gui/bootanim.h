@@ -30,6 +30,7 @@ struct BootAnimSet {
 
 extern BootAnimSet g_bootAnimSet;
 extern volatile bool g_bootSplashDone;
+extern volatile bool g_bootSplashExited;
 
 void BootSplashAnimator(void* arg);
 void BootTitleResync();

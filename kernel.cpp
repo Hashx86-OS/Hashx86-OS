@@ -641,11 +641,12 @@ void BootMain(void* arg) {
 
     // ---- Handoff: stop the splash, then start the desktop ----------------------
     g_bootSplashDone = true;
-    // Let the animator exit before pDesktop takes over the framebuffer.
-    if (Scheduler::activeInstance) Scheduler::activeInstance->Sleep(150);
-    {
-        uint64_t target = timerTicks + 150;
-        while (timerTicks < target) {
+    // Wait for the animator to fully exit and free its frames before
+    // pDesktop takes over the framebuffer (explicit exit handshake).
+    while (!g_bootSplashExited) {
+        if (Scheduler::activeInstance) {
+            Scheduler::activeInstance->Sleep(1);
+        } else {
             asm volatile("sti; hlt");
         }
     }
