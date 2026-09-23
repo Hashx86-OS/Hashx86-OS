@@ -29,6 +29,8 @@
 #define PATH_ICON_BMP        "Hashx86/gfx/icon.bmp"
 #define PATH_CURSOR_BMP      "Hashx86/gfx/cursor.bmp"
 #define PATH_PANIC_BMP       "Hashx86/gfx/panic.bmp"
+// Boot animation frameset (optional): frame00.bmp, frame01.bmp, ...
+#define PATH_BOOTANIM_PREFIX   "Hashx86/gfx/bootanim/frame"
 
 // Fonts
 #define PATH_FONTS                     "Hashx86/fonts/"

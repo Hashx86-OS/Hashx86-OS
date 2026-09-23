@@ -10,6 +10,7 @@
 #include <kernel.h>
 #include <core/filesystem/Paths.h>
 #include <core/kstack.h>
+#include <gui/bootanim.h>
 
 #define DEBUG_ENABLED TRUE;
 #define PIT_COMMAND_PORT 0x43
@@ -20,158 +21,6 @@ KERNEL_MEMORY_MAP g_kmap;
 extern "C" uint32_t pci_find_bar0(uint16_t vendor, uint16_t device);
 extern "C" void __cxa_pure_virtual() {
     HALT("Pure Virtual Function Called! System Halted.");
-}
-
-namespace {
-constexpr int BOOTMSG_CHAR_W = 8;
-constexpr int BOOTMSG_CHAR_H = 8;
-constexpr int BOOTMSG_CHAR_SPACING = 1;
-constexpr int BOOTMSG_LINE_SPACING = 2;
-constexpr int BOOTMSG_MARGIN_X = 10;
-constexpr int BOOTMSG_MARGIN_Y = 10;
-constexpr int BOOTMSG_PANEL_PADDING = 6;
-constexpr int BOOTMSG_MAX_LINES = 12;
-constexpr int BOOTMSG_MAX_COLS = 192;
-constexpr uint32_t BOOTMSG_PANEL_COLOR = 0xFF000000;
-
-char g_bootMsgLines[BOOTMSG_MAX_LINES][BOOTMSG_MAX_COLS];
-int g_bootMsgLineCount = 0;
-
-int min_int(int a, int b) {
-    return (a < b) ? a : b;
-}
-
-void PushBootMsgLine(const char* text) {
-    if (!text) return;
-
-    if (g_bootMsgLineCount >= BOOTMSG_MAX_LINES) {
-        for (int i = 1; i < BOOTMSG_MAX_LINES; i++) {
-            strcpy(g_bootMsgLines[i - 1], g_bootMsgLines[i]);
-        }
-        g_bootMsgLineCount = BOOTMSG_MAX_LINES - 1;
-    }
-
-    int dst = g_bootMsgLineCount;
-    int i = 0;
-    for (; text[i] != '\0' && i < BOOTMSG_MAX_COLS - 1; i++) {
-        g_bootMsgLines[dst][i] = text[i];
-    }
-    g_bootMsgLines[dst][i] = '\0';
-    g_bootMsgLineCount++;
-}
-
-void DrawBootRect(GraphicsDriver* driver, int x, int y, int w, int h, uint32_t color) {
-    if (!driver || w <= 0 || h <= 0) return;
-
-    int x0 = x;
-    int y0 = y;
-    int x1 = x + w;
-    int y1 = y + h;
-
-    if (x0 < 0) x0 = 0;
-    if (y0 < 0) y0 = 0;
-    if (x1 > (int)driver->GetWidth()) x1 = (int)driver->GetWidth();
-    if (y1 > (int)driver->GetHeight()) y1 = (int)driver->GetHeight();
-
-    for (int py = y0; py < y1; py++) {
-        for (int px = x0; px < x1; px++) {
-            driver->PutPixel(px, py, color);
-        }
-    }
-}
-
-void DrawBootGlyph(GraphicsDriver* driver, int x, int y, char c, uint32_t color) {
-    const uint8_t* glyph = GetGlyph(c);
-    for (int row = 0; row < BOOTMSG_CHAR_H; row++) {
-        uint8_t bits = glyph[row];
-        for (int col = 0; col < BOOTMSG_CHAR_W; col++) {
-            if (bits & (1 << (7 - col))) {
-                driver->PutPixel(x + col, y + row, color);
-            }
-        }
-    }
-}
-
-void DrawBootLine(GraphicsDriver* driver, int x, int y, const char* text, uint32_t color,
-                  int maxCols) {
-    if (!driver || !text || maxCols <= 0) return;
-
-    int penX = x;
-    int cols = 0;
-    for (int i = 0; text[i] != '\0' && cols < maxCols; i++) {
-        if (text[i] == '\n') break;
-        DrawBootGlyph(driver, penX, y, text[i], color);
-        penX += BOOTMSG_CHAR_W + BOOTMSG_CHAR_SPACING;
-        cols++;
-    }
-}
-}  // namespace
-
-void bootMSG(const char* msg) {
-    if (!msg || !g_GraphicsDriver) {
-        KDBG1("Graphics driver is not initialized.");
-        return;
-    }
-
-    const int screenW = (int)g_GraphicsDriver->GetWidth();
-    const int screenH = (int)g_GraphicsDriver->GetHeight();
-    const int lineStep = BOOTMSG_CHAR_H + BOOTMSG_LINE_SPACING;
-
-    int maxCols = (screenW - (BOOTMSG_MARGIN_X * 2) - (BOOTMSG_PANEL_PADDING * 2)) /
-                  (BOOTMSG_CHAR_W + BOOTMSG_CHAR_SPACING);
-    if (maxCols <= 0) return;
-    if (maxCols > BOOTMSG_MAX_COLS - 1) maxCols = BOOTMSG_MAX_COLS - 1;
-
-    char lineBuf[BOOTMSG_MAX_COLS];
-    int lineLen = 0;
-
-    for (int i = 0;; i++) {
-        char c = msg[i];
-
-        if (c == '\r') {
-            continue;
-        }
-
-        if (c == '\0' || c == '\n') {
-            lineBuf[lineLen] = '\0';
-            PushBootMsgLine(lineBuf);
-            lineLen = 0;
-            if (c == '\0') break;
-            continue;
-        }
-
-        if (lineLen >= maxCols) {
-            lineBuf[lineLen] = '\0';
-            PushBootMsgLine(lineBuf);
-            lineLen = 0;
-            if (c == ' ') continue;
-        }
-
-        if (lineLen < BOOTMSG_MAX_COLS - 1) {
-            lineBuf[lineLen++] = c;
-        }
-    }
-
-    int maxVisible = (screenH / 3 - BOOTMSG_PANEL_PADDING * 2) / lineStep;
-    if (maxVisible < 1) maxVisible = 1;
-    if (maxVisible > BOOTMSG_MAX_LINES) maxVisible = BOOTMSG_MAX_LINES;
-
-    int visible = min_int(g_bootMsgLineCount, maxVisible);
-    int panelH = visible * lineStep + BOOTMSG_PANEL_PADDING * 2;
-    int panelW = maxCols * (BOOTMSG_CHAR_W + BOOTMSG_CHAR_SPACING) + BOOTMSG_PANEL_PADDING * 2;
-    int panelX = BOOTMSG_MARGIN_X;
-    int panelY = screenH - BOOTMSG_MARGIN_Y - panelH;
-
-    DrawBootRect(g_GraphicsDriver, panelX, panelY, panelW, panelH, BOOTMSG_PANEL_COLOR);
-
-    int firstLine = g_bootMsgLineCount - visible;
-    for (int i = 0; i < visible; i++) {
-        int y = panelY + BOOTMSG_PANEL_PADDING + i * lineStep;
-        DrawBootLine(g_GraphicsDriver, panelX + BOOTMSG_PANEL_PADDING, y,
-                     g_bootMsgLines[firstLine + i], 0xFFFFFFFF, maxCols);
-    }
-
-    g_GraphicsDriver->Flush();
 }
 
 int get_kernel_memory_map(KERNEL_MEMORY_MAP* kmap, MultibootInfo* mboot_info) {
@@ -254,6 +103,8 @@ void init_memory(MultibootInfo* mbinfo) {
         KDBG1("ERROR: get_kernel_memory_map() failed - no usable RAM span found. Halting.");
         HALT("CRITICAL: No usable memory map available!\n");
     }
+
+    display_kernel_memory_map(&g_kmap);
 
     // Initialize PMM at end of Kernel (Respect BSS/Stack)
     // Use bss_end_addr to ensure we are past the stack
@@ -433,6 +284,7 @@ void init_pci(FileSystem* boot_partition, DriverManager* driverManager) {
                             g_GraphicsDriver->DrawBitmap(x, y, oldDR->GetBackBuffer(),
                                                          oldDR->GetWidth(), oldDR->GetHeight());
                         }
+                        drv->Activate();
                         g_GraphicsDriver->Flush();
                         KDBG1("BGA Module Loaded Successfully.");
                     } else {
@@ -588,38 +440,16 @@ void pDesktop(void* arg) {
     }
 }
 
-extern "C" void kernelMain(void* multiboot_structure, uint32_t magicnumber) {
-    initSerial();
-    if (magicnumber != 0x2BADB002) {
-        KDBG1("Invalid magic number : [%x]", magicnumber);
-        // Halt the CPU — return is undefined in a freestanding kernel
-        while (1) {
-            asm volatile("hlt");
-        }
+// Boot worker thread: slow/filesystem stages, then starts the desktop thread.
+// Returning runs ThreadExit -> KillProcess for this worker process.
+void BootMain(void* arg) {
+    BootMainArgs* bootArgs = (BootMainArgs*)arg;
+    if (!bootArgs || !bootArgs->mbinfo) {
+        HALT("CRITICAL: BootMain started with null args!\n");
     }
+    MultibootInfo* mbinfo = bootArgs->mbinfo;
 
-    MultibootInfo* mbinfo = (MultibootInfo*)multiboot_structure;
-    KDBG1("Initializing Hardware");
-
-    gdt_init();
-
-    // Initialize PMM and Kheap
-    init_memory(mbinfo);
-    InitializePIT(1000);
-
-    KDBG1("Initializing paging...");
-
-    g_paging = new Paging();
-    if (!g_paging) {
-        HALT("CRITICAL: Failed to allocate Paging object!\n");
-    }
-    g_paging->Activate();
-
-    // Paging is now live: unmap every kernel-stack guard page so a stack
-    // overflow faults instead of corrupting memory.
-    kstack_zone_activate(g_paging->KernelPageDirectory);
-
-    // Initialize ATA
+    // ---- Slow stage 1: ATA probe -----------------------------------------
     AdvancedTechnologyAttachment* ata = nullptr;
     AdvancedTechnologyAttachment* SATAList[] = {
         new AdvancedTechnologyAttachment(true, 0x1F0),   // Primary Master
@@ -656,8 +486,7 @@ extern "C" void kernelMain(void* multiboot_structure, uint32_t magicnumber) {
         HALT(
             "Error: No ATA drive detected!\nPlease connect an ATA drive and restart the system.\n");
     }
-
-    // Initialize MBR and Partitions
+    // ---- Slow stage 2: MBR + partition mount ------------------------------
     MSDOSPartitionTable* MSDOS = new MSDOSPartitionTable(ata);
     if (!MSDOS) {
         HALT("CRITICAL: Failed to allocate MSDOSPartitionTable!\n");
@@ -678,17 +507,7 @@ extern "C" void kernelMain(void* multiboot_structure, uint32_t magicnumber) {
     KDBG1("Boot partition mounted. Root listed.");
     KernelSymbolTable::Load(g_bootPartition, PATH_KERNEL_MAP);
 
-    if (!(mbinfo->flags & (1 << 12))) {
-        HALT("CRITICAL: Multiboot framebuffer info not available - cannot initialize graphics!\n");
-    }
-    g_GraphicsDriver =
-        new VESA_BIOS_Extensions(mbinfo->framebuffer_width, mbinfo->framebuffer_height, 32,
-                                 (uint32_t*)mbinfo->framebuffer_addr);
-    if (!g_GraphicsDriver) {
-        HALT("CRITICAL: Failed to allocate VESA_BIOS_Extensions!\n");
-    }
-
-    // Load Boot Image
+    // Boot image
     Bitmap* bootImg = new Bitmap(PATH_BOOT_BMP);
     if (!bootImg) {
         HALT("CRITICAL: Failed to allocate Bitmap for boot image!\n");
@@ -702,12 +521,18 @@ extern "C" void kernelMain(void* multiboot_structure, uint32_t magicnumber) {
         g_GraphicsDriver->Flush();
     }
 
-    bootMSG("[BOOT] Graphics initialized");
-
     delete bootImg;
 
-    // Load Font Files
-    bootMSG("[BOOT] Loading fonts");
+    // Optional frameset (Hashx86/gfx/bootanim/frameNN.bmp)
+    LoadBootAnimFrames();
+
+    // Start the animation before the slow font loading below.
+    ProcessControlBlock* splashProc = g_scheduler->CreateProcess(true, BootSplashAnimator, nullptr);
+    if (!splashProc) {
+        HALT("CRITICAL: Failed to create boot splash process!\n");
+    }
+
+    // ---- Slow stage 3: font files -----------------------------------------
     g_fManager = new FontManager();
     if (!g_fManager) {
         HALT("CRITICAL: Failed to allocate FontManager!\n");
@@ -747,34 +572,16 @@ extern "C" void kernelMain(void* multiboot_structure, uint32_t magicnumber) {
         }
     }
 
-    Font* BOOT = g_fManager->getNewFont();
-    if (BOOT != nullptr) {
-        BOOT->setSize(XLARGE);
-        int32_t x, y;
-        g_GraphicsDriver->GetScreenCenter(BOOT->getStringLength("Hash x86"), 0, x, y);
-        g_GraphicsDriver->DrawString(x, (int32_t)((g_GraphicsDriver->GetHeight() * 1) / 3 + 300),
-                                     "Hash x86", BOOT, 0xFFFFFFFF);
-        g_GraphicsDriver->Flush();
-    }
+    // Draw the title and re-sync the animation background atomically.
+    BootTitleResync();
 
-    bootMSG("[BOOT] UI assets ready");
-
-    // Load Desktop //
-    bootMSG("[BOOT] Initializing kernel services");
+    // ---- Slow stage 4: desktop + syscall interfaces ------------------------
     Desktop* desktop = new Desktop(GUI_SCREEN_WIDTH, GUI_SCREEN_HEIGHT);
     if (!desktop) {
         HALT("CRITICAL: Failed to allocate Desktop!\n");
     }
-    // gameSDK* desktop = new gameSDK(GUI_SCREEN_WIDTH, GUI_SCREEN_HEIGHT, g_bootPartition);
 
-    g_scheduler = new Scheduler(g_paging);
-    if (!g_scheduler) {
-        HALT("CRITICAL: Failed to allocate Scheduler!\n");
-    }
-    g_interrupts = new InterruptManager(g_scheduler, g_paging);
-    if (!g_interrupts) {
-        HALT("CRITICAL: Failed to allocate InterruptManager!\n");
-    }
+    // Created after the desktop (as before) so HguiHandler picks it up.
     g_sysCalls = new SyscallHandler(0x80, g_interrupts);
     if (!g_sysCalls) {
         HALT("CRITICAL: Failed to allocate SyscallHandler!\n");
@@ -783,16 +590,17 @@ extern "C" void kernelMain(void* multiboot_structure, uint32_t magicnumber) {
     if (!guiCalls) {
         HALT("CRITICAL: Failed to allocate HguiHandler!\n");
     }
-
-    g_driverManager = new DriverManager();
-    if (!g_driverManager) {
-        HALT("CRITICAL: Failed to allocate DriverManager!\n");
+    // ---- Slow stage 5: PCI devices ------------------------------------------
+    {
+        // Keep the timer IRQ out of command/ACK polling (an IRQ handler must
+        // never steal an ACK byte mid-init).
+        InterruptGuard guard;
+        init_pci(g_bootPartition, g_driverManager);
     }
+    // init_pci may swap the video mode: repaint + re-capture the background.
+    BootSplashRepaint();
 
-    bootMSG("[BOOT] Initializing PCI devices");
-    init_pci(g_bootPartition, g_driverManager);
-
-    bootMSG("[BOOT] Starting input drivers");
+    // ---- Slow stage 6: input drivers -----------------------------------------
     MouseDriver* mouse = new MouseDriver(g_interrupts, desktop);
     if (!mouse) {
         HALT("CRITICAL: Failed to allocate MouseDriver!\n");
@@ -804,19 +612,12 @@ extern "C" void kernelMain(void* multiboot_structure, uint32_t magicnumber) {
     }
     g_driverManager->AddDriver(keyboard);
 
-    // PROCESS MAIN //
-    bootMSG("[BOOT] Loading desktop");
-    DesktopArgs* desktopArgs = new DesktopArgs{g_GraphicsDriver, desktop, g_bootPartition};
-    if (!desktopArgs) {
-        HALT("CRITICAL: Failed to allocate DesktopArgs!\n");
-    }
-    ProcessControlBlock* process1 = g_scheduler->CreateProcess(true, pDesktop, desktopArgs);
-
     if (mbinfo->flags & (1 << 3)) {  // mods flag present
         if (mbinfo->mods_count > 0) {
             KDBG1("Found %d Modules", mbinfo->mods_count);
             struct multiboot_module* modules = (struct multiboot_module*)mbinfo->mods_addr;
             // fManager.LoadFile(modules[0].mod_start, modules[0].mod_end); // load font file
+            (void)modules;
         } else {
             KDBG1("No modules found");
         }
@@ -824,7 +625,7 @@ extern "C" void kernelMain(void* multiboot_structure, uint32_t magicnumber) {
         KDBG1("No multiboot modules info available");
     }
 
-    // Load and start sample programs
+    // ---- Slow stage 7: ELF loader + boot sound --------------------------------
     g_elfLoader = new ELFLoader(g_paging, g_scheduler);
     if (!g_elfLoader) {
         HALT("CRITICAL: Failed to allocate ELFLoader!\n");
@@ -838,13 +639,116 @@ extern "C" void kernelMain(void* multiboot_structure, uint32_t magicnumber) {
         sound->Play();
     }
 
+    // ---- Handoff: stop the splash, then start the desktop ----------------------
+    g_bootSplashDone = true;
+    // Wait for the animator to fully exit and free its frames before
+    // pDesktop takes over the framebuffer (explicit exit handshake).
+    while (!g_bootSplashExited) {
+        if (Scheduler::activeInstance) {
+            Scheduler::activeInstance->Sleep(1);
+        } else {
+            asm volatile("sti; hlt");
+        }
+    }
+
     KDBG1("Welcome to #x86!");
-    bootMSG("[BOOT] Activating system drivers");
-    g_driverManager->ActivateAll();
+    {
+        InterruptGuard guard;
+        g_driverManager->ActivateAll();
+    }
     KDBG1("System Drivers Activated.");
+
+    // Start the desktop thread now that boot is complete.
+    DesktopArgs* desktopArgs = new DesktopArgs{g_GraphicsDriver, desktop, g_bootPartition};
+    if (!desktopArgs) {
+        HALT("CRITICAL: Failed to allocate DesktopArgs!\n");
+    }
+    ProcessControlBlock* process1 = g_scheduler->CreateProcess(true, pDesktop, desktopArgs);
+    if (!process1) {
+        HALT("CRITICAL: Failed to create desktop process!\n");
+    }
+
+    delete bootArgs;
+}
+
+
+extern "C" void kernelMain(void* multiboot_structure, uint32_t magicnumber) {
+    initSerial();
+    if (magicnumber != 0x2BADB002) {
+        KDBG1("Invalid magic number : [%x]", magicnumber);
+        // Halt the CPU — return is undefined in a freestanding kernel
+        while (1) {
+            asm volatile("hlt");
+        }
+    }
+
+    MultibootInfo* mbinfo = (MultibootInfo*)multiboot_structure;
+    KDBG1("Initializing Hardware");
+
+    gdt_init();
+
+    // Initialize PMM and Kheap
+    init_memory(mbinfo);
+    InitializePIT(1000);
+
+    KDBG1("Initializing paging...");
+
+    g_paging = new Paging();
+    if (!g_paging) {
+        HALT("CRITICAL: Failed to allocate Paging object!\n");
+    }
+    g_paging->Activate();
+    kstack_zone_activate(g_paging->KernelPageDirectory);
+
+    // NOTE: slow stages run in the BootMain worker thread; only
+    // IRQ-independent, filesystem-free setup stays on this path.
+
+    if (!(mbinfo->flags & (1 << 12))) {
+        HALT("CRITICAL: Multiboot framebuffer info not available - cannot initialize graphics!\n");
+    }
+    g_GraphicsDriver =
+        new VESA_BIOS_Extensions(mbinfo->framebuffer_width, mbinfo->framebuffer_height, 32,
+                                 (uint32_t*)mbinfo->framebuffer_addr);
+    if (!g_GraphicsDriver) {
+        HALT("CRITICAL: Failed to allocate VESA_BIOS_Extensions!\n");
+    }
+
+    // Black base until BootMain draws the boot image.
+    {
+        InterruptGuard guard;
+        g_GraphicsDriver->Flush();  // present the cleared backbuffer as splash base
+    }
+
+    // ---- Early multithreading bring-up ------------------------------------
+    // Scheduler + timer IRQ go live before the slow stages (BootMain worker).
+    g_scheduler = new Scheduler(g_paging);
+    if (!g_scheduler) {
+        HALT("CRITICAL: Failed to allocate Scheduler!\n");
+    }
+    g_interrupts = new InterruptManager(g_scheduler, g_paging);
+    if (!g_interrupts) {
+        HALT("CRITICAL: Failed to allocate InterruptManager!\n");
+    }
+
+    g_driverManager = new DriverManager();
+    if (!g_driverManager) {
+        HALT("CRITICAL: Failed to allocate DriverManager!\n");
+    }
+
+    BootMainArgs* bootArgs = new BootMainArgs{mbinfo};
+    if (!bootArgs) {
+        HALT("CRITICAL: Failed to allocate BootMainArgs!\n");
+    }
+
+    // BootMain runs the slow stages and starts the animator itself.
+    ProcessControlBlock* bootProc = g_scheduler->CreateProcess(true, BootMain, bootArgs);
+    if (!bootProc) {
+        HALT("CRITICAL: Failed to create boot worker process!\n");
+    }
+
+    KDBG1("Multithreading enabled. Starting boot worker process.");
     g_interrupts->Activate();
-    bootMSG("[BOOT] System ready");
-    KDBG1("Interrupts Enabled. Entering Halt Loop.");
+    KDBG1("Interrupts Enabled.");
 
     while (1) {
         asm volatile("hlt");

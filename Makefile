@@ -46,6 +46,7 @@ objects = \
 	$(BUILD_DIR)/obj/core/syscalls.o \
 	$(BUILD_DIR)/obj/debug.o \
 	$(BUILD_DIR)/obj/gui/bmp.o \
+	$(BUILD_DIR)/obj/gui/bootanim.o \
 	$(BUILD_DIR)/obj/gui/button.o \
 	$(BUILD_DIR)/obj/gui/iconbutton.o \
 	$(BUILD_DIR)/obj/gui/desktop.o \
@@ -296,6 +297,8 @@ hdd:
 	-sudo cp bin/bitmaps/cursor.bmp /mnt/vdi_p1/Hashx86/gfx/cursor.bmp
 	-sudo cp bin/bitmaps/desktop.bmp /mnt/vdi_p1/Hashx86/gfx/desktop.bmp
 	-sudo cp bin/bitmaps/panic.bmp /mnt/vdi_p1/Hashx86/gfx/panic.bmp
+	-sudo mkdir -p /mnt/vdi_p1/Hashx86/gfx/bootanim
+	-sudo cp bin/bitmaps/bootanim/*.bmp /mnt/vdi_p1/Hashx86/gfx/bootanim/
 
 	-sudo mkdir -p /mnt/vdi_p1/Apps/Game3D
 	-sudo cp bin/ProgFile/Game3D/obj.obj /mnt/vdi_p1/Apps/Game3D/obj.obj
@@ -460,6 +463,9 @@ $(INSTALLER_PAK_STAMP): $(INSTALLER_PAK_MANIFEST) $(KERNEL_BIN) $(INSTALLER_CORE
 	# Graphics
 	mkdir -p $(INSTALLER_PAK_DIR)/Hashx86/gfx
 	cp bin/bitmaps/*.bmp $(INSTALLER_PAK_DIR)/Hashx86/gfx/
+	# Boot animation frameset
+	mkdir -p $(INSTALLER_PAK_DIR)/Hashx86/gfx/bootanim
+	cp bin/bitmaps/bootanim/*.bmp $(INSTALLER_PAK_DIR)/Hashx86/gfx/bootanim/ 2>/dev/null || true
 	# Fonts
 	mkdir -p $(INSTALLER_PAK_DIR)/Hashx86/fonts
 	cp bin/fonts/*.ttf $(INSTALLER_PAK_DIR)/Hashx86/fonts/
