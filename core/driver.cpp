@@ -1,9 +1,25 @@
-/**
- * @file        driver.cpp
- * @brief       Driver class for #x86
+/*
+ * MIT License
  *
- * @date        29/01/2026
- * @version     1.1.0-beta
+ * Copyright (c) 2025 Malaka Gunawardana
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
  */
 
 #define KDBG_COMPONENT "DRIVER.MGR"
@@ -14,6 +30,10 @@ extern "C" void pci_enable_bus_master(uint16_t vendor, uint16_t device);
 extern "C" uint32_t pci_find_bar0(uint16_t vendor, uint16_t device);
 extern void vprintf(const char* format, va_list args);
 
+/**
+ * drvPrintf() - Print a driver log line prefixed with the component tag.
+ * @format: printf-style format string.
+ */
 void drvPrintf(const char* format, ...) {
 #if KDBG_ENABLE && (KDBG_LEVEL >= 1)
     printf("[%s] ", KDBG_COMPONENT);
@@ -27,30 +47,30 @@ void drvPrintf(const char* format, ...) {
 }
 
 /**
- * @brief Constructs a DriverManager object.
+ * DriverManager::DriverManager() - Construct the driver manager.
  *
- * Initializes the driver manager and sets the number of registered drivers to 0.
- * Also prints a message indicating that the manager is loading.
- * Export symbols to load dynamic drivers.
+ * Initializes the driver registry to empty and exports the kernel symbols
+ * that loadable driver modules link against (printf, memory allocators,
+ * new/delete operators, PCI/paging and graphics entry points).
  */
 DriverManager::DriverManager() {
     KDBG1("Loading...");
     numDrivers = 0;
 
-    // Export Kernel Symbols
+    // Export the kernel printf and its mangled alias.
     void (*printf_ptr)(const char*, ...) = drvPrintf;
     SymbolTable::Register("printf", (uint32_t)printf_ptr);
     SymbolTable::Register("_Z6printfPKcz", (uint32_t)printf_ptr);
 
-    // Export Memory Functions
+    // Export the kernel memory allocators.
     EXPORT_SYMBOL(kmalloc);
     EXPORT_SYMBOL(kfree);
 
-    // Export C++ Operators
+    // Export the C++ new/delete operators.
     void* (*new_ptr)(size_t) = operator new;
     void (*delete_ptr)(void*) = operator delete;
     void (*delete_sized_ptr)(void*, size_t) = operator delete;
-    // Export C++ Array Operators
+    // Export the C++ array new/delete operators.
     void* (*new_array_ptr)(size_t) = operator new[];
     void (*delete_array_ptr)(void*) = operator delete[];
 
@@ -62,14 +82,14 @@ DriverManager::DriverManager() {
 
     SymbolTable::Register("__cxa_pure_virtual", (uint32_t)__cxa_pure_virtual);
 
-    // Export PCI and bus master
+    // Export PCI enumeration and bus-master helpers.
     SymbolTable::Register("pci_enable_bus_master", (uint32_t)pci_enable_bus_master);
     SymbolTable::Register("pci_find_bar0", (uint32_t)pci_find_bar0);
 
     SymbolTable::Register("memcpy", (uint32_t)memcpy);
     SymbolTable::Register("memset", (uint32_t)memset);
 
-    // Export PMM functions for driver DMA allocations (mangled C++ names)
+    // Export PMM functions for driver DMA allocations (mangled C++ names).
     SymbolTable::Register("_Z19pmm_alloc_block_lowj", (uint32_t)(void*)pmm_alloc_block_low);
     SymbolTable::Register("_Z14pmm_free_blockPv", (uint32_t)(void*)pmm_free_block);
     SymbolTable::Register("_Z16pmm_alloc_blocksj", (uint32_t)(void*)pmm_alloc_blocks);
@@ -77,39 +97,38 @@ DriverManager::DriverManager() {
 
     EXPORT_SYMBOL_ASM("_Z7kmallocj");
 
-    // Export InterruptManager
+    // Export the interrupt handler and manager entry points.
     EXPORT_SYMBOL_ASM("_ZN16InterruptHandlerD2Ev");
     EXPORT_SYMBOL_ASM("_ZN16InterruptManager14activeInstanceE");
     EXPORT_SYMBOL_ASM("_ZN16InterruptHandlerC2EhP16InterruptManager");
 
-    // Export PIC
-    EXPORT_SYMBOL_ASM("_ZN41PeripheralComponentInterconnectControllerC1Ev");  // Constructor
-    EXPORT_SYMBOL_ASM("_ZN41PeripheralComponentInterconnectControllerD1Ev");  // Destructor
+    // Export the PCI controller methods.
+    EXPORT_SYMBOL_ASM("_ZN41PeripheralComponentInterconnectControllerC1Ev");  // Constructor.
+    EXPORT_SYMBOL_ASM("_ZN41PeripheralComponentInterconnectControllerD1Ev");  // Destructor.
     EXPORT_SYMBOL_ASM("_ZN41PeripheralComponentInterconnectController18FindHardwareDeviceEtt");
-    EXPORT_SYMBOL_ASM("_ZN41PeripheralComponentInterconnectController4ReadEtttj");  // Read
+    EXPORT_SYMBOL_ASM("_ZN41PeripheralComponentInterconnectController4ReadEtttj");  // Read.
     EXPORT_SYMBOL_ASM("_ZN41PeripheralComponentInterconnectController5WriteEtttjj");
     EXPORT_SYMBOL_ASM(
         "_ZN41PeripheralComponentInterconnectController22GetBaseAddressRegisterEtttt");
 
-    // Export Paging
+    // Export paging symbols.
     EXPORT_SYMBOL_ASM("g_paging");
-    EXPORT_SYMBOL_ASM("_ZN6Paging7MapPageEPjjjj");            // Paging::MapPage
-    EXPORT_SYMBOL_ASM("_ZN6Paging18GetPhysicalAddressEPjj");  // Paging::GetPhysicalAddress
+    EXPORT_SYMBOL_ASM("_ZN6Paging7MapPageEPjjjj");            // Paging::MapPage.
+    EXPORT_SYMBOL_ASM("_ZN6Paging18GetPhysicalAddressEPjj");  // Paging::GetPhysicalAddress.
 
-    // Export GraphicsDriver Methods
-    EXPORT_SYMBOL_ASM("_ZN14GraphicsDriverC2EjjjPj");  // Constructor
-    EXPORT_SYMBOL_ASM("_ZN14GraphicsDriverD2Ev");      // Destructor
+    // Export GraphicsDriver methods.
+    EXPORT_SYMBOL_ASM("_ZN14GraphicsDriverC2EjjjPj");  // Constructor.
+    EXPORT_SYMBOL_ASM("_ZN14GraphicsDriverD2Ev");      // Destructor.
     EXPORT_SYMBOL_ASM("_ZN14GraphicsDriver5FlushEv");
-    EXPORT_SYMBOL_ASM(
-        "_ZN14GraphicsDriver8PutPixelEiij");  // The specific overload (int, int, uint32)
+    EXPORT_SYMBOL_ASM("_ZN14GraphicsDriver8PutPixelEiij");  // The (int, int, uint32) overload.
 }
 
 /**
- * @brief Adds a driver to the manager's registry.
+ * DriverManager::AddDriver() - Register a driver with the manager.
+ * @drv: Driver instance to register.
  *
- * Stores the provided driver in the internal array and increments the driver count.
- *
- * @param drv Pointer to the driver to be added.
+ * Stores the driver in the internal array, up to a hard limit of 255
+ * entries. Null pointers and a full table are rejected.
  */
 void DriverManager::AddDriver(Driver* drv) {
     if (drv == nullptr) {
@@ -125,10 +144,10 @@ void DriverManager::AddDriver(Driver* drv) {
 }
 
 /**
- * @brief Activates all registered drivers.
+ * DriverManager::ActivateAll() - Activate every registered driver.
  *
- * Iterates through all the drivers stored in the manager, prints their names,
- * activates each driver and logs the success of the operation.
+ * Iterates the driver array and calls Activate() on each driver that is not
+ * already active, logging each one.
  */
 void DriverManager::ActivateAll() {
     for (int i = 0; i < numDrivers; i++) {

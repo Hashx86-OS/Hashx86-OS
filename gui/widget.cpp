@@ -1,17 +1,33 @@
-/**
- * @file        widget.cpp
- * @brief       Base Widget System (part of #x86 GUI Framework)
+/*
+ * MIT License
  *
- * @date        01/02/2026
- * @version     1.0.0
+ * Copyright (c) 2025 Malaka Gunawardana
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
  */
 
 #define KDBG_COMPONENT "GUI:WIDGET"
+#include <core/Iguard.h>
 #include <gui/Hgui.h>
 #include <gui/widget.h>
-#include <core/Iguard.h>
 
-// Widget Base Class
+// Widget base class.
 
 Widget::Widget(Widget* parent, int32_t x, int32_t y, int32_t w, int32_t h) {
     this->parent = parent;
@@ -20,7 +36,7 @@ Widget::Widget(Widget* parent, int32_t x, int32_t y, int32_t w, int32_t h) {
     this->w = w;
     this->h = h;
 
-    // Allocate and zero-init cache buffer
+    // Allocate and zero-init the cache buffer.
     if (w > 0 && h > 0) {
         size_t count = (size_t)w * (size_t)h;
         if (count / (size_t)w != (size_t)h || count > (0xFFFFFFFFu / sizeof(uint32_t))) {
@@ -45,7 +61,7 @@ Widget::~Widget() {
 void Widget::MarkDirty() {
     this->isDirty = true;
 
-    // Propagate dirty flag upward
+    // Propagate the dirty flag upward.
     if (this->parent != nullptr) {
         this->parent->MarkDirty();
     }
@@ -55,7 +71,7 @@ void Widget::Recalc() {
     int32_t newW = w, newH = h;
     switch (sizeMode) {
         case CONTENT:
-            // Subclasses with text (e.g. Label) override Recalc for text measurement
+            // Subclasses with text (e.g. Label) override Recalc for text measurement.
             break;
         case FILL:
             if (parent) {
@@ -69,7 +85,8 @@ void Widget::Recalc() {
     if (newW < (int32_t)minWidth) newW = (int32_t)minWidth;
     if (newH < (int32_t)minHeight) newH = (int32_t)minHeight;
     if (newW != w || newH != h) {
-        w = newW; h = newH;
+        w = newW;
+        h = newH;
         if (cache) delete[] cache;
         cache = (w > 0 && h > 0) ? new uint32_t[w * h]() : nullptr;
         MarkDirty();
@@ -77,39 +94,39 @@ void Widget::Recalc() {
 }
 
 void Widget::RedrawToCache() {
-    // Clear cache (override in child classes)
+    // Clear the cache (overridden in child classes).
     if (cache) memset(cache, 0, sizeof(uint32_t) * w * h);
 }
 
 void Widget::Draw(GraphicsDriver* gc) {
-    // Update cache if dirty
+    // Refresh the cache if dirty.
     if (isDirty) {
         if (isVisible) {
             RedrawToCache();
         } else {
-            // Clear cache if hidden
+            // Clear the cache if hidden.
             if (cache) memset(cache, 0, sizeof(uint32_t) * w * h);
         }
         isDirty = false;
     }
 }
 
-// Coordinates
+// Coordinates.
 
 void Widget::ModelToScreen(int32_t& x_out, int32_t& y_out) {
-    // Calculate absolute screen position
+    // Calculate the absolute screen position.
     if (parent) parent->ModelToScreen(x_out, y_out);
     x_out += this->x;
     y_out += this->y;
 }
 
 bool Widget::ContainsCoordinate(int32_t targetX, int32_t targetY) {
-    // Check if local coordinate is inside widget
+    // Check whether the local coordinate lies inside the widget.
     return (targetX >= this->x) && (targetX < this->x + this->w) && (targetY >= this->y) &&
            (targetY < this->y + this->h);
 }
 
-// Focus
+// Focus.
 
 void Widget::GetFocus(Widget* widget) {
     if (parent) parent->GetFocus(widget);
@@ -137,14 +154,14 @@ void Widget::SetFocussable(bool focussable) {
     }
 }
 
-// Child Management
+// Child management.
 
 bool Widget::AddChild(Widget* child) {
     if (!child) return false;
     if (child->parent != nullptr && child->parent != this)
-        return false;  // different parent, detach first
+        return false;  // Different parent; detach first.
     if (childrenList.Find([&](Widget* c) { return c == child; }) != nullptr)
-        return false;  // already in list
+        return false;  // Already in the list.
     childrenList.PushBack(child);
     child->parent = this;
     this->MarkDirty();
@@ -162,7 +179,7 @@ bool Widget::RemoveChild(Widget* child) {
     return result;
 }
 
-// Identification
+// Identification.
 
 void Widget::SetPID(uint32_t pid) {
     this->PID = pid;
@@ -193,7 +210,7 @@ Widget* Widget::FindWidgetByPID(uint32_t pid) {
     return result;
 }
 
-// Default Input Handlers
+// Default input handlers.
 
 void Widget::OnMouseDown(int32_t, int32_t, uint8_t) {
     if (isFocussable) GetFocus(this);
@@ -221,7 +238,7 @@ bool Widget::IsPressed() const {
     return false;
 }
 
-// Composite Widget
+// Composite widget.
 
 CompositeWidget::CompositeWidget(CompositeWidget* parent, int32_t x, int32_t y, int32_t w,
                                  int32_t h)
@@ -254,16 +271,16 @@ void CompositeWidget::GetFocus(Widget* widget) {
         return;
     }
 
-    // Deselect previous child
+    // Deselect the previously focused child.
     if (focusedChild) {
         focusedChild->SetFocus(false);
     }
 
-    // Select new child
+    // Select the new focused child.
     focusedChild = widget;
     if (widget) {
         widget->SetFocus(true);
-        // Move to front for Z-order
+        // Move to the front for Z-order.
         childrenList.Remove([&](Widget* c) { return c == widget; });
         childrenList.PushBack(widget);
     }
@@ -287,21 +304,21 @@ void CompositeWidget::Draw(GraphicsDriver* gc) {
     // widget syscalls run on other threads and can free children mid-iteration).
     InterruptGuard guard;
 
-    // Draw self
+    // Draw the widget itself.
     Widget::Draw(gc);
 
-    // Draw children back-to-front
+    // Draw children back-to-front.
     childrenList.ForEach([&](Widget* child) { child->Draw(gc); });
 }
 
 void CompositeWidget::OnMouseDown(int32_t x, int32_t y, uint8_t button) {
-    // Transform to local coordinates
+    // Transform to local coordinates.
     int32_t localX = x - this->x;
     int32_t localY = y - this->y;
 
     Widget* clicked = nullptr;
 
-    // Hit test front-to-back
+    // Hit-test front to back.
     childrenList.ReverseForEach([&](Widget* child) {
         if (!clicked && child->ContainsCoordinate(localX, localY)) {
             child->OnMouseDown(localX, localY, button);
@@ -318,7 +335,7 @@ void CompositeWidget::OnMouseDown(int32_t x, int32_t y, uint8_t button) {
 }
 
 void CompositeWidget::OnMouseUp(int32_t x, int32_t y, uint8_t button) {
-    // Transform to local
+    // Transform to local coordinates.
     int32_t localX = x - this->x;
     int32_t localY = y - this->y;
 
@@ -345,7 +362,7 @@ void CompositeWidget::OnMouseMove(int32_t oldx, int32_t oldy, int32_t newx, int3
     int32_t localNewY = newy - this->y;
 
     childrenList.ForEach([&](Widget* child) {
-        // Notify if mouse inside, entering/exiting, or child has captured input
+        // Notify if the mouse is inside, entering/exiting, or the child has capture.
         bool inOld = child->ContainsCoordinate(localOldX, localOldY);
         bool inNew = child->ContainsCoordinate(localNewX, localNewY);
 

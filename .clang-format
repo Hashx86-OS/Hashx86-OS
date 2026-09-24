@@ -1,38 +1,54 @@
 ---
-Language:        Cpp
-BasedOnStyle:    Google
+Language:            Cpp
+BasedOnStyle:        Google
+Standard:            c++20
 
 # Indentation & Spacing
-IndentWidth:     4
-TabWidth:        4
-UseTab:          Never
-ColumnLimit:     100
+IndentWidth:         4
+TabWidth:            4
+UseTab:              Never
+ContinuationIndentWidth: 4
+ColumnLimit:         100
 
 # Pointers & References
-PointerAlignment: Left
-ReferenceAlignment: Left
+DerivePointerAlignment: false
+PointerAlignment:    Left
+ReferenceAlignment:  Left
 
 # Line Endings
-LineEnding:      LF
+LineEnding:          LF
 
 # Class Structure
 AccessModifierOffset: -4
 
 # Control Structures
-IndentCaseLabels: true
-SpaceBeforeParens: ControlStatements
+IndentCaseLabels:    true
+IndentGotoLabels:    true
+SpaceBeforeParens:   ControlStatements
+AllowShortIfStatementsOnASingleLine: WithoutElse
+AllowShortLoopsOnASingleLine: true
+AllowShortBlocksOnASingleLine: Never
+AllowShortCaseLabelsOnASingleLine: false
+
+# Functions
+AllowShortFunctionsOnASingleLine: Empty
+AlwaysBreakAfterReturnType: None
 
 # Braces & Wrapping
-BreakBeforeBraces: Attach
-AllowShortFunctionsOnASingleLine: Empty
+BreakBeforeBraces:   Attach
 MaxEmptyLinesToKeep: 1
 KeepEmptyLinesAtTheStartOfBlocks: false
 
+# Casts & Operators
+SpaceAfterCStyleCast: false
+
 # Alignment & Sorting
 AlignAfterOpenBracket: Align
+AlignConsecutiveAssignments: false
+AlignConsecutiveDeclarations: false
 AlignTrailingComments: true
-SortIncludes:    true
-IncludeBlocks:   Preserve
+SortIncludes:        true
+IncludeBlocks:       Preserve
 
 # Namespaces
 FixNamespaceComments: true

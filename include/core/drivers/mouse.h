@@ -1,3 +1,27 @@
+/*
+ * MIT License
+ *
+ * Copyright (c) 2025 Malaka Gunawardana
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
+ */
+
 #ifndef MOUSE_H
 #define MOUSE_H
 
@@ -7,90 +31,88 @@
 #include <types.h>
 
 /**
- * @brief Base class for handling mouse events.
+ * class MouseEventHandler - Base class for handling mouse events.
  *
- * This class provides a set of virtual methods that can be overridden
- * to handle various mouse events such as movement, button presses and scrolling.
+ * Provides a set of virtual methods that can be overridden to handle various
+ * mouse events such as movement, button presses and scrolling.
  */
 class MouseEventHandler {
 public:
     MouseEventHandler();
 
     /**
-     * @brief Called when the mouse is moved.
-     * @param x The new X coordinate.
-     * @param y The new Y coordinate.
+     * OnMouseMove() - Called when the mouse is moved.
+     * @dx: Change in X coordinate.
+     * @dy: Change in Y coordinate.
      */
     virtual void OnMouseMove(int dx, int dy);
 
     /**
-     * @brief Called when the left/Right mouse button is pressed.
-     * @param button The button at the time of the event.
+     * OnMouseDown() - Called when a mouse button is pressed.
+     * @button: The pressed button.
      */
     virtual void OnMouseDown(uint8_t button);
 
     /**
-     * @brief Called when the left/Right mouse button is released.
-     * @param button The button at the time of the event.
+     * OnMouseUp() - Called when a mouse button is released.
+     * @button: The released button.
      */
     virtual void OnMouseUp(uint8_t button);
-
-    // virtual void OnScrollUp(int x, int y);
-    // virtual void OnScrollDown(int x, int y);
 };
 
 /**
- * @brief Mouse driver class for handling mouse hardware and events.
+ * class MouseDriver - Driver for handling mouse hardware and events.
  *
- * This class interfaces with the mouse hardware through ports, processes
- * interrupts and notifies the event handler of mouse events.
+ * Interfaces with the mouse hardware through ports, processes interrupts and
+ * notifies the event handler of mouse events.
  */
 class MouseDriver : public InterruptHandler, public Driver {
-    Port8Bit dataPort;                ///< Port for reading mouse data.
-    Port8Bit commandPort;             ///< Port for sending commands to the mouse.
-    MouseEventHandler* eventHandler;  ///< Event handler for mouse events.
-    uint8_t buffer[3];                ///< Buffer for storing mouse packet data.
-    uint8_t offset;                   ///< Current offset in the buffer.
-    uint8_t buttons;                  ///< Current state of mouse buttons.
-    int8_t x = 40, y = 12;            ///< Cursor position.
-    int32_t accumDX;                  ///< Accumulated mouse X delta for polling
-    int32_t accumDY;                  ///< Accumulated mouse Y delta for polling
+    Port8Bit dataPort;                // Port for reading mouse data.
+    Port8Bit commandPort;             // Port for sending commands to the mouse.
+    MouseEventHandler* eventHandler;  // Handler for mouse events.
+    uint8_t buffer[3];                // Buffer for storing mouse packet data.
+    uint8_t offset;                   // Current offset in the buffer.
+    uint8_t buttons;                  // Current state of the mouse buttons.
+    int8_t x = 40, y = 12;            // Cursor position.
+    int32_t accumDX;                  // Accumulated mouse X delta for polling.
+    int32_t accumDY;                  // Accumulated mouse Y delta for polling.
 
 public:
     static MouseDriver* activeInstance;
 
-    /// Get and reset accumulated mouse delta since last poll
+    // Get and reset accumulated mouse delta since last poll.
     void GetMouseDelta(int32_t& dx, int32_t& dy) {
         dx = accumDX;
         dy = accumDY;
         accumDX = 0;
         accumDY = 0;
     }
-    /// Get current button state (bit 0=left, 1=right, 2=middle)
+    // Get the current button state (bit 0=left, 1=right, 2=middle).
     uint8_t GetButtons() {
         return buttons;
     }
     /**
-     * @brief Constructs the MouseDriver object.
-     * @param manager Pointer to the interrupt manager.
-     * @param handler Pointer to the mouse event handler.
+     * MouseDriver() - Construct a mouse driver.
+     * @manager: Pointer to the interrupt manager.
+     * @handler: Pointer to the mouse event handler.
      */
     MouseDriver(InterruptManager* manager, MouseEventHandler* handler);
 
     /**
-     * @brief Destructor for the MouseDriver.
+     * ~MouseDriver() - Destroy a mouse driver.
      */
     ~MouseDriver();
 
     /**
-     * @brief Activates the mouse driver and initializes the hardware.
+     * Activate() - Activate the mouse driver and initialize the hardware.
      */
     void Activate();
 
     /**
-     * @brief Handles mouse interrupts and processes mouse packets.
-     * @param esp Current stack pointer.
-     * @return Updated stack pointer after handling the interrupt.
+     * HandleInterrupt() - Handle mouse interrupts and process mouse packets.
+     * @esp: Current stack pointer.
+     *
+     * Return: Updated stack pointer after handling the interrupt.
      */
     virtual uint32_t HandleInterrupt(uint32_t esp);
 };

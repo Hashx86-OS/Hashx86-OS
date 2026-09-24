@@ -1,9 +1,25 @@
-/**
- * @file        bmp.cpp
- * @brief       Bitmap Handler (part of #x86 GUI Framework)
+/*
+ * MIT License
  *
- * @date        10/01/2026
- * @version     1.0.0
+ * Copyright (c) 2025 Malaka Gunawardana
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
  */
 
 #define KDBG_COMPONENT "GUI:BMP"
@@ -12,7 +28,7 @@
 #include <gui/bmp.h>
 
 Bitmap::Bitmap(File* file) {
-    // Initialize defaults
+    // Initialize defaults.
     this->valid = false;
     this->buffer = 0;
     this->width = 0;
@@ -67,13 +83,13 @@ Bitmap::Bitmap(int width, int height, uint32_t color) {
         return;
     }
 
-    // Allocate buffer
+    // Allocate the pixel buffer.
     this->buffer = new uint32_t[width * height];
     if (!this->buffer) {
         HALT("CRITICAL: Failed to allocate bitmap buffer!\n");
     }
 
-    // Fill with color
+    // Fill the buffer with the requested color.
     for (int i = 0; i < width * height; i++) {
         this->buffer[i] = color;
     }
@@ -91,13 +107,13 @@ Bitmap::~Bitmap() {
 void Bitmap::Load(File* file) {
     if (file == 0) return;
 
-    // Allocate Buffer for the raw file
+    // Allocate a buffer for the raw file.
     uint8_t* rawFile = new uint8_t[file->size];
     if (!rawFile) {
         HALT("CRITICAL: Failed to allocate bitmap raw file buffer!\n");
     }
 
-    // Read entire file into RAM
+    // Read the entire file into RAM.
     file->Seek(0);
     int bytesRead = file->Read(rawFile, file->size);
 
@@ -105,7 +121,7 @@ void Bitmap::Load(File* file) {
         KDBG1("Warning: Read %d bytes, expected %d", bytesRead, file->size);
     }
 
-    // Parse Headers
+    // Parse the headers.
     if (bytesRead < (int)(sizeof(BitmapFileHeader) + sizeof(BitmapInfoHeader))) {
         KDBG1("Error: BMP file too small (%d bytes)", bytesRead);
         delete[] rawFile;
@@ -114,8 +130,8 @@ void Bitmap::Load(File* file) {
     BitmapFileHeader* fileHeader = (BitmapFileHeader*)rawFile;
     BitmapInfoHeader* infoHeader = (BitmapInfoHeader*)(rawFile + sizeof(BitmapFileHeader));
 
-    // Validate
-    if (fileHeader->type != 0x4D42) {  // 'BM'
+    // Validate the headers.
+    if (fileHeader->type != 0x4D42) {  // 'BM' magic.
         KDBG1("Error: Invalid signature 0x%x", fileHeader->type);
         delete[] rawFile;
         return;
@@ -161,13 +177,13 @@ void Bitmap::Load(File* file) {
         return;
     }
 
-    // Allocate Pixel Buffer
+    // Allocate the pixel buffer.
     this->buffer = new uint32_t[width * height];
     if (!this->buffer) {
         HALT("CRITICAL: Failed to allocate bitmap pixel buffer!\n");
     }
 
-    // Decode
+    // Decode the pixel rows bottom-up.
     uint8_t* pixelData = rawFile + fileHeader->offBits;
     int rowPadding = (int)rowPadding64;
 
@@ -180,12 +196,12 @@ void Bitmap::Load(File* file) {
             uint8_t r = *pixelData++;
             uint8_t a = 255;
 
-            // CORRECTED ALPHA CHECK
+            // 32-bit images carry an alpha channel byte.
             if (infoHeader->bitCount == 32) {
                 a = *pixelData++;
             }
 
-            // Combine to 0xAARRGGBB
+            // Combine the channels into 0xAARRGGBB.
             uint32_t color = ((uint32_t)a << 24) | ((uint32_t)r << 16) | ((uint32_t)g << 8) | b;
             this->buffer[targetY * width + x] = color;
         }

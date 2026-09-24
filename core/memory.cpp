@@ -1,3 +1,27 @@
+/*
+ * MIT License
+ *
+ * Copyright (c) 2025 Malaka Gunawardana
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
+ */
+
 #define KDBG_COMPONENT "K.HEAP"
 #include <core/memory.h>
 #include <core/tlsf/tlsf.h>
@@ -24,17 +48,18 @@ int kheap_init(void* start_addr, void* end_addr) {
     // Guard before subtracting: the subtraction below underflows for pool
     // sizes smaller than the TLSF control structure plus pool overhead.
     if (pool_size < tlsf_size() + tlsf_pool_overhead()) {
-        KDBG1("kheap_init FAILED: pool too small (%u bytes) for TLSF control "
-              "(need >= %u)",
-              (unsigned int)pool_size,
-              (unsigned int)(tlsf_size() + tlsf_pool_overhead()));
+        KDBG1(
+            "kheap_init FAILED: pool too small (%u bytes) for TLSF control "
+            "(need >= %u)",
+            (unsigned int)pool_size, (unsigned int)(tlsf_size() + tlsf_pool_overhead()));
         return -1;
     }
 
     // TLSF needs its control structure at the start of the pool plus enough
     // remaining space for at least one minimum-sized allocatable block.
     // Mirror tlsf_add_pool's alignment logic so the pre-check is exact.
-    size_t pool_bytes = (pool_size - tlsf_size() - tlsf_pool_overhead()) & ~(size_t)(tlsf_align_size() - 1);
+    size_t pool_bytes =
+        (pool_size - tlsf_size() - tlsf_pool_overhead()) & ~(size_t)(tlsf_align_size() - 1);
     if (pool_bytes < tlsf_block_size_min()) {
         KDBG1("kheap_init FAILED: pool too small (%u bytes) for TLSF (need >= %u)",
               (unsigned int)pool_size,
@@ -65,10 +90,8 @@ int kheap_init(void* start_addr, void* end_addr) {
     g_kheap_start_addr = start_addr;
     g_kheap_end_addr = end_addr;
 
-    KDBG1("Heap 0x%x-0x%x (%u MB), TLSF control=0x%x pool=0x%x",
-          start_addr, end_addr,
-          (unsigned int)(pool_size / (1024 * 1024)),
-          start_addr,
+    KDBG1("Heap 0x%x-0x%x (%u MB), TLSF control=0x%x pool=0x%x", start_addr, end_addr,
+          (unsigned int)(pool_size / (1024 * 1024)), start_addr,
           (uint8_t*)start_addr + tlsf_size());
     return 0;
 }
@@ -89,12 +112,19 @@ void* kmalloc(size_t size) {
     return ptr;
 }
 
-// TLSF stores sizes in 32-bit fields and caps allocatable blocks at
-// tlsf_block_size_max(); reject requests that would exceed that limit before
-// calling into it. tlsf_memalign additionally pads the request with the
-// alignment plus a block-header gap (gap_minimum), so aligned allocations must
-// leave headroom for that padding or the post-header gap calculation collapses
-// to zero.
+/**
+ * tlsf_request_valid() - Reject allocations TLSF cannot satisfy.
+ * @size: Requested allocation size in bytes.
+ * @extra: Alignment rounding, or 0 for plain allocations.
+ *
+ * TLSF stores sizes in 32-bit fields and caps allocatable blocks at
+ * tlsf_block_size_max(). tlsf_memalign additionally pads the request with the
+ * alignment plus a block-header gap (gap_minimum), so aligned allocations must
+ * leave headroom for that padding or the post-header gap calculation collapses
+ * to zero.
+ *
+ * Return: True when the request can be served.
+ */
 static bool tlsf_request_valid(size_t size, size_t extra) {
     if (size == 0) return true;
     const size_t max_size = tlsf_block_size_max();
@@ -156,24 +186,42 @@ void kfree(void* addr) {
     tlsf_free(g_tlsf, addr);
 }
 
-// --- C++ Operators ---
+// C++ operators.
 
-void* operator new(size_t size) { return kmalloc(size); }
-void* operator new[](size_t size) { return kmalloc(size); }
+void* operator new(size_t size) {
+    return kmalloc(size);
+}
+void* operator new[](size_t size) {
+    return kmalloc(size);
+}
 void* operator new(size_t size, std::align_val_t alignment) {
     return aligned_kmalloc(size, static_cast<size_t>(alignment));
 }
 void* operator new[](size_t size, std::align_val_t alignment) {
     return aligned_kmalloc(size, static_cast<size_t>(alignment));
 }
-void operator delete(void* ptr) noexcept { kfree(ptr); }
-void operator delete[](void* ptr) noexcept { kfree(ptr); }
-void operator delete(void* ptr, size_t size) noexcept { (void)size; kfree(ptr); }
-void operator delete[](void* ptr, size_t size) noexcept { (void)size; kfree(ptr); }
-void operator delete(void* ptr, std::align_val_t) noexcept { kfree(ptr); }
-void operator delete[](void* ptr, std::align_val_t) noexcept { kfree(ptr); }
+void operator delete(void* ptr) noexcept {
+    kfree(ptr);
+}
+void operator delete[](void* ptr) noexcept {
+    kfree(ptr);
+}
+void operator delete(void* ptr, size_t size) noexcept {
+    (void)size;
+    kfree(ptr);
+}
+void operator delete[](void* ptr, size_t size) noexcept {
+    (void)size;
+    kfree(ptr);
+}
+void operator delete(void* ptr, std::align_val_t) noexcept {
+    kfree(ptr);
+}
+void operator delete[](void* ptr, std::align_val_t) noexcept {
+    kfree(ptr);
+}
 
-// --- Memory routines (extern "C" so kernel callers can link against them) ---
+// Memory routines (extern "C" so kernel callers can link against them).
 
 extern "C" void* memset(void* s, int c, size_t n) {
     unsigned char* p = (unsigned char*)s;
@@ -193,7 +241,8 @@ extern "C" int memcmp(const void* s1, const void* s2, size_t n) {
     const unsigned char* p2 = (const unsigned char*)s2;
     while (n--) {
         if (*p1 != *p2) return *p1 - *p2;
-        ++p1; ++p2;
+        ++p1;
+        ++p2;
     }
     return 0;
 }

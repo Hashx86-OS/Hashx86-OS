@@ -1,9 +1,25 @@
-/**
- * @file        label.cpp
- * @brief       Label (part of #x86 GUI Framework)
+/*
+ * MIT License
  *
- * @date        10/02/2025
- * @version     1.0.0-beta
+ * Copyright (c) 2025 Malaka Gunawardana
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
  */
 
 #include <Hx86/Hgui/label.h>
@@ -38,7 +54,13 @@ bool Label::setColor(uint32_t argb) {
     return HguiAPI(LABEL, SET_COLOR, (void*)&data);
 }
 
-// Convert pixel size to FontSize enum (matches Font::PixelToFontSlot)
+/** PxToFontSlot() - Convert a pixel size to a FontSize enum value.
+ * @px: Font size in pixels.
+ *
+ * Matches the kernel-side Font::PixelToFontSlot() mapping.
+ *
+ * Return: The closest FontSize slot for the given pixel size.
+ */
 static FontSize PxToFontSlot(int32_t px) {
     if (px <= 18) return TINY;
     if (px <= 22) return SMALL;

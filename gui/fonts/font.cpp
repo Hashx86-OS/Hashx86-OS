@@ -1,16 +1,32 @@
-/**
- * @file        font.cpp
- * @brief       Font (part of #x86 GUI Framework)
+/*
+ * MIT License
  *
- * @date        12/02/2025
- * @version     1.0.0-beta
+ * Copyright (c) 2025 Malaka Gunawardana
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
  */
 
 #define KDBG_COMPONENT "GUI:FONT"
-#include <gui/fonts/font.h>
 #include <core/filesystem/FileSystem.h>
+#include <gui/fonts/font.h>
 
-#define FONT_MAGIC 0x464E5432  // "FNT2"
+#define FONT_MAGIC 0x464E5432  // "FNT2".
 
 FontManager* FontManager::activeInstance = nullptr;
 
@@ -44,18 +60,18 @@ uint32_t Font::getStringLength(const char* str) {
     while (*str) {
         uint32_t c = (uint8_t)(*str);
 
-        // Clamp unsupported characters to fallback
+        // Clamp unsupported characters to the fallback glyph.
         if (c < firstChar || c >= firstChar + glyph_count) {
             c = (firstChar <= '?' && '?' < firstChar + glyph_count) ? '?' : firstChar;
         }
 
-        // Find glyph index using firstChar base
+        // Find the glyph index using the firstChar base.
         int glyph_index = c - firstChar;
         if (glyph_index < 0 || glyph_index >= (int)this->glyph_count) break;
         int16_t xadvance = this->font_glyphs[glyph_index * 8 + 7];
         length += xadvance;
 
-        // Apply kerning (if previous char exists)
+        // Apply kerning if a previous character exists.
         if (prevChar && font_kernings && font_kerning_count > 0) {
             for (int k = 0; k < this->font_kerning_count; k++) {
                 int16_t first = this->font_kernings[k * 3 + 0];
@@ -63,7 +79,7 @@ uint32_t Font::getStringLength(const char* str) {
                 int16_t amount = this->font_kernings[k * 3 + 2];
                 if (first == prevChar && second == c) {
                     length += amount;
-                    break;  // assume only one kerning entry per pair
+                    break;  // Assume only one kerning entry per pair.
                 }
             }
         }
@@ -103,7 +119,7 @@ void Font::update() {
         return;
     }
 
-    // Guard against out-of-bounds indexing: font_data_list[10][4]
+    // Guard against out-of-bounds indexing: font_data_list[10][4].
     if (this->fontSize > 9 || this->fontType > BOLD_ITALIC) {
         this->atlas_width = 0;
         this->atlas_height = 0;
@@ -149,9 +165,7 @@ uint16_t Font::getLineHeight() {
     return maxH;
 }
 
-// -----------------------------
-// Font Manager
-// -----------------------------
+// Font manager.
 FontManager::FontManager() {
     activeInstance = this;
     font_list = new LinkedList<FontFile*>();
@@ -173,7 +187,7 @@ void FontManager::LoadFile(uint32_t mod_start, uint32_t mod_end) {
 
     auto has_bytes = [&](size_t n) -> bool { return (size_t)(end - ptr) >= n; };
 
-    // ---- Main header ----
+    // Main header.
     if (!has_bytes(8)) {
         KDBG1("Error: Font header too small");
         return;
@@ -226,10 +240,10 @@ void FontManager::LoadFile(uint32_t mod_start, uint32_t mod_end) {
     }
 
     for (int i = 0; i < font_count; i++) {
-        // ---- Per-font header ----
+        // Per-font header.
         if (!has_bytes(11)) {
             KDBG1("Error: Font entry header truncated at entry %d", i);
-            break;  // Can't parse further entries without header
+            break;  // Can't parse further entries without a header.
         }
 
         uint16_t size = *(uint16_t*)ptr;
@@ -249,7 +263,7 @@ void FontManager::LoadFile(uint32_t mod_start, uint32_t mod_end) {
         const uint16_t max_glyphs = 2048;
         const uint16_t max_kernings = 8192;
 
-        // Compute data sizes first so we can skip past the entry on validation failure
+        // Compute the data sizes first so we can skip the entry on validation failure.
         uint64_t atlas_elems = (uint64_t)atlas_width * (uint64_t)atlas_height;
         uint64_t glyph_elems = (uint64_t)glyph_count * 8u;
         uint64_t kerning_elems = (uint64_t)kerning_count * 3u;
@@ -258,11 +272,11 @@ void FontManager::LoadFile(uint32_t mod_start, uint32_t mod_end) {
         size_t kerning_bytes = (size_t)kerning_elems * sizeof(int16_t);
         size_t entry_total = atlas_bytes + glyph_bytes + kerning_bytes;
 
-        // Validate index bounds — skip entry if it won't fit in font_data_list[10][4]
+        // Validate the index bounds: skip the entry if it won't fit in font_data_list[10][4].
         if (size >= 10 || style >= 4) {
             KDBG1("Warning: Skipping font entry %d (size=%d style=%d) — out of array bounds", i,
                   size, style);
-            // Advance ptr past this entry's data so we can parse the next one
+            // Advance ptr past this entry's data so we can parse the next one.
             if (has_bytes(entry_total)) {
                 ptr += entry_total;
                 continue;
@@ -270,7 +284,7 @@ void FontManager::LoadFile(uint32_t mod_start, uint32_t mod_end) {
             break;
         }
 
-        // Validate dimensions
+        // Validate the dimensions.
         if (atlas_width == 0 || atlas_height == 0 || atlas_width > max_atlas_dim ||
             atlas_height > max_atlas_dim) {
             KDBG1("Warning: Skipping font entry %d — invalid atlas size %dx%d", i, atlas_width,
@@ -298,7 +312,7 @@ void FontManager::LoadFile(uint32_t mod_start, uint32_t mod_end) {
             break;
         }
 
-        // Overflow checks
+        // Overflow checks.
         if (atlas_elems > (uint64_t)(0xFFFFFFFFu / sizeof(uint32_t))) {
             KDBG1("Warning: Skipping font entry %d — atlas overflow", i);
             if (has_bytes(entry_total)) {
@@ -317,10 +331,10 @@ void FontManager::LoadFile(uint32_t mod_start, uint32_t mod_end) {
             break;
         }
 
-        // Bounds check against remaining buffer
+        // Bounds check against the remaining buffer.
         if (!has_bytes(entry_total)) {
             KDBG1("Error: Font entry %d data exceeds module bounds", i);
-            break;  // Can't recover — remaining data is truncated
+            break;  // Can't recover: the remaining data is truncated.
         }
 
         FontData* new_font = new FontData{};
@@ -334,9 +348,9 @@ void FontManager::LoadFile(uint32_t mod_start, uint32_t mod_end) {
         new_font->atlas_height = atlas_height;
         new_font->glyph_count = glyph_count;
         new_font->kerning_count = kerning_count;
-        new_font->firstChar = 32;  // FNT2 format uses ASCII range by default
+        new_font->firstChar = 32;  // The FNT2 format uses the ASCII range by default.
 
-        // ---- Atlas ----
+        // Atlas.
         size_t atlasSize = (size_t)atlas_elems;
         new_font->atlas = new uint32_t[atlasSize];
         if (!new_font->atlas) {
@@ -345,7 +359,7 @@ void FontManager::LoadFile(uint32_t mod_start, uint32_t mod_end) {
         memcpy(new_font->atlas, ptr, atlas_bytes);
         ptr += atlas_bytes;
 
-        // ---- Glyphs ----
+        // Glyphs.
         size_t glyphSize = (size_t)glyph_elems;
         new_font->glyphs = new int16_t[glyphSize];
         if (!new_font->glyphs) {
@@ -354,7 +368,7 @@ void FontManager::LoadFile(uint32_t mod_start, uint32_t mod_end) {
         memcpy(new_font->glyphs, ptr, glyph_bytes);
         ptr += glyph_bytes;
 
-        // ---- Kernings ----
+        // Kernings.
         size_t kerningSize = (size_t)kerning_elems;
         new_font->kernings = new int16_t[kerningSize];
         if (!new_font->kernings) {
@@ -372,8 +386,8 @@ void FontManager::LoadFile(uint32_t mod_start, uint32_t mod_end) {
     font_list->Add(new_font_file);
 }
 
-void FontManager::LoadFile(File* file, FontType style, const char* ttfPath,
-                           int firstChar, int numChars) {
+void FontManager::LoadFile(File* file, FontType style, const char* ttfPath, int firstChar,
+                           int numChars) {
     if (!file || file->size == 0) {
         KDBG1("Font error: file is null or empty");
         return;
@@ -412,7 +426,7 @@ void FontManager::LoadFile(File* file, FontType style, const char* ttfPath,
     new_font_file->firstChar = firstChar;
     new_font_file->numChars = numChars;
 
-    // Store source path so on-demand loading can find the variant files
+    // Store the source path so on-demand loading can find the variant files.
     if (ttfPath) {
         size_t len = strlen(ttfPath);
         if (len >= sizeof(new_font_file->filePath)) len = sizeof(new_font_file->filePath) - 1;
@@ -420,18 +434,17 @@ void FontManager::LoadFile(File* file, FontType style, const char* ttfPath,
         new_font_file->filePath[len] = '\0';
     }
 
-    // Rasterize each size slot (TINY..XLARGE) for the requested style
+    // Rasterize each size slot (TINY..XLARGE) for the requested style.
     for (int slot = 0; slot < 5; slot++) {
         FontData* data = new FontData{};
         if (!data) {
             HALT("CRITICAL: Failed to allocate FontData!\n");
         }
-        if (TTF_RasterizeFont(buffer, file->size, slot, (int)style, data,
-                              firstChar, numChars)) {
+        if (TTF_RasterizeFont(buffer, file->size, slot, (int)style, data, firstChar, numChars)) {
             new_font_file->font_data_list[slot][(int)style] = data;
-            KDBG1("TTF font loaded: slot=%d, style=%d, atlas=%dx%d, glyphs=%d, kernings=%d",
-                   slot, (int)style, data->atlas_width, data->atlas_height,
-                   data->glyph_count, data->kerning_count);
+            KDBG1("TTF font loaded: slot=%d, style=%d, atlas=%dx%d, glyphs=%d, kernings=%d", slot,
+                  (int)style, data->atlas_width, data->atlas_height, data->glyph_count,
+                  data->kerning_count);
         } else {
             delete data;
         }
@@ -444,59 +457,68 @@ void FontManager::LoadFile(File* file, FontType style, const char* ttfPath,
 bool FontManager::LazyLoadStyle(FontFile* ff, FontType style) {
     if (style <= REGULAR || style > BOLD_ITALIC || !ff || ff->filePath[0] == '\0') return false;
 
-    // Already loaded? (all sizes populated for this style)
+    // Already loaded? (all sizes populated for this style).
     bool anyLoaded = false;
     for (int s = 0; s < 5; s++) {
         if (ff->font_data_list[s][style]) anyLoaded = true;
     }
     if (anyLoaded) return true;
 
-    // Construct variant path
+    // Construct the variant path.
     char variantPath[128];
     const char* regularSuffix = "-Regular.ttf";
     size_t pathLen = strlen(ff->filePath);
     size_t suffixLen = strlen(regularSuffix);
-    bool isRegularConvention = (pathLen >= suffixLen &&
-        memcmp(ff->filePath + pathLen - suffixLen, regularSuffix, suffixLen) == 0);
+    bool isRegularConvention = (pathLen >= suffixLen && memcmp(ff->filePath + pathLen - suffixLen,
+                                                               regularSuffix, suffixLen) == 0);
 
     if (isRegularConvention) {
-        // Cascadia-style: replace "-Regular" with "-Bold"/"-Italic"/"-BoldItalic"
+        // Cascadia-style: replace "-Regular" with "-Bold"/"-Italic"/"-BoldItalic".
         if (pathLen + 6 >= sizeof(variantPath)) return false;
         const char* variantSuffixes[] = {"-Bold", "-Italic", "-BoldItalic"};
-        size_t baseLen = pathLen - suffixLen;  // length before "-Regular.ttf"
+        size_t baseLen = pathLen - suffixLen;  // Length before "-Regular.ttf".
         memcpy(variantPath, ff->filePath, baseLen);
         strcpy(variantPath + baseLen, variantSuffixes[style - 1]);
         strcpy(variantPath + baseLen + strlen(variantSuffixes[style - 1]), ".ttf");
     } else {
-        // Segoe-style: insert 'b'/'i'/'z' before ".ttf"
+        // Segoe-style: insert 'b'/'i'/'z' before ".ttf".
         const char* dot = strrchr(ff->filePath, '.');
         if (!dot || dot == ff->filePath) return false;
         size_t baseLen = (size_t)(dot - ff->filePath);
-        // Need space for: base + 1 char + extension + null
+        // Need space for: base + 1 char + extension + null.
         if (baseLen + 1 + strlen(dot) >= sizeof(variantPath)) return false;
         memcpy(variantPath, ff->filePath, baseLen);
-        variantPath[baseLen] = "biz"[style - 1];  // BOLD=1→b, ITALIC=2→i, BOLD_ITALIC=3→z
+        variantPath[baseLen] = "biz"[style - 1];  // BOLD=1->b, ITALIC=2->i, BOLD_ITALIC=3->z.
         strcpy(variantPath + baseLen + 1, dot);
     }
 
-    // Open the variant file
+    // Open the variant file.
     extern FileSystem* g_bootPartition;
     if (!g_bootPartition) return false;
     File* f = g_bootPartition->Open(variantPath);
     if (!f || f->size == 0) {
-        if (f) { f->Close(); delete f; }
+        if (f) {
+            f->Close();
+            delete f;
+        }
         KDBG1("LazyLoad: %s not found", variantPath);
         return false;
     }
 
-    // Read entire TTF into buffer
+    // Read the entire TTF into the buffer.
     uint32_t fileSz = f->size;
     if (fileSz > 10 * 1024 * 1024) {
         KDBG1("LazyLoad: font too large (%u bytes, max 10MB)", fileSz);
-        f->Close(); delete f; return false;
+        f->Close();
+        delete f;
+        return false;
     }
     uint8_t* buffer = new uint8_t[fileSz];
-    if (!buffer) { f->Close(); delete f; return false; }
+    if (!buffer) {
+        f->Close();
+        delete f;
+        return false;
+    }
     f->Seek(0);
     uint32_t totalRead = 0;
     while (totalRead < fileSz) {
@@ -512,11 +534,12 @@ bool FontManager::LazyLoadStyle(FontFile* ff, FontType style) {
         return false;
     }
 
-    // Rasterize all 5 sizes into this FontFile's style slot
+    // Rasterize all 5 sizes into this FontFile's style slot.
     bool anyRasterized = false;
     for (int slot = 0; slot < 5; slot++) {
         FontData* data = new FontData{};
-        if (TTF_RasterizeFont(buffer, fileSz, slot, (int)style, data, ff->firstChar, ff->numChars)) {
+        if (TTF_RasterizeFont(buffer, fileSz, slot, (int)style, data, ff->firstChar,
+                              ff->numChars)) {
             ff->font_data_list[slot][(int)style] = data;
             anyRasterized = true;
             KDBG1("LazyLoad: slot=%d style=%d from %s", slot, (int)style, variantPath);
@@ -532,7 +555,7 @@ bool FontManager::LazyLoadStyle(FontFile* ff, FontType style) {
 Font* FontManager::getNewFont(FontSize size, FontType type) {
     if ((uint32_t)size > 9 || (uint32_t)type > BOLD_ITALIC) return nullptr;
 
-    // First pass: check if already loaded
+    // First pass: check whether the font is already loaded.
     auto it = font_list->begin();
     auto end = font_list->end();
     while (it != end) {
@@ -547,12 +570,12 @@ Font* FontManager::getNewFont(FontSize size, FontType type) {
         ++it;
     }
 
-    // Second pass: try lazy-load missing style for each font family
+    // Second pass: try to lazy-load the missing style for each font family.
     if (type != REGULAR) {
         it = font_list->begin();
         while (it != end) {
             FontFile* ff = *it;
-            // Only attempt if this FontFile has REGULAR data (valid family) and a known path
+            // Only attempt if this FontFile has REGULAR data (valid family) and a known path.
             if (ff && ff->filePath[0] && ff->font_data_list[size][REGULAR]) {
                 if (LazyLoadStyle(ff, type) && ff->font_data_list[size][type]) {
                     Font* sysFont = new Font(ff, size, type);

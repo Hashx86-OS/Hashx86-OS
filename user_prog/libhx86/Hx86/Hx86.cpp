@@ -1,14 +1,30 @@
-/**
- * @file        Hx86.cpp
- * @brief       Core Hx86 System Initialization
+/*
+ * MIT License
  *
- * @date        01/02/2026
- * @version     1.0.0
+ * Copyright (c) 2025 Malaka Gunawardana
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
  */
 
+#include <Hx86/Hgui/Hgui.h>
 #include <Hx86/Hx86.h>
 #include <Hx86/debug.h>
-#include <Hx86/Hgui/Hgui.h>
 #include <Hx86/utils/string.h>
 
 namespace {
@@ -98,14 +114,21 @@ char TranslateCliScancode(uint8_t scancode, bool shiftPressed) {
 
 }  // namespace
 
+/** init_sys() - Initialize the process heap and auto-start a terminal host.
+ * @arg: Pointer to the ProgramArguments passed by the loader.
+ *
+ * Called once from _start(): initializes the user-space heap through brk and,
+ * for binaries tagged as CLI in their ELF metadata, allocates the CLI text
+ * buffer and (re)attaches or creates the terminal window.
+ */
 void init_sys(void* arg) {
     if (!args) {
         args = (ProgramArguments*)arg;
 
-        // Initialize heap via brk
-        int32_t heap_start = syscall_brk(0);  // Get current program break
-        syscall_brk(256 * 1024);              // Grow 256KB initial heap
-        int32_t heap_end = syscall_brk(0);    // Get new program break
+        // Initialize the heap via brk.
+        int32_t heap_start = syscall_brk(0);  // Get the current program break.
+        syscall_brk(256 * 1024);              // Grow the initial heap by 256KB.
+        int32_t heap_end = syscall_brk(0);    // Get the new program break.
         heap_init((void*)heap_start, (void*)heap_end);
 
         // Auto-initialize terminal host for binaries tagged as CLI in ELF metadata.
@@ -132,6 +155,10 @@ void init_sys(void* arg) {
     }
 }
 
+/** init_cli() - Create or attach a terminal host for a CLI application.
+ *
+ * Return: true on success, false if the terminal could not be set up.
+ */
 bool init_cli() {
     int32_t ret = syscall_init_cli();
     if (ret <= 0) return false;
@@ -152,7 +179,8 @@ bool init_cli() {
     }
 
     if (!g_cliView) {
-        g_cliView = new TerminalView(g_cliWindow, CLI_VIEW_X, CLI_VIEW_Y, CLI_VIEW_W, CLI_VIEW_H, "");
+        g_cliView =
+            new TerminalView(g_cliWindow, CLI_VIEW_X, CLI_VIEW_Y, CLI_VIEW_W, CLI_VIEW_H, "");
         if (!g_cliView) return false;
         g_cliView->setSize(TINY);
         g_cliView->OnKeyPress([](uint8_t scancode, bool shiftPressed) {
@@ -170,6 +198,14 @@ bool init_cli() {
     return true;
 }
 
+/** cli_append_output() - Append text to the CLI output buffer.
+ * @text: NUL-terminated text to append.
+ *
+ * Writes into the shared CLI text buffer, mirroring the result into the local
+ * terminal view or pushing it to the attached host view.
+ *
+ * Return: true on success, false if no buffer or view is available.
+ */
 bool cli_append_output(const char* text) {
     if (!text || !g_cliTextBuffer) return false;
 
@@ -204,6 +240,9 @@ bool cli_append_output(const char* text) {
     return false;
 }
 
+/** syscall_sleep() - Sleep for the given number of milliseconds.
+ * @ms: Sleep duration in milliseconds.
+ */
 void syscall_sleep(uint32_t ms) {
     struct timespec req;
     req.tv_sec = ms / 1000;

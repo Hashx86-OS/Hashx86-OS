@@ -1,12 +1,45 @@
+/*
+ * MIT License
+ *
+ * Copyright (c) 2025 Malaka Gunawardana
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
+ */
+
 #define KDBG_COMPONENT "FATFS"
-#include <core/filesystem/FatFsWrapper.h>
+
+#include <core/filesystem/FatFs/ff.h>
+
 #include <core/filesystem/FatFs/diskio.h>
+#include <core/filesystem/FatFsWrapper.h>
 #include <core/filesystem/File.h>
 #include <debug.h>
 #include <string.h>
 
-// SlotManager implementation — instance-scoped slot tracking.
-// (struct and slot data declared in FatFsWrapper.h)
+/**
+ * FatFsWrapper::SlotManager::alloc() - Claim a free open-file slot.
+ * @file: The File object the slot backs, or NULL for a directory handle.
+ * @isDir: True when the slot holds a DIR stream rather than a FIL stream.
+ *
+ * Return: A pointer to the claimed slot, or NULL if all MAX_OPEN_FILES slots
+ *         are in use.
+ */
 FatFsSlot* FatFsWrapper::SlotManager::alloc(File* file, bool isDir) {
     for (int i = 0; i < MAX_OPEN_FILES; i++) {
         if (!slots[i].used) {
@@ -20,6 +53,10 @@ FatFsSlot* FatFsWrapper::SlotManager::alloc(File* file, bool isDir) {
     return nullptr;
 }
 
+/**
+ * FatFsWrapper::SlotManager::free() - Release a slot back to the pool.
+ * @slot: Slot previously returned by alloc(), may be NULL.
+ */
 void FatFsWrapper::SlotManager::free(FatFsSlot* slot) {
     if (slot) {
         slot->file = nullptr;
@@ -27,6 +64,12 @@ void FatFsWrapper::SlotManager::free(FatFsSlot* slot) {
     }
 }
 
+/**
+ * FatFsWrapper::SlotManager::find() - Locate the slot owning a File object.
+ * @file: File owned by one of the slots.
+ *
+ * Return: The matching slot, or NULL if the File has no slot.
+ */
 FatFsSlot* FatFsWrapper::SlotManager::find(File* file) {
     for (int i = 0; i < MAX_OPEN_FILES; i++) {
         if (slots[i].used && slots[i].file == file) return &slots[i];
@@ -34,16 +77,22 @@ FatFsSlot* FatFsWrapper::SlotManager::find(File* file) {
     return nullptr;
 }
 
+/**
+ * FatFsWrapper::FatFsWrapper() - Bind a partition and mount it as a volume.
+ * @hd: ATA device hosting the partition.
+ * @partitionOffset: First sector of the partition on the device.
+ * @pdrv: FatFs physical drive number this wrapper drives.
+ * @partitionSizeSectors: Partition size in 512-byte sectors.
+ */
 FatFsWrapper::FatFsWrapper(AdvancedTechnologyAttachment* hd, uint32_t partitionOffset, BYTE pdrv,
                            uint32_t partitionSizeSectors)
     : hd(hd), partitionOffset(partitionOffset), pdrv(pdrv), slotMgr(new SlotManager()) {
-
     if (!slotMgr) {
         HALT("CRITICAL: Failed to allocate FatFsSlotManager!\n");
     }
 
     fatfs_init(pdrv, hd, partitionOffset, partitionSizeSectors);
-    /* Mount as "0:" for pdrv=0, "1:" for pdrv=1, etc. */
+    // Mount as "0:" for pdrv=0, "1:" for pdrv=1, and so on.
     char mountPath[4] = "0:";
     mountPath[0] = '0' + pdrv;
     FRESULT res = f_mount(&fatfs, mountPath, 1);
@@ -77,43 +126,66 @@ FatFsWrapper::~FatFsWrapper() {
     slotMgr = nullptr;
 }
 
-/* Copy path to a local buffer with FatFs-compatible format */
+/**
+ * FatFsWrapper::PathToFatFs() - Rewrite a kernel path into a FatFs path.
+ * @path: Kernel path, e.g. "/Hashx86/apps/test.bin".
+ * @out: Destination buffer, at least 3 bytes long.
+ * @outLen: Size of @out.
+ *
+ * Prepends the "N:" drive prefix for this wrapper's volume and strips the
+ * leading '/' so the path resolves relative to the FAT volume root.
+ *
+ * Return: True if the whole path fit into @out.
+ */
 bool FatFsWrapper::PathToFatFs(const char* path, char* out, uint32_t outLen) {
     if (!path || !out || outLen < 3) return false;
-    /* Prepend drive prefix (e.g. "0:", "1:") so the path resolves on the correct volume */
     out[0] = '0' + pdrv;
     out[1] = ':';
     uint32_t j = 2;
     uint32_t i = 0;
-    /* Strip leading '/' for FatFs relative paths */
+    // FatFs paths are relative to the volume root; drop the leading '/'.
     if (path[0] == '/') i = 1;
     while (path[i] != 0 && j < outLen - 1) {
         out[j++] = path[i++];
     }
-    /* Check whether the entire source was consumed */
+    // Fail if the entire source was not consumed (buffer too small).
     if (path[i] != 0) return false;
     out[j] = 0;
     return true;
 }
 
+/**
+ * FatFsWrapper::Open() - Open a file or directory and return a File handle.
+ * @path: Kernel path, e.g. "/Hashx86/apps/test.bin". "/" opens the volume
+ *        root directory.
+ *
+ * Return: A File handle bound to an open FatFs stream, or NULL on failure.
+ */
 File* FatFsWrapper::Open(const char* path) {
     if (!path) return nullptr;
 
     char fatPath[256];
     if (!PathToFatFs(path, fatPath, sizeof(fatPath))) return nullptr;
 
-    /* Root directory — detect after drive prefix (e.g. "0:" with nothing after) */
+    // Root directory: detected when only the drive prefix (e.g. "0:") remains.
     if (fatPath[0] != 0 && fatPath[1] == ':' && fatPath[2] == 0) {
         DIR d;
         FRESULT res = f_opendir(&d, fatPath);
         if (res != FR_OK) return nullptr;
         FatFsSlot* slot = slotMgr->alloc(nullptr, true);
-        if (!slot) { f_closedir(&d); return nullptr; }
+        if (!slot) {
+            f_closedir(&d);
+            return nullptr;
+        }
         slot->u.dir = d;
         slot->dirReadCount = 0;
 
         File* root = new File();
-        if (!root) { f_closedir(&slot->u.dir); slotMgr->free(slot); return nullptr; }
+        if (!root) {
+            f_closedir(&slot->u.dir);
+            slotMgr->free(slot);
+            return nullptr;
+        }
         root->name[0] = '/';
         root->name[1] = 0;
         root->size = 0;
@@ -131,7 +203,6 @@ File* FatFsWrapper::Open(const char* path) {
 
     BYTE mode = FA_READ | FA_OPEN_EXISTING;
     if (info.fattrib & AM_DIR) {
-        /* Open directory via f_opendir */
         DIR d;
         FRESULT res2 = f_opendir(&d, fatPath);
         if (res2 != FR_OK) return nullptr;
@@ -197,6 +268,18 @@ File* FatFsWrapper::Open(const char* path) {
     return file;
 }
 
+/**
+ * FatFsWrapper::ReadStream() - Read from a file or directory stream.
+ * @file: Handle from Open().
+ * @buffer: Destination buffer.
+ * @length: Number of bytes to read.
+ *
+ * For regular files this reads via f_read() from the file's current position.
+ * For directories it emits an aligned sequence of KernelDirentHeader records,
+ * resuming from the byte offset recorded in file->position.
+ *
+ * Return: Bytes produced; 0 on a bad handle or FatFs error.
+ */
 uint32_t FatFsWrapper::ReadStream(File* file, uint8_t* buffer, uint32_t length) {
     if (!file || !buffer || length == 0) return 0;
 
@@ -204,18 +287,15 @@ uint32_t FatFsWrapper::ReadStream(File* file, uint8_t* buffer, uint32_t length) 
     if (!slot) return 0;
 
     if (slot->isDir) {
-        /* Directory: return entries in KernelDirent format */
         uint32_t total = 0;
 
-        /* Rewind directory cursor to the beginning before fast-forward, because
-         * subsequent ReadStream calls resume from where f_readdir left off after the
-         * previous batch — without rewind, the skip loop would advance past entries
-         * that were never returned to the caller. */
+        // Rewind the cursor before fast-forwarding: f_readdir() resumes from
+        // where the previous batch left off, and without a rewind the skip
+        // loop below would advance past entries never returned to the caller.
         f_readdir(&slot->u.dir, NULL);
 
-        /* Fast-forward to correct entry position using accumulated d_reclen byte offset.
-         * file->position holds the byte offset from the start of the directory stream,
-         * matching what the caller advanced via d_reclen. */
+        // Fast-forward to the caller's position using the accumulated d_reclen
+        // byte offset stored in file->position.
         uint32_t skipped = 0;
         while (skipped < file->position) {
             FILINFO info;
@@ -236,11 +316,10 @@ uint32_t FatFsWrapper::ReadStream(File* file, uint8_t* buffer, uint32_t length) 
                 break;
             }
 
-            /* Calculate name length and record size */
+            // Each record carries the name plus one NUL terminator, aligned to 4.
             uint32_t namelen = 0;
             while (info.fname[namelen]) namelen++;
-            uint32_t reclen = sizeof(KernelDirentHeader) + namelen + 1;  /* +1 for null */
-            /* Align to 4 bytes */
+            uint32_t reclen = sizeof(KernelDirentHeader) + namelen + 1;
             reclen = (reclen + 3) & ~3;
 
             if (total + reclen > length) break;
@@ -262,7 +341,7 @@ uint32_t FatFsWrapper::ReadStream(File* file, uint8_t* buffer, uint32_t length) 
         return total;
     }
 
-    /* Regular file: read via f_read */
+    // Regular file: seek to the current position, then read.
     FRESULT res = f_lseek(&slot->u.fil, file->position);
     if (res != FR_OK) return 0;
 

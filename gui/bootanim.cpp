@@ -1,9 +1,25 @@
-/**
- * @file        bootanim.cpp
- * @brief       Boot splash animation: dots + image frames (part of #x86 GUI Framework)
+/*
+ * MIT License
  *
- * @date        05/09/2026
- * @version     1.0.0
+ * Copyright (c) 2025 Malaka Gunawardana
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
  */
 
 #define KDBG_COMPONENT "GUI:BOOTANIM"
@@ -13,15 +29,15 @@
 
 // Boot animation thread: dot row with a travelling pulse.
 
-volatile bool g_bootSplashDone = false;  // set by BootMain to stop the animator
-volatile bool g_bootSplashExited = false;  // set by the animator before exiting
+volatile bool g_bootSplashDone = false;    // Set by BootMain to stop the animator.
+volatile bool g_bootSplashExited = false;  // Set by the animator before exiting.
 
-constexpr int BOOTDOTS_N = 5;        // dots in the row (minimal, cinematic)
-constexpr int BOOTDOTS_SPACING = 32;  // px between dot centers
-constexpr int BOOTDOTS_W = 160;       // box: covers row span + halo radius + margin
+constexpr int BOOTDOTS_N = 5;         // Dots in the row (minimal, cinematic).
+constexpr int BOOTDOTS_SPACING = 32;  // Pixels between dot centers.
+constexpr int BOOTDOTS_W = 160;       // Box: covers row span plus halo radius and margin.
 constexpr int BOOTDOTS_H = 40;
 uint32_t g_bootDotsBg[BOOTDOTS_W * BOOTDOTS_H];
-bool g_bootDotsBgValid = false;  // captured on the first frame (screen is settled by then)
+bool g_bootDotsBgValid = false;  // Captured on the first frame (the screen settles by then).
 
 // Box geometry shared by the animator and the re-sync path.
 static void BootDotsBox(uint32_t W, uint32_t H, int32_t& bx, int32_t& by) {
@@ -84,67 +100,67 @@ void BootSplashAnimator(void* arg) {
             if (g_bootAnimSet.count > 0) {
                 DrawBootAnimFrame(drv, frame);
             } else {
-            InterruptGuard guard;  // atomic frame blit (dots mode)
-            uint32_t W = drv->GetWidth();
-            uint32_t H = drv->GetHeight();
-            uint32_t* fb = drv->GetBackBuffer();
-            int32_t bx, by;
-            BootDotsBox(W, H, bx, by);
-            int32_t cx = bx + BOOTDOTS_W / 2;
-            int32_t cy = by + BOOTDOTS_H / 2;
+                InterruptGuard guard;  // Atomic frame blit (dots mode).
+                uint32_t W = drv->GetWidth();
+                uint32_t H = drv->GetHeight();
+                uint32_t* fb = drv->GetBackBuffer();
+                int32_t bx, by;
+                BootDotsBox(W, H, bx, by);
+                int32_t cx = bx + BOOTDOTS_W / 2;
+                int32_t cy = by + BOOTDOTS_H / 2;
 
-            if (fb && !g_bootDotsBgValid) CaptureDotsBg(drv, bx, by);
+                if (fb && !g_bootDotsBgValid) CaptureDotsBg(drv, bx, by);
 
-            // Erase the previous frame by restoring the saved background.
-            if (fb && g_bootDotsBgValid) RestoreDotsBg(drv, bx, by);
+                // Erase the previous frame by restoring the saved background.
+                if (fb && g_bootDotsBgValid) RestoreDotsBg(drv, bx, by);
 
-            // Glow sweep: light pulse travels left -> right, wrapping around.
-            int head = (int)(frame % BOOTDOTS_N);
-            for (int i = 0; i < BOOTDOTS_N; i++) {
-                int age = (head - i + BOOTDOTS_N) % BOOTDOTS_N;
-                uint32_t core;
-                uint32_t tint;
-                if (age == 0) {
-                    core = 0xFFFFFFFF;  // ice-white hot
-                    tint = 0xDFF6FF;
-                } else if (age == 1) {
-                    core = 0xFFD9EDEF;
-                    tint = 0xB9DCE8;
-                } else if (age == 2) {
-                    core = 0xFFA9BCC4;
-                    tint = 0x7E99A6;
-                } else if (age == 3) {
-                    core = 0xFF6E7F88;
-                    tint = 0x4E5E66;
-                } else {
-                    core = 0xFF454F55;  // fading ember
-                    tint = 0x2E383D;
-                }
-                int dx = (i - (BOOTDOTS_N - 1) / 2) * BOOTDOTS_SPACING;
-                // Radial glow: opaque core + alpha halo rings (PutPixel blends).
-                constexpr int R = 11;
-                for (int yy = -R; yy <= R; yy++) {
-                    for (int xx = -R; xx <= R; xx++) {
-                        int d2 = xx * xx + yy * yy;
-                        uint32_t col;
-                        if (d2 <= 16) {
-                            col = core;  // r<=4 solid core
-                        } else if (d2 <= 36) {
-                            col = (0x90u << 24) | tint;  // strong glow
-                        } else if (d2 <= 81) {
-                            col = (0x40u << 24) | tint;  // soft glow
-                        } else if (d2 <= 121) {
-                            col = (0x18u << 24) | tint;  // faint halo
-                        } else {
-                            continue;
+                // Glow sweep: the light pulse travels left to right, wrapping around.
+                int head = (int)(frame % BOOTDOTS_N);
+                for (int i = 0; i < BOOTDOTS_N; i++) {
+                    int age = (head - i + BOOTDOTS_N) % BOOTDOTS_N;
+                    uint32_t core;
+                    uint32_t tint;
+                    if (age == 0) {
+                        core = 0xFFFFFFFF;  // Ice-white hot.
+                        tint = 0xDFF6FF;
+                    } else if (age == 1) {
+                        core = 0xFFD9EDEF;
+                        tint = 0xB9DCE8;
+                    } else if (age == 2) {
+                        core = 0xFFA9BCC4;
+                        tint = 0x7E99A6;
+                    } else if (age == 3) {
+                        core = 0xFF6E7F88;
+                        tint = 0x4E5E66;
+                    } else {
+                        core = 0xFF454F55;  // Fading ember.
+                        tint = 0x2E383D;
+                    }
+                    int dx = (i - (BOOTDOTS_N - 1) / 2) * BOOTDOTS_SPACING;
+                    // Radial glow: an opaque core with alpha halo rings (PutPixel blends).
+                    constexpr int R = 11;
+                    for (int yy = -R; yy <= R; yy++) {
+                        for (int xx = -R; xx <= R; xx++) {
+                            int d2 = xx * xx + yy * yy;
+                            uint32_t col;
+                            if (d2 <= 16) {
+                                col = core;  // r<=4 solid core.
+                            } else if (d2 <= 36) {
+                                col = (0x90u << 24) | tint;  // Strong glow.
+                            } else if (d2 <= 81) {
+                                col = (0x40u << 24) | tint;  // Soft glow.
+                            } else if (d2 <= 121) {
+                                col = (0x18u << 24) | tint;  // Faint halo.
+                            } else {
+                                continue;
+                            }
+                            drv->PutPixel(cx + dx + xx, cy + yy, col);
                         }
-                        drv->PutPixel(cx + dx + xx, cy + yy, col);
                     }
                 }
-            }
 
-            drv->Flush();
-            }  // dots mode
+                drv->Flush();
+            }  // Dots mode.
         }
         frame++;
         // Yield to the boot worker until the next tick.
@@ -154,8 +170,8 @@ void BootSplashAnimator(void* arg) {
         asm volatile("sti; hlt");
     }
 
-    FreeBootAnimFrames();  // animator is the last frameset user
-    g_bootSplashExited = true;  // handshake: boot worker may take the framebuffer
+    FreeBootAnimFrames();       // The animator is the last frameset user.
+    g_bootSplashExited = true;  // Handshake: the boot worker may take the framebuffer.
     KDBG1("Boot dots animator exiting");
 }
 
@@ -179,7 +195,7 @@ void LoadBootAnimFrames() {
     Bitmap* tmp[BOOTANIM_MAX_FRAMES];
     int n = 0;
     for (int i = 0; i < BOOTANIM_MAX_FRAMES; i++) {
-        // frame00.bmp .. frame63.bmp (manual zero-pad, no snprintf in kernel)
+        // frame00.bmp through frame63.bmp (hand-padded, no snprintf in the kernel).
         char idx[8];
         itoa(i, idx, 10, sizeof(idx));
         char path[80];
@@ -197,10 +213,10 @@ void LoadBootAnimFrames() {
         Bitmap* b = new Bitmap(path);
         if (!b || !b->IsValid()) {
             if (b) delete b;
-            break;  // first missing file ends the set (also: no frames at all)
+            break;  // The first missing file ends the set (also: no frames at all).
         }
-        if (b->GetWidth() <= 0 || b->GetHeight() <= 0 ||
-            b->GetWidth() > BOOTANIM_MAX_DIM || b->GetHeight() > BOOTANIM_MAX_DIM) {
+        if (b->GetWidth() <= 0 || b->GetHeight() <= 0 || b->GetWidth() > BOOTANIM_MAX_DIM ||
+            b->GetHeight() > BOOTANIM_MAX_DIM) {
             KDBG1("BootAnim: %s bad size %dx%d, set ends here", path, b->GetWidth(),
                   b->GetHeight());
             delete b;
@@ -303,7 +319,7 @@ static void CaptureFrameBg(GraphicsDriver* drv, int32_t bx, int32_t by) {
 static void DrawBootAnimFrame(GraphicsDriver* drv, uint32_t frameIdx) {
     BootAnimSet& s = g_bootAnimSet;
     if (s.count <= 0 || !s.frames || !s.bg) return;
-    InterruptGuard guard;  // atomic frame blit
+    InterruptGuard guard;  // Atomic frame blit.
     Bitmap* bmp = s.frames[frameIdx % s.count];
     if (!bmp || !bmp->IsValid()) return;
     uint32_t W = drv->GetWidth();
@@ -327,8 +343,7 @@ void BootTitleResync() {
     const bool useFrames = (g_bootAnimSet.count > 0);
     int32_t bx, by;
     if (useFrames) {
-        BootAnimBox(drv->GetWidth(), drv->GetHeight(), g_bootAnimSet.w, g_bootAnimSet.h, bx,
-                    by);
+        BootAnimBox(drv->GetWidth(), drv->GetHeight(), g_bootAnimSet.w, g_bootAnimSet.h, bx, by);
         if (g_bootAnimSet.bgValid) RestoreFrameBg(drv, bx, by);
     } else {
         BootDotsBox(drv->GetWidth(), drv->GetHeight(), bx, by);
@@ -345,8 +360,7 @@ void BootTitleResync() {
         }
     }
     if (useFrames) {
-        BootAnimBox(drv->GetWidth(), drv->GetHeight(), g_bootAnimSet.w, g_bootAnimSet.h, bx,
-                    by);
+        BootAnimBox(drv->GetWidth(), drv->GetHeight(), g_bootAnimSet.w, g_bootAnimSet.h, bx, by);
         CaptureFrameBg(drv, bx, by);
     } else {
         BootDotsBox(drv->GetWidth(), drv->GetHeight(), bx, by);

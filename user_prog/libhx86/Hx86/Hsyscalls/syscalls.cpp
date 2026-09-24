@@ -1,9 +1,25 @@
-/**
- * @file        syscalls.cpp
- * @brief       Hx86 System Call Implementation
+/*
+ * MIT License
  *
- * @date        01/02/2026
- * @version     1.0.0
+ * Copyright (c) 2025 Malaka Gunawardana
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
  */
 
 #include <Hx86/Hsyscalls/syscalls.h>
@@ -59,21 +75,21 @@ int32_t syscall_brk(int32_t increment) {
     int32_t current_brk;
     int32_t new_brk;
 
-    // Get current brk
+    // Get the current program break.
     asm volatile("int $0x80" : "=a"(current_brk) : "a"(sys_brk), "b"(0));
 
     if (increment == 0) {
         return current_brk;
     }
 
-    // Set new brk
+    // Set the new program break.
     asm volatile("int $0x80" : "=a"(new_brk) : "a"(sys_brk), "b"(current_brk + increment));
 
     if (new_brk == -1 || new_brk == current_brk) {
-        return -1;  // Failed to allocate
+        return -1;  // Failed to allocate.
     }
 
-    return current_brk;  // Return old program break on success
+    return current_brk;  // Return the old program break on success.
 }
 
 int32_t syscall_stat(const char* path, struct stat* statbuf) {

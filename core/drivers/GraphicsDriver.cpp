@@ -1,20 +1,47 @@
-/**
- * @file        GraphicsDriver.cpp
- * @brief       Graphics Driver Implementation
+/*
+ * MIT License
  *
- * @date        01/02/2026
- * @version     1.0.0
+ * Copyright (c) 2025 Malaka Gunawardana
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
  */
 
 #include <core/drivers/GraphicsDriver.h>
 
+/**
+ * GraphicsDriver::GraphicsDriver() - Set up a framebuffer-backed driver core.
+ * @w: Framebuffer width in pixels.
+ * @h: Framebuffer height in pixels.
+ * @b: Bytes per pixel (only stored; the buffer layout is fixed to 4 bytes).
+ * @vram: Pointer to the hardware framebuffer, or NULL.
+ *
+ * Allocates and clears the software back buffer, then precomputes the alpha
+ * blending table. The back buffer is filled directly instead of going through
+ * FillRectangle(), which needs the NINA renderer to exist.
+ */
 GraphicsDriver::GraphicsDriver(uint32_t w, uint32_t h, uint32_t b, uint32_t* vram) {
     this->width = w;
     this->height = h;
     this->bpp = b;
     this->videoMemory = vram;
 
-    // Validate framebuffer size before allocation
+    // Validate the framebuffer size before allocating.
     uint64_t pixel_count = (uint64_t)width * (uint64_t)height;
     if (width == 0 || height == 0 || pixel_count > (0xFFFFFFFFu / sizeof(uint32_t))) {
         HALT("CRITICAL: Invalid graphics dimensions!");
@@ -24,9 +51,9 @@ GraphicsDriver::GraphicsDriver(uint32_t w, uint32_t h, uint32_t b, uint32_t* vra
         HALT("CRITICAL: Failed to allocate graphics back buffer!\n");
     }
 
-    // Clear backbuffer directly — avoids dereferencing NINA::activeInstance
-    // (which may not exist yet) via FillRectangle.
-    uint32_t clearColor = 0xFF000000;  // Opaque black
+    // Clear the back buffer directly - FillRectangle() dereferences
+    // NINA::activeInstance, which does not exist yet at construction time.
+    uint32_t clearColor = 0xFF000000;  // Opaque black.
     for (uint64_t i = 0; i < pixel_count; i++) {
         backBuffer[i] = clearColor;
     }
@@ -38,6 +65,11 @@ GraphicsDriver::~GraphicsDriver() {
     if (backBuffer) delete[] backBuffer;
 }
 
+/**
+ * GraphicsDriver::Flush() - Copy the back buffer to video memory.
+ *
+ * No-op when either pointer is not available.
+ */
 void GraphicsDriver::Flush() {
     if (videoMemory && backBuffer) {
         uint64_t byte_count = (uint64_t)width * (uint64_t)height * sizeof(uint32_t);
@@ -45,6 +77,12 @@ void GraphicsDriver::Flush() {
     }
 }
 
+/**
+ * GraphicsDriver::PrecomputeAlphaTable() - Build the 8-bit alpha blend LUT.
+ *
+ * Fills alphaTable[alpha][color] with (color * alpha) / 255 for every
+ * combination, so PutPixel() and friends blend without per-pixel divides.
+ */
 void GraphicsDriver::PrecomputeAlphaTable() {
     for (int c = 0; c < 256; c++) {
         for (int a = 0; a < 256; a++) {
@@ -53,6 +91,16 @@ void GraphicsDriver::PrecomputeAlphaTable() {
     }
 }
 
+/**
+ * GraphicsDriver::PutPixel() - Blend one pixel into the back buffer.
+ * @x: Column on screen.
+ * @y: Row on screen.
+ * @colorIndex: 32-bit ARGB color.
+ *
+ * Fully opaque pixels overwrite the destination; translucent pixels are
+ * composited against the current back buffer value using the alpha LUT.
+ * Pixels outside the screen are ignored.
+ */
 void GraphicsDriver::PutPixel(int32_t x, int32_t y, uint32_t colorIndex) {
     if ((uint32_t)x >= width || (uint32_t)y >= height) return;
 
@@ -81,15 +129,24 @@ void GraphicsDriver::PutPixel(int32_t x, int32_t y, uint8_t a, uint8_t r, uint8_
     PutPixel(x, y, (a << 24) | (r << 16) | (g << 8) | b);
 }
 
+/**
+ * GraphicsDriver::DrawBitmap() - Draw a 32-bit ARGB bitmap, alpha-blended.
+ * @x, @y: Top-left screen position (may be off-screen).
+ * @bitmapData: Row-major ARGB pixels, bitmapWidth * bitmapHeight entries.
+ * @bitmapWidth, @bitmapHeight: Bitmap dimensions in pixels.
+ *
+ * Clips each row and column to the screen before drawing, and composites
+ * translucent pixels against the back buffer.
+ */
 void GraphicsDriver::DrawBitmap(int32_t x, int32_t y, const uint32_t* bitmapData,
                                 int32_t bitmapWidth, int32_t bitmapHeight) {
-    // Clip top and bottom
+    // Clip the vertical range to the screen.
     int32_t startRow = 0;
     int32_t endRow = bitmapHeight;
     if (y < 0) startRow = -y;
     if (y + bitmapHeight > this->height) endRow = this->height - y;
 
-    // Clip left and right
+    // Clip the horizontal range to the screen.
     int32_t startCol = 0;
     int32_t endCol = bitmapWidth;
     if (x < 0) startCol = -x;
@@ -193,7 +250,7 @@ void GraphicsDriver::DrawRoundedRectangleShadow(int32_t x, int32_t y, uint32_t w
             if (distanceSquared <= (shadowRadius * shadowRadius)) {
                 uint8_t alpha;
                 if (shadowRadius == 0) {
-                    alpha = shadowAlpha;  // No falloff: constant opacity
+                    alpha = shadowAlpha;  // No falloff: constant opacity.
                 } else {
                     alpha = alphaTable[shadowAlpha][255 - (distanceSquared * 255) /
                                                               (shadowRadius * shadowRadius)];
@@ -224,22 +281,22 @@ void GraphicsDriver::BlurRoundedRectangle(int32_t x, int32_t y, uint32_t w, uint
         return;
     }
 
-    // Temporary buffer for blurred pixels
+    // Allocate a temporary buffer for the blurred pixels.
     uint32_t* tempBuffer = new uint32_t[pixelCount];
     if (!tempBuffer) {
         return;
     }
 
-    // First pass: Compute blurred colors
+    // First pass: compute the blurred colors.
     for (int32_t dy = 0; dy < (int32_t)h; dy++) {
         for (int32_t dx = 0; dx < (int32_t)w; dx++) {
             int32_t px = x + dx;
             int32_t py = y + dy;
 
-            // Skip if outside screen bounds
+            // Skip pixels outside the screen bounds.
             if (px < 0 || py < 0 || px >= this->width || py >= this->height) continue;
 
-            // Check if the pixel is inside the rounded region
+            // Skip pixels outside the rounded region.
             int32_t distX = (dx < radius)                 ? radius - dx
                             : (dx >= (int32_t)w - radius) ? dx - ((int32_t)w - radius)
                                                           : 0;
@@ -248,42 +305,42 @@ void GraphicsDriver::BlurRoundedRectangle(int32_t x, int32_t y, uint32_t w, uint
                                                           : 0;
             int32_t dist = (distX * distX + distY * distY);
 
-            if (dist > radius * radius) continue;  // Skip corners
+            if (dist > radius * radius) continue;  // Skip the corners.
 
-            // Blur effect: Average nearby pixels, including alpha
+            // Blur: average the nearby pixels, including alpha.
             uint32_t red = 0, green = 0, blue = 0, alpha = 0, count = 0;
             for (int32_t blurY = -blurRadius; blurY <= blurRadius; blurY++) {
                 for (int32_t blurX = -blurRadius; blurX <= blurRadius; blurX++) {
                     int32_t nx = px + blurX;
                     int32_t ny = py + blurY;
 
-                    // Ensure pixel is within screen bounds
+                    // Average only the in-bounds neighbors.
                     if (nx >= 0 && ny >= 0 && nx < this->width && ny < this->height) {
                         uint32_t color = backBuffer[ny * this->width + nx];
                         red += (color >> 16) & 0xFF;
                         green += (color >> 8) & 0xFF;
                         blue += color & 0xFF;
-                        alpha += (color >> 24) & 0xFF;  // Preserve alpha
+                        alpha += (color >> 24) & 0xFF;  // Preserve alpha.
                         count++;
                     }
                 }
             }
 
-            // Store the blurred pixel in the temporary buffer
+            // Store the blurred pixel in the temporary buffer.
             if (count > 0) {
                 red = (red + count / 2) / count;
                 green = (green + count / 2) / count;
                 blue = (blue + count / 2) / count;
-                alpha = (alpha + count / 2) / count;  // Preserve averaged alpha
+                alpha = (alpha + count / 2) / count;  // Averaged alpha.
 
                 tempBuffer[dy * w + dx] = (alpha << 24) | (red << 16) | (green << 8) | blue;
             } else {
-                tempBuffer[dy * w + dx] = backBuffer[py * this->width + px];  // Keep original color
+                tempBuffer[dy * w + dx] = backBuffer[py * this->width + px];  // Keep original.
             }
         }
     }
 
-    // Second pass: Copy back blurred pixels using PutPixel()
+    // Second pass: write the blurred pixels back through PutPixel().
     for (int32_t dy = 0; dy < (int32_t)h; dy++) {
         for (int32_t dx = 0; dx < (int32_t)w; dx++) {
             int32_t px = x + dx;
@@ -291,7 +348,7 @@ void GraphicsDriver::BlurRoundedRectangle(int32_t x, int32_t y, uint32_t w, uint
 
             if (px < 0 || py < 0 || px >= this->width || py >= this->height) continue;
 
-            // Check if the pixel is inside the rounded region
+            // Skip pixels outside the rounded region.
             int32_t distX = (dx < radius)                 ? radius - dx
                             : (dx >= (int32_t)w - radius) ? dx - ((int32_t)w - radius)
                                                           : 0;
@@ -302,7 +359,7 @@ void GraphicsDriver::BlurRoundedRectangle(int32_t x, int32_t y, uint32_t w, uint
 
             if (dist > radius * radius) continue;
 
-            // Apply the blurred pixel using PutPixel() to respect alpha blending
+            // Write through PutPixel() so alpha blending applies.
             PutPixel(px, py, tempBuffer[dy * w + dx]);
         }
     }
@@ -353,18 +410,18 @@ void GraphicsDriver::DrawString(int32_t startX, int32_t startY, const char* str,
                                      str, font, colorIndex);
 }
 
-// --- Utility Functions ---
+// --- Utility functions ---
 void GraphicsDriver::GetScreenCenter(uint32_t w, uint32_t h, int32_t& x, int32_t& y) {
-    // Determine horizontal center
+    // Determine the horizontal center.
     if (w >= this->width) {
-        x = 0;  // Object is wider than screen, align left
+        x = 0;  // Object wider than the screen: align left.
     } else {
         x = (this->width - w) / 2;
     }
 
-    // Determine vertical center
+    // Determine the vertical center.
     if (h >= this->height) {
-        y = 0;  // Object is taller than screen, align top
+        y = 0;  // Object taller than the screen: align top.
     } else {
         y = (this->height - h) / 2;
     }

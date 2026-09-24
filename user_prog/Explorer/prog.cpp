@@ -1,9 +1,25 @@
-/**
- * @file        prog.cpp
- * @brief       Hashx86 File Explorer
+/*
+ * MIT License
  *
- * @date        22/02/2026
- * @version     1.0.0
+ * Copyright (c) 2025 Malaka Gunawardana
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
  */
 
 #include <Hx86/Hgui/Hgui.h>
@@ -20,10 +36,17 @@ static char currentPath[256] = "/";
 static ListViewItemData dirEntries[MAX_ENTRIES];
 static int dirEntryCount = 0;
 
-// Forward declarations
+// Forward declaration used by the global g_app pointer.
 class ExplorerApp;
 static ExplorerApp* g_app = nullptr;
 
+/**
+ * class ExplorerApp - File manager GUI for the Explorer program.
+ *
+ * Owns the window widgets (path label, status label, file list, and up,
+ * refresh and open toolbar buttons) and connects them to directory
+ * navigation and process-launch logic.
+ */
 class ExplorerApp {
 private:
     Window* mainWindow;
@@ -48,23 +71,23 @@ private:
 };
 
 ExplorerApp::ExplorerApp() {
-    // Window dimensions
+    // Window layout constants.
     const int32_t winW = 1000;
     const int32_t winH = 700;
-    const int32_t pad = 10;                     // Edge padding
-    const int32_t titleBarH = 28;               // Window title bar height
-    const int32_t contentW = winW - (pad * 2);  // Usable content width
-    const int32_t toolbarY = titleBarH + pad;   // Toolbar row Y
+    const int32_t pad = 10;                     // Edge padding.
+    const int32_t titleBarH = 28;               // Window title bar height.
+    const int32_t contentW = winW - (pad * 2);  // Usable content width.
+    const int32_t toolbarY = titleBarH + pad;   // Toolbar row Y.
     const int32_t toolbarH = 26;
-    const int32_t listY = toolbarY + toolbarH + pad;  // ListView Y
+    const int32_t listY = toolbarY + toolbarH + pad;  // ListView Y.
     const int32_t statusH = 18;
-    const int32_t statusY = winH - statusH - pad;  // Status bar at bottom
-    const int32_t listH = statusY - listY - pad;   // ListView fills remaining space
+    const int32_t statusY = winH - statusH - pad;  // Status bar at bottom.
+    const int32_t listH = statusY - listY - pad;   // ListView fills remaining space.
 
     mainWindow = new Window(desktop, 120, 300, winW, winH);
     mainWindow->setWindowTitle("Explorer");
 
-    // Toolbar buttons - left side
+    // Toolbar buttons on the left side.
     btnUp = new IconButton(mainWindow, pad, toolbarY, 64, toolbarH, "fa-arrow-left", "");
     btnUp->setIconFontSize(16);
     btnRefresh = new IconButton(mainWindow, pad + 72, toolbarY, 64, toolbarH, "fa-refresh", "");
@@ -72,20 +95,20 @@ ExplorerApp::ExplorerApp() {
     btnOpen = new IconButton(mainWindow, pad + 144, toolbarY, 64, toolbarH, "fa-folder-open", "");
     btnOpen->setIconFontSize(16);
 
-    // Path label spans beside the buttons
+    // Path label spans the remaining toolbar space beside the buttons.
     const int32_t btnEnd = pad + 144 + 64 + 6;
     pathLabel = new Label(mainWindow, btnEnd, toolbarY + 2, contentW - (btnEnd - pad), 20, "/");
     pathLabel->setSize(SMALL);
 
-    // File list view - fills the main content area
+    // File list view fills the main content area.
     fileList = new HListView(mainWindow, pad, listY, contentW, listH);
     fileList->SetHeader("Name");
 
-    // Status bar at bottom
+    // Status bar at the bottom.
     statusLabel = new Label(mainWindow, pad, statusY, contentW, statusH, "Ready");
     statusLabel->setSize(TINY);
 
-    // Add all children into the window
+    // Add all children to the window.
     mainWindow->AddChild(pathLabel);
     mainWindow->AddChild(btnUp);
     mainWindow->AddChild(btnRefresh);
@@ -93,7 +116,7 @@ ExplorerApp::ExplorerApp() {
     mainWindow->AddChild(fileList);
     mainWindow->AddChild(statusLabel);
 
-    // Set up button callbacks
+    // Wire up widget callbacks to the application methods.
     btnUp->OnClick(this, [](void* inst) { static_cast<ExplorerApp*>(inst)->navigateUp(); });
     btnRefresh->OnClick(this,
                         [](void* inst) { static_cast<ExplorerApp*>(inst)->refreshDirectory(); });
@@ -102,10 +125,19 @@ ExplorerApp::ExplorerApp() {
 
     mainWindow->show();
 
-    // Initial directory load
+    // Load the initial directory.
     refreshDirectory();
 }
 
+/**
+ * loadDirectory() - Populate dirEntries from a filesystem directory.
+ * @path: Absolute directory path to scan.
+ *
+ * Reads directory entries through syscall_getdents(), statting each entry for
+ * its size and type. Executables are recognized via isExecutable().
+ *
+ * Return: The number of entries loaded, or -1 if the path could not be opened.
+ */
 int ExplorerApp::loadDirectory(const char* path) {
     dirEntryCount = 0;
 
@@ -126,7 +158,7 @@ int ExplorerApp::loadDirectory(const char* path) {
             if (ent->d_name[0] != '\0') {
                 ListViewItemData& item = dirEntries[dirEntryCount];
 
-                // Copy name
+                // Copy the entry name, truncating at the 63-byte limit.
                 int j = 0;
                 while (ent->d_name[j] && j < 63) {
                     item.name[j] = ent->d_name[j];
@@ -134,7 +166,7 @@ int ExplorerApp::loadDirectory(const char* path) {
                 }
                 item.name[j] = 0;
 
-                // Stat the entry for size and type
+                // Stat the entry for its size and type.
                 char fullpath[256];
                 memset(fullpath, 0, sizeof(fullpath));
                 strcpy(fullpath, path);
@@ -143,14 +175,14 @@ int ExplorerApp::loadDirectory(const char* path) {
 
                 struct stat st;
                 item.size = 0;
-                item.type = 0;  // default: file
+                item.type = 0;  // Default: regular file.
 
                 if (syscall_stat(fullpath, &st) == 0) {
                     item.size = st.st_size;
                     if (st.st_mode & 0x4000) {
-                        item.type = 1;  // directory
+                        item.type = 1;  // Directory.
                     } else if (isExecutable(item.name)) {
-                        item.type = 2;  // executable
+                        item.type = 2;  // Executable.
                     }
                 }
 
@@ -164,10 +196,16 @@ int ExplorerApp::loadDirectory(const char* path) {
     return dirEntryCount;
 }
 
+/**
+ * isExecutable() - Test whether a name has a .BIN extension.
+ * @name: File name to test.
+ *
+ * Return: True when the final four characters are ".BIN" (case-insensitive).
+ */
 bool ExplorerApp::isExecutable(const char* name) {
     int len = strlen(name);
     if (len < 5) return false;
-    // Check for .BIN extension (case-insensitive)
+    // Check the .BIN extension (case-insensitive).
     char c1 = name[len - 3] | 0x20, c2 = name[len - 2] | 0x20, c3 = name[len - 1] | 0x20;
     if ((name[len - 4] == '.') && (c1 == 'b') && (c2 == 'i') && (c3 == 'n')) {
         return true;
@@ -184,7 +222,7 @@ void ExplorerApp::refreshDirectory() {
     if (count >= 0) {
         fileList->SetItems(dirEntries, dirEntryCount);
 
-        // Build status message
+        // Build the status message with the entry count.
         char statusMsg[64];
         memset(statusMsg, 0, sizeof(statusMsg));
         strcpy(statusMsg, "");
@@ -201,15 +239,15 @@ void ExplorerApp::refreshDirectory() {
 
 void ExplorerApp::navigateUp() {
     int len = strlen(currentPath);
-    if (len <= 1) return;  // Already at root
+    if (len <= 1) return;  // Already at the root.
 
-    // Remove trailing slash if any
+    // Remove a trailing slash, if any.
     if (currentPath[len - 1] == '/' && len > 1) {
         currentPath[len - 1] = 0;
         len--;
     }
 
-    // Find last slash
+    // Find the last directory separator.
     int lastSlash = 0;
     for (int i = len - 1; i >= 0; i--) {
         if (currentPath[i] == '/') {
@@ -238,12 +276,12 @@ void ExplorerApp::openSelected() {
     ListViewItemData& item = dirEntries[sel];
 
     if (item.type == 1) {
-        // Navigate into directory
+        // Descend into the directory.
         if (strlen(currentPath) > 1) strcat(currentPath, "/");
         strcat(currentPath, item.name);
         refreshDirectory();
     } else if (item.type == 2) {
-        // Launch executable
+        // Launch the executable.
         char fullpath[256];
         memset(fullpath, 0, sizeof(fullpath));
         strcpy(fullpath, currentPath);
@@ -258,7 +296,7 @@ void ExplorerApp::openSelected() {
             statusLabel->setText("Launch failed");
         }
     } else {
-        // Regular file - just show info
+        // Regular file - show its name as info.
         char info[64];
         memset(info, 0, sizeof(info));
         strcpy(info, item.name);
@@ -290,6 +328,13 @@ void ExplorerApp::handleEvent(uint32_t widgetID, uint32_t eventType) {
         onListClick();
 }
 
+/**
+ * _start() - Application entry point for the Explorer file manager.
+ * @arg: Program arguments passed by the loader.
+ *
+ * Initializes the system and graphics, then constructs the ExplorerApp, which
+ * builds the window. Returns leaving the GUI event loop to run.
+ */
 extern "C" void _start(void* arg) {
     init_sys(arg);
     init_graphics();

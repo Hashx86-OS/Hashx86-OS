@@ -1,13 +1,29 @@
-/**
- * @file        CrashReporter.cpp
- * @brief       Kernel-side crash reporting orchestration
+/*
+ * MIT License
  *
- * @date        11/03/2026
- * @version     1.0.0
+ * Copyright (c) 2025 Malaka Gunawardana
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
  */
 
-#include <core/filesystem/Paths.h>
 #include <core/CrashReporter.h>
+#include <core/filesystem/Paths.h>
 
 #include <gui/desktop.h>
 #include <gui/infodialog.h>
@@ -17,6 +33,12 @@
 namespace {
 InfoDialog* g_crashDialog = nullptr;
 
+/**
+ * GetExceptionName() - Map an exception vector to a human-readable name.
+ * @exceptionNumber: CPU exception vector that fired.
+ *
+ * Return: A static, never-freed string naming the exception.
+ */
 const char* GetExceptionName(uint8_t exceptionNumber) {
     switch (exceptionNumber) {
         case 0x00:
@@ -37,16 +59,32 @@ const char* GetExceptionName(uint8_t exceptionNumber) {
 }
 }  // namespace
 
+/**
+ * ShowUserCrashDialog() - Show a crash diagnostic dialog for a thread.
+ * @pid: Process identifier of the crashing thread.
+ * @tid: Thread identifier of the crashing thread.
+ * @exceptionNumber: CPU exception vector that fired.
+ * @errorCode: CPU error code pushed with the exception.
+ * @eip: Instruction pointer where the exception occurred.
+ * @cr2: CR2 value captured for a page fault, or 0 otherwise.
+ * @tickSnapshot: Timer tick captured at crash time (reserved for future use).
+ *
+ * Reuses a single kernel-owned InfoDialog instance (PID 0, so app cleanup
+ * never tears it down) and refreshes its content with the failing thread's
+ * state.
+ *
+ * Context: Called from the exception handler path.
+ */
 void CrashReporter::ShowUserCrashDialog(uint32_t pid, uint32_t tid, uint8_t exceptionNumber,
                                         uint32_t errorCode, uint32_t eip, uint32_t cr2,
                                         uint32_t tickSnapshot) {
-    (void)tickSnapshot;  // Reserved for future use / kept for ABI compatibility
+    (void)tickSnapshot;  // Reserved for future use, kept for ABI compatibility.
     Desktop* desktop = Desktop::activeInstance;
     if (!desktop) return;
 
     if (!g_crashDialog) {
-        g_crashDialog = new InfoDialog(
-            desktop);  // Need to use a syscall to remove the widget properly when press okay
+        // The dialog is removed via a syscall when the user presses OK.
+        g_crashDialog = new InfoDialog(desktop);
         if (!g_crashDialog) {
             HALT("CRITICAL: Failed to allocate crash info dialog!\n");
         }
@@ -56,7 +94,7 @@ void CrashReporter::ShowUserCrashDialog(uint32_t pid, uint32_t tid, uint8_t exce
         desktop->AddChild(g_crashDialog);
     }
 
-    // Assign a fresh widget ID so FindWidgetByID works, but keep PID=0
+    // Assign a fresh widget ID so FindWidgetByID works, but keep PID 0
     // (kernel-owned) so RemoveAppByPID does not tear down the dialog.
     g_crashDialog->SetID(desktop->getNewID());
 

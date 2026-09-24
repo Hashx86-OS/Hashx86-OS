@@ -1,14 +1,30 @@
-/**
- * @file        Hgui.cpp
- * @brief       Hgui Handler (part of #x86 GUI Framework)
+/*
+ * MIT License
  *
- * @date        11/02/2026
- * @version     1.0.0
+ * Copyright (c) 2025 Malaka Gunawardana
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
  */
 
 #define KDBG_COMPONENT "GUI"
-#include <core/globals.h>
 #include <core/Iguard.h>
+#include <core/globals.h>
 #include <gui/Hgui.h>
 
 namespace {
@@ -66,7 +82,7 @@ bool ValidateUserPointer(ProcessControlBlock* proc, const void* ptr, size_t len)
     uint32_t addr = (uint32_t)ptr;
     if (addr < USER_LOWER_BOUND) return false;
     uint32_t end = addr + (uint32_t)len - 1;
-    if (end < addr) return false;  // wraparound
+    if (end < addr) return false;  // Address wraparound.
     return IsUserRange(proc, addr, len);
 }
 
@@ -193,14 +209,14 @@ int32_t HguiHandler::HandleWidget(CPUState* cpu, const WidgetData* _data) {
         Widget* childWidget = this->FindWidgetByID(_data->param1);
         if (!childWidget) return -1;
 
-        // PID ownership: caller must own child; parent must be owned by caller or be desktop
-        // (ID==0)
+        // PID ownership: the caller must own the child; the parent must be owned by
+        // the caller or be the desktop (ID==0).
         if (childWidget->PID != proc->pid) return -1;
         if (parentWidget->PID != proc->pid && parentWidget->ID != 0) return -1;
 
         parentWidget->AddChild(childWidget);
 
-        // If adding a window to the Desktop, create a taskbar tab
+        // Adding a window to the Desktop creates a taskbar tab.
         if (parentWidget->ID == 0) {
             Desktop* desktop = Desktop::activeInstance;
             if (desktop && desktop->GetTaskbar()) {
@@ -219,9 +235,9 @@ int32_t HguiHandler::HandleWidget(CPUState* cpu, const WidgetData* _data) {
     } else if ((uint32_t)cpu->ebx == DELETE) {
         Widget* target = this->FindWidgetByID(_data->param1);
         if (!target) return 1;
-        if (target->PID != proc->pid) return -1;  // caller must own the widget
+        if (target->PID != proc->pid) return -1;  // The caller must own the widget.
 
-        // Remove any taskbar tab referencing this widget's window before freeing it
+        // Remove any taskbar tab referencing this widget's window before freeing it.
         if (Desktop::activeInstance && Desktop::activeInstance->GetTaskbar()) {
             Widget* win = target;
             while (win && !win->IsWindow()) win = win->parent;
@@ -229,7 +245,7 @@ int32_t HguiHandler::HandleWidget(CPUState* cpu, const WidgetData* _data) {
                 Desktop::activeInstance->GetTaskbar()->RemoveTabByWindow(win);
             }
         }
-        // Walk descendant tree and remove every descendant from HguiWidgets
+        // Walk the descendant tree and remove every descendant from HguiWidgets.
         {
             LinkedList<Widget*> toRemove;
             toRemove.PushBack(target);
@@ -239,7 +255,7 @@ int32_t HguiHandler::HandleWidget(CPUState* cpu, const WidgetData* _data) {
                 HguiWidgets.Remove([&](Widget* c) { return c->ID == cur->ID; });
             }
         }
-        // Detach from parent and destroy the widget
+        // Detach from the parent and destroy the widget.
         if (target->parent) {
             target->parent->RemoveChild(target);
         }
@@ -298,8 +314,7 @@ int32_t HguiHandler::HandleButton(CPUState* cpu, const WidgetData* _data) {
 
     if ((uint32_t)cpu->ebx == CREATE) {
         Widget* parentBase = this->FindWidgetByID(_data->param0);
-        if (!parentBase || !parentBase->IsComposite())
-            return -1;  // Minor structural fix for bitwise vs Logical or originally
+        if (!parentBase || !parentBase->IsComposite()) return -1;
         CompositeWidget* parentWidget = static_cast<CompositeWidget*>(parentBase);
         if (parentWidget->ID == 0) return -1;
 
@@ -388,11 +403,11 @@ int32_t HguiHandler::HandleIconButton(CPUState* cpu, const WidgetData* _data) {
         uint32_t _newID = this->getNewID();
         Widget* _widget;
         if (labelBuf[0] != '\0') {
-            _widget = new IconButton(parentWidget, _data->param1, _data->param2,
-                                     _data->param3, _data->param4, iconBuf, labelBuf);
+            _widget = new IconButton(parentWidget, _data->param1, _data->param2, _data->param3,
+                                     _data->param4, iconBuf, labelBuf);
         } else {
-            _widget = new IconButton(parentWidget, _data->param1, _data->param2,
-                                     _data->param3, _data->param4, iconBuf);
+            _widget = new IconButton(parentWidget, _data->param1, _data->param2, _data->param3,
+                                     _data->param4, iconBuf);
         }
         if (!_widget) {
             HALT("CRITICAL: Failed to allocate IconButton widget!\n");
@@ -403,34 +418,40 @@ int32_t HguiHandler::HandleIconButton(CPUState* cpu, const WidgetData* _data) {
         HguiWidgets.Add(_widget);
         return (int32_t)_newID;
     } else if ((uint32_t)cpu->ebx == SET_ICON) {
-        IconButton* widget = FindOwnedWidget<IconButton>(_data->param0, proc->pid, &Widget::IsIconButton);
+        IconButton* widget =
+            FindOwnedWidget<IconButton>(_data->param0, proc->pid, &Widget::IsIconButton);
         if (!widget) return -1;
         if (!CopyUserString(proc, _data->param5, iconBuf, sizeof(iconBuf))) return -1;
         widget->SetIcon(iconBuf);
         return 1;
     } else if ((uint32_t)cpu->ebx == SET_TEXT) {
-        IconButton* widget = FindOwnedWidget<IconButton>(_data->param0, proc->pid, &Widget::IsIconButton);
+        IconButton* widget =
+            FindOwnedWidget<IconButton>(_data->param0, proc->pid, &Widget::IsIconButton);
         if (!widget) return -1;
         if (!CopyUserString(proc, _data->param5, labelBuf, sizeof(labelBuf))) return -1;
         widget->SetLabel(labelBuf);
         return 1;
     } else if ((uint32_t)cpu->ebx == SET_FONT_SIZE) {
-        IconButton* widget = FindOwnedWidget<IconButton>(_data->param0, proc->pid, &Widget::IsIconButton);
+        IconButton* widget =
+            FindOwnedWidget<IconButton>(_data->param0, proc->pid, &Widget::IsIconButton);
         if (!widget) return -1;
         widget->SetFontSize((int32_t)_data->param1);
         return 1;
     } else if ((uint32_t)cpu->ebx == SET_ICON_FONT_SIZE) {
-        IconButton* widget = FindOwnedWidget<IconButton>(_data->param0, proc->pid, &Widget::IsIconButton);
+        IconButton* widget =
+            FindOwnedWidget<IconButton>(_data->param0, proc->pid, &Widget::IsIconButton);
         if (!widget) return -1;
         widget->SetIconFontSize((int32_t)_data->param1);
         return 1;
     } else if ((uint32_t)cpu->ebx == SET_WIDTH) {
-        IconButton* widget = FindOwnedWidget<IconButton>(_data->param0, proc->pid, &Widget::IsIconButton);
+        IconButton* widget =
+            FindOwnedWidget<IconButton>(_data->param0, proc->pid, &Widget::IsIconButton);
         if (!widget) return -1;
         widget->SetIconWidth((int32_t)_data->param1);
         return 1;
     } else if ((uint32_t)cpu->ebx == SET_HEIGHT) {
-        IconButton* widget = FindOwnedWidget<IconButton>(_data->param0, proc->pid, &Widget::IsIconButton);
+        IconButton* widget =
+            FindOwnedWidget<IconButton>(_data->param0, proc->pid, &Widget::IsIconButton);
         if (!widget) return -1;
         widget->SetIconHeight((int32_t)_data->param1);
         return 1;
@@ -538,7 +559,7 @@ int32_t HguiHandler::HandleListView(CPUState* cpu, const WidgetData* _data) {
         HguiWidgets.Add(_widget);
         return (int32_t)_newID;
     } else if ((uint32_t)cpu->ebx == SET_ITEMS) {
-        // param0 = widgetID, param5 = pointer to ListViewItemData array, param1 = count
+        // param0 = widgetID, param5 = pointer to the ListViewItemData array, param1 = count.
         ListView* widget = FindOwnedWidget<ListView>(_data->param0, proc->pid, &Widget::IsListView);
         if (!widget) return -1;
 
@@ -618,7 +639,8 @@ int32_t HguiHandler::HandleTerminalView(CPUState* cpu, const WidgetData* _data) 
         // Use a larger heap buffer for terminal text — CLI apps can produce
         // output far exceeding the 256-byte MAX_USER_TEXT stack buffer.
         constexpr size_t MAX_TERMINAL_TEXT = 8192;
-        TerminalView* widget = FindOwnedWidget<TerminalView>(_data->param0, proc->pid, &Widget::IsTerminalView);
+        TerminalView* widget =
+            FindOwnedWidget<TerminalView>(_data->param0, proc->pid, &Widget::IsTerminalView);
         if (!widget) return -1;
         char* textBuf = (char*)kmalloc(MAX_TERMINAL_TEXT);
         if (!textBuf) return -1;
@@ -630,17 +652,20 @@ int32_t HguiHandler::HandleTerminalView(CPUState* cpu, const WidgetData* _data) 
         kfree(textBuf);
         return 1;
     } else if ((uint32_t)cpu->ebx == SET_FONT_SIZE) {
-        TerminalView* widget = FindOwnedWidget<TerminalView>(_data->param0, proc->pid, &Widget::IsTerminalView);
+        TerminalView* widget =
+            FindOwnedWidget<TerminalView>(_data->param0, proc->pid, &Widget::IsTerminalView);
         if (!widget) return -1;
         widget->setSize((FontSize)_data->param1);
         return 1;
     } else if ((uint32_t)cpu->ebx == SET_SCROLL_META) {
-        TerminalView* widget = FindOwnedWidget<TerminalView>(_data->param0, proc->pid, &Widget::IsTerminalView);
+        TerminalView* widget =
+            FindOwnedWidget<TerminalView>(_data->param0, proc->pid, &Widget::IsTerminalView);
         if (!widget) return -1;
         widget->setScrollMeta((int)_data->param1, (int)_data->param2, (int)_data->param3);
         return 1;
     } else if ((uint32_t)cpu->ebx == GET_SCROLL_ACTION) {
-        TerminalView* widget = FindOwnedWidget<TerminalView>(_data->param0, proc->pid, &Widget::IsTerminalView);
+        TerminalView* widget =
+            FindOwnedWidget<TerminalView>(_data->param0, proc->pid, &Widget::IsTerminalView);
         if (!widget) return -1;
         return widget->consumeScrollAction();
     }

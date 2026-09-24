@@ -1,9 +1,25 @@
-/**
- * @file        label.cpp
- * @brief       Label Component (part of #x86 GUI Framework)
+/*
+ * MIT License
  *
- * @date        01/02/2026
- * @version     1.0.0
+ * Copyright (c) 2025 Malaka Gunawardana
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
  */
 
 #define KDBG_COMPONENT "GUI:LABEL"
@@ -24,7 +40,7 @@ Label::Label(Widget* parent, int32_t x, int32_t y, int32_t w, int32_t h, const c
 Label::~Label() {
     delete[] text;
     if (font) delete font;
-    // cache deleted by ~Widget
+    // Cache deleted by ~Widget.
 }
 
 void Label::setText(const char* newText) {
@@ -67,7 +83,7 @@ void Label::RedrawToCache() {
         return;
     }
 
-    // Fill background if non-transparent
+    // Fill the background if non-transparent.
     if (bgColor != 0 && NINA::activeInstance) {
         NINA::activeInstance->FillRectangle(cache, w, h, 0, 0, w, h, bgColor);
     } else {
@@ -82,14 +98,24 @@ void Label::RedrawToCache() {
         int yOff = 2;
 
         switch (hAlign) {
-            case CENTER: xOff = (w - textW) / 2; break;
-            case RIGHT:  xOff = w - textW - 2; break;
-            default: break;
+            case CENTER:
+                xOff = (w - textW) / 2;
+                break;
+            case RIGHT:
+                xOff = w - textW - 2;
+                break;
+            default:
+                break;
         }
         switch (vAlign) {
-            case MIDDLE: yOff = (h - textH) / 2; break;
-            case BOTTOM: yOff = h - textH - 2; break;
-            default: break;
+            case MIDDLE:
+                yOff = (h - textH) / 2;
+                break;
+            case BOTTOM:
+                yOff = h - textH - 2;
+                break;
+            default:
+                break;
         }
 
         NINA::activeInstance->DrawString(cache, w, h, xOff, yOff, text, font, textColor);
@@ -114,7 +140,8 @@ void Label::Recalc() {
                 cache = nullptr;
                 if (w > 0 && h > 0) {
                     size_t count = (size_t)w * (size_t)h;
-                    if (count / (size_t)w != (size_t)h || count > (0xFFFFFFFFu / sizeof(uint32_t))) {
+                    if (count / (size_t)w != (size_t)h ||
+                        count > (0xFFFFFFFFu / sizeof(uint32_t))) {
                         HALT("CRITICAL: Label dimensions overflow in Recalc!\n");
                     }
                     cache = new uint32_t[count]();
@@ -136,7 +163,8 @@ void Label::Recalc() {
                 cache = nullptr;
                 if (w > 0 && h > 0) {
                     size_t count = (size_t)w * (size_t)h;
-                    if (count / (size_t)w != (size_t)h || count > (0xFFFFFFFFu / sizeof(uint32_t))) {
+                    if (count / (size_t)w != (size_t)h ||
+                        count > (0xFFFFFFFFu / sizeof(uint32_t))) {
                         HALT("CRITICAL: Label dimensions overflow in Recalc!\n");
                     }
                     cache = new uint32_t[count]();

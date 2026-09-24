@@ -1,13 +1,29 @@
-/**
- * @file        debug.cpp
- * @brief       Debug
+/*
+ * MIT License
  *
- * @date        17/01/2025
- * @version     1.0.0
+ * Copyright (c) 2025 Malaka Gunawardana
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
  */
 
-#include <Hx86/debug.h>
 #include <Hx86/Hx86.h>
+#include <Hx86/debug.h>
 
 void vprintf(const char* format, va_list args);
 
@@ -18,7 +34,7 @@ void printf(const char* format, ...) {
     va_end(args);
 }
 
-// Helper to write to a buffer
+// Helper to write a single character to the output buffer.
 void buffer_char(char* buffer, int* pIndex, int maxLen, char c) {
     if (*pIndex < maxLen - 1) {
         buffer[(*pIndex)++] = c;
@@ -26,7 +42,7 @@ void buffer_char(char* buffer, int* pIndex, int maxLen, char c) {
 }
 
 void vprintf(const char* format, va_list args) {
-    char output[256];  // Stack buffer
+    char output[256];  // Stack buffer.
     int idx = 0;
 
     for (int i = 0; format[i] != '\0'; i++) {
@@ -51,7 +67,7 @@ void vprintf(const char* format, va_list args) {
                     }
                     if (neg) tmp[--tIdx] = '-';
 
-                    // Copy tmp to main buffer
+                    // Copy tmp to the main buffer.
                     for (int k = tIdx; tmp[k]; k++) buffer_char(output, &idx, 256, tmp[k]);
                     break;
                 }
@@ -77,7 +93,7 @@ void vprintf(const char* format, va_list args) {
                     for (int k = tIdx; tmp[k]; k++) buffer_char(output, &idx, 256, tmp[k]);
                     break;
                 }
-                // Add other cases (u, c, etc) here...
+                // Add other cases (u, c, etc.) here.
                 default:
                     break;
             }
@@ -86,7 +102,7 @@ void vprintf(const char* format, va_list args) {
         }
     }
 
-    output[idx] = '\0';  // Null terminate
+    output[idx] = '\0';  // Null-terminate the buffer.
 
     // Write through stdout; fallback to debug syscall if stdio is unavailable.
     if (idx > 0) {
@@ -101,19 +117,19 @@ void vprintf(const char* format, va_list args) {
 }
 
 void DebugPrintf(const char* tag, const char* format, ...) {
-    printf("%s:", tag);  // Print the tag and colon
+    printf("%s:", tag);  // Print the tag and colon.
 
     va_list args;
     va_start(args, format);
-    vprintf(format, args);  // Use vprintf to handle `va_list`
+    vprintf(format, args);  // Use vprintf to handle a va_list.
     va_end(args);
-    printf("\n");  // Print the newline chr
+    printf("\n");  // Print the trailing newline.
 }
 
 void Printf(const char* tag, const char* format, ...) {
-    printf("%s:", tag);  // Print the tag and colon
+    printf("%s:", tag);  // Print the tag and colon.
     va_list args;
     va_start(args, format);
-    vprintf(format, args);  // Use vprintf to handle `va_list`
+    vprintf(format, args);  // Use vprintf to handle a va_list.
     va_end(args);
 }

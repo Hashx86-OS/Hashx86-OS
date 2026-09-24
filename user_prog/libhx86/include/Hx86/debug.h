@@ -1,3 +1,27 @@
+/*
+ * MIT License
+ *
+ * Copyright (c) 2025 Malaka Gunawardana
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
+ */
+
 #ifndef DEBUG_H
 #define DEBUG_H
 
@@ -5,46 +29,28 @@
 #include <Hx86/types.h>
 #include <stdarg.h>
 
-/**
- * @brief Macro for logging debug messages with a consistent format.
+/** DEBUG_LOG(format, ...) - Log a debug message with a consistent prefix.
+ * @format: printf-style format string.
+ * @...: Additional arguments for the format string.
  *
- * Logs debug messages prefixed with "[DEBUG]". Accepts a format string and
- * optional arguments to customize the message.
- *
- * @param format Format string for the debug message.
- * @param ... Additional arguments for the format string.
+ * Logs a message prefixed with "[DEBUG]".
  */
 #define DEBUG_LOG(format, ...) DebugPrintf("[DEBUG]", format, ##__VA_ARGS__)
 
-/**
- * @brief Macro for printing messages from modules with a consistent format.
- *
- * Logs messages prefixed with the specified `tag`. The text is displayed in
- * light blue color by default.
- *
- * @param tag The tag identifying the module or context of the message.
- * @param format Format string for the message.
- * @param ... Additional arguments for the format string.
+/** PRINT(tag, format, ...) - Print a tagged message from a module.
+ * @tag: String identifying the module or context of the message.
+ * @format: printf-style format string.
+ * @...: Additional arguments for the format string.
  */
 #define PRINT(tag, format, ...) Printf(tag, format, ##__VA_ARGS__)
 
-/**
- * @brief Prints debug messages with a specific tag and format.
- *
- * Logs debug messages prefixed with a tag. Useful for debugging purposes.
- *
- * @param tag The tag identifying the source of the debug message.
- * @param format Format string for the message.
- * @param ... Additional arguments for the format string.
- */
-
-// printf Function for serial monitor
+// printf() writes to stdout for the serial monitor.
 void printf(const char* format, ...);
 
-// Simple Debug Wrapper Function
+// DebugPrintf() prints a message prefixed with a debug tag.
 void DebugPrintf(const char* tag, const char* format, ...);
 
-// Simple Printf Wrapper Function
+// Printf() prints a message prefixed with a module tag.
 void Printf(const char* tag, const char* format, ...);
 
 #endif  // DEBUG_H

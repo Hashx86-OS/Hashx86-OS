@@ -1,9 +1,25 @@
-/**
- * @file        Desktop.cpp
- * @brief       Desktop (part of #x86 GUI Framework)
+/*
+ * MIT License
  *
- * @date        10/02/2025
- * @version     1.0.0-beta
+ * Copyright (c) 2025 Malaka Gunawardana
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
  */
 
 #include <Hx86/Hgui/desktop.h>
@@ -15,7 +31,8 @@ static volatile uint32_t g_focusedWidgetID = 0;
 void Desktop::RestoreFocus() {
     if (g_focusedWidgetID != 0) return;
     childrenList.ForEach([&](Widget* c) {
-        if (g_focusedWidgetID == 0 && (c->onKeyPressPtr || (c->onKeyPressMemberPtr && c->keyCallbackInstance))) {
+        if (g_focusedWidgetID == 0 &&
+            (c->onKeyPressPtr || (c->onKeyPressMemberPtr && c->keyCallbackInstance))) {
             g_focusedWidgetID = c->ID;
         }
     });
@@ -71,7 +88,6 @@ void EventHandlerHGUI(void* arg) {
         if (ret >= 0) {
             uint32_t widgetID = (ret >> 16);
             EVENT_TYPE event = (EVENT_TYPE)(ret & 0xFFFF);
-            // printf("Widget Id : %d, Event Id : %d\n", widgetID, event);
 
             switch (event) {
                 case ON_WINDOW_CLOSE:
@@ -100,10 +116,11 @@ void EventHandlerHGUI(void* arg) {
                         g_focusedWidgetID = widgetID;
 
                         if (tmpWidget->onClickPtr) {
-                            tmpWidget->onClickPtr();  // Call non-member function
+                            tmpWidget->onClickPtr();  // Call the non-member callback.
                         } else if (tmpWidget->onClickMemberPtr && tmpWidget->callbackInstance) {
                             tmpWidget->onClickMemberPtr(
-                                tmpWidget->callbackInstance);  // Call member function via instance
+                                tmpWidget
+                                    ->callbackInstance);  // Call the member callback via instance.
                         }
                     }
 

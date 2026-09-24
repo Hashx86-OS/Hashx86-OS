@@ -1,9 +1,25 @@
-/**
- * @file        syscalls.cpp
- * @brief       System Calls Interface for #x86
+/*
+ * MIT License
  *
- * @date        20/01/2026
- * @version     1.0.0-beta
+ * Copyright (c) 2025 Malaka Gunawardana
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
  */
 
 #define KDBG_COMPONENT "SYSCALL"
@@ -18,6 +34,14 @@
 
 namespace {
 
+/**
+ * PushProcessStdin() - Push a character onto a process's stdin queue.
+ * @process: Target process.
+ * @c: Character to enqueue.
+ *
+ * If the queue is full, the oldest entry is dropped to preserve the most
+ * recent input.
+ */
 bool PushProcessStdin(ProcessControlBlock* process, char c) {
     if (!process) return false;
 
@@ -36,6 +60,13 @@ bool PushProcessStdin(ProcessControlBlock* process, char c) {
     return true;
 }
 
+/**
+ * PopProcessStdin() - Pop a character from a process's stdin queue.
+ * @process: Target process.
+ * @out: Receives the dequeued character.
+ *
+ * Return: true on success, false when the queue is empty.
+ */
 bool PopProcessStdin(ProcessControlBlock* process, char* out) {
     if (!process || !out) return false;
 
@@ -48,6 +79,10 @@ bool PopProcessStdin(ProcessControlBlock* process, char* out) {
     return true;
 }
 
+/**
+ * ClearProcessStdin() - Reset a process's stdin queue to empty.
+ * @process: Target process.
+ */
 void ClearProcessStdin(ProcessControlBlock* process) {
     if (!process) return;
 
@@ -56,6 +91,12 @@ void ClearProcessStdin(ProcessControlBlock* process) {
     process->stdinTail = 0;
 }
 
+/**
+ * CleanupExitedProcessGui() - Release GUI resources held by a terminated process.
+ * @pid: PID of the exited process.
+ * @status: Exit status.
+ * @sourceTag: Caller tag used in debug messages.
+ */
 void CleanupExitedProcessGui(uint32_t pid, uint32_t status, const char* sourceTag) {
     if (!pid) return;
 
@@ -81,6 +122,14 @@ void CleanupExitedProcessGui(uint32_t pid, uint32_t status, const char* sourceTa
 constexpr uint32_t USER_LOWER_BOUND = 0x10000000;
 constexpr uint32_t USER_UPPER_BOUND = 0xC0000000;
 
+/**
+ * IsUserRange() - Check that a range lies entirely in mapped user space.
+ * @proc: Target process.
+ * @addr: Start address.
+ * @size: Range size in bytes.
+ *
+ * Return: true when every page covering the range is mapped in user space.
+ */
 bool IsUserRange(ProcessControlBlock* proc, uint32_t addr, size_t size) {
     if (!proc || !g_paging || size == 0) return false;
     if (addr < USER_LOWER_BOUND) return false;
@@ -97,6 +146,15 @@ bool IsUserRange(ProcessControlBlock* proc, uint32_t addr, size_t size) {
     return true;
 }
 
+/**
+ * CopyToUser() - Copy a kernel buffer into a process's user address space.
+ * @proc: Target process.
+ * @dst_user: User-space destination address.
+ * @src: Kernel source buffer.
+ * @size: Number of bytes to copy.
+ *
+ * Return: true on success.
+ */
 bool CopyToUser(ProcessControlBlock* proc, void* dst_user, const void* src, size_t size) {
     if (!dst_user || !src || size == 0) return false;
     uint32_t user_addr = (uint32_t)dst_user;
@@ -118,6 +176,15 @@ bool CopyToUser(ProcessControlBlock* proc, void* dst_user, const void* src, size
     return true;
 }
 
+/**
+ * CopyFromUser() - Copy from a process's user address space into a kernel buffer.
+ * @proc: Target process.
+ * @dst: Kernel destination buffer.
+ * @src_user: User-space source address.
+ * @size: Number of bytes to copy.
+ *
+ * Return: true on success.
+ */
 bool CopyFromUser(ProcessControlBlock* proc, void* dst, const void* src_user, size_t size) {
     if (!dst || !src_user || size == 0) return false;
     uint32_t user_addr = (uint32_t)src_user;
@@ -139,8 +206,18 @@ bool CopyFromUser(ProcessControlBlock* proc, void* dst, const void* src_user, si
     return true;
 }
 
-// Bounded NUL-terminated user string copy: reads up to dst_size-1 bytes,
-// stops at first NUL, always NUL-terminates dst. Returns true on success.
+/**
+ * CopyUserString() - Bounded NUL-terminated copy of a user string into a kernel buffer.
+ * @proc: Target process.
+ * @src_user: User-space source string.
+ * @dst: Kernel destination buffer.
+ * @dst_size: Capacity of @dst.
+ *
+ * Reads up to dst_size-1 bytes, stops at the first NUL, and always
+ * NUL-terminates dst.
+ *
+ * Return: true on success.
+ */
 bool CopyUserString(ProcessControlBlock* proc, const char* src_user, char* dst, size_t dst_size) {
     if (!dst || dst_size == 0) return false;
     if (!src_user) {
@@ -181,7 +258,7 @@ SyscallHandler::~SyscallHandler() {}
 uint32_t SyscallHandler::HandleInterrupt(uint32_t esp) {
     CPUState* cpu = (CPUState*)esp;
 
-    // Linux standard x86:
+    // Linux standard x86 syscall ABI:
     // eax = syscall number
     // ebx = arg1
     // ecx = arg2
@@ -199,7 +276,7 @@ uint32_t SyscallHandler::HandleInterrupt(uint32_t esp) {
 
         case sys_exit:
             SyscallHandlers::Handle_sys_exit(cpu->ebx);
-            // The current thread is now terminated — reschedule immediately
+            // The current thread is now terminated - reschedule immediately
             // rather than returning to dead user code.
             if (Scheduler::activeInstance) {
                 cpu = Scheduler::activeInstance->Schedule(cpu);
@@ -210,7 +287,7 @@ uint32_t SyscallHandler::HandleInterrupt(uint32_t esp) {
 
         case sys_exit_group:
             SyscallHandlers::Handle_sys_exit_group(cpu->ebx);
-            // The entire process is now dead — reschedule immediately
+            // The entire process is now dead - reschedule immediately
             // rather than returning to dead user code.
             if (Scheduler::activeInstance) {
                 cpu = Scheduler::activeInstance->Schedule(cpu);
@@ -298,15 +375,16 @@ uint32_t SyscallHandler::HandleInterrupt(uint32_t esp) {
 int32_t SyscallHandlers::Handle_sys_restart_syscall() {
     KDBG1("sys_restart\n");
 
-    // Use a triple fault to restart the system (Not the best way, but for now this is good :) )
+    // Triple-fault the CPU to force a system restart. Not the cleanest
+    // approach, but acceptable for now.
     struct {
         uint16_t limit;
         uint32_t base;
     } __attribute__((packed)) nullIdtr = {0, 0};
     asm volatile(
         "cli;"
-        "lidt %0;"  // Load null IDT (limit=0, base=0)
-        "int3;"     // Trigger an interrupt -> triple fault -> CPU reset
+        "lidt %0;"  // Load null IDT (limit=0, base=0).
+        "int3;"     // Trigger an interrupt -> triple fault -> CPU reset.
         ::"m"(nullIdtr));
     return 0;
 }
@@ -315,17 +393,17 @@ int32_t SyscallHandlers::Handle_sys_exit(uint32_t status) {
     Scheduler* sched = Scheduler::activeInstance;
     if (!sched) return -1;
 
-    // Save PID before ExitCurrentThread potentially destroys the process
+    // Save PID before ExitCurrentThread potentially destroys the process.
     ProcessControlBlock* process = sched->GetCurrentProcess();
     uint32_t pid = process ? process->pid : 0;
 
     bool processKilled = sched->ExitCurrentThread();
 
-    // Clean up GUI resources only if the entire process was terminated
+    // Clean up GUI resources only if the entire process was terminated.
     if (processKilled && pid) {
         CleanupExitedProcessGui(pid, status, "sys_exit");
     }
-    return 0;  // Technically never returns
+    return 0;  // Technically never returns.
 }
 
 int32_t SyscallHandlers::Handle_sys_exit_group(uint32_t status) {
@@ -352,7 +430,7 @@ int32_t SyscallHandlers::Handle_sys_read(uint32_t fd, char* buf, uint32_t count)
     ProcessControlBlock* process = Scheduler::activeInstance->GetCurrentProcess();
     if (!process) return -1;
 
-    // Validate Buffer is User Space
+    // Validate the buffer is in user space.
     uint32_t start = (uint32_t)buf;
     if (start < USER_LOWER_BOUND || start > 0xFFFFFFFFu - count + 1) {
         KDBG1("sys_read: SECURITY VIOLATION: Buffer invalid buf=0x%x count=%u", buf, count);
@@ -364,9 +442,9 @@ int32_t SyscallHandlers::Handle_sys_read(uint32_t fd, char* buf, uint32_t count)
         return -1;
     }
 
-    // stdin: consume keyboard character queue (non-blocking).
+    // Stdin: consume the keyboard character queue (non-blocking).
     if (fd == 0) {
-        // Cap the read to the queue size — no need to allocate more than 256 bytes.
+        // Cap the read to the queue size - no need to allocate more than the queue.
         uint32_t limit = count;
         if (limit > ProcessControlBlock::STDIN_QUEUE_SIZE) {
             limit = ProcessControlBlock::STDIN_QUEUE_SIZE;
@@ -393,7 +471,7 @@ int32_t SyscallHandlers::Handle_sys_read(uint32_t fd, char* buf, uint32_t count)
     File* file = GetFileByFd(process, fd);
     if (!file) return -1;
 
-    // Read into a kernel buffer, then copy to user space
+    // Read into a kernel buffer, then copy to user space.
     uint8_t* kernelBuf = (uint8_t*)kmalloc(count);
     if (!kernelBuf) return -1;
     int bytesRead = file->Read(kernelBuf, count);
@@ -411,7 +489,7 @@ int32_t SyscallHandlers::Handle_sys_write(uint32_t fd, const char* buf, uint32_t
     if (!buf) return -1;
     if (count == 0) return 0;
 
-    // Validate buffer is entirely within valid user space
+    // Validate the buffer is entirely within valid user space.
     uint32_t start = (uint32_t)buf;
     if (start < USER_LOWER_BOUND || start > 0xFFFFFFFFu - count + 1) {
         KDBG1("sys_write: SECURITY VIOLATION: Buffer invalid buf=0x%x count=%u", buf, count);
@@ -419,11 +497,12 @@ int32_t SyscallHandlers::Handle_sys_write(uint32_t fd, const char* buf, uint32_t
     }
     uint32_t end = start + count - 1;
     if (end >= USER_UPPER_BOUND) {
-        KDBG1("sys_write: SECURITY VIOLATION: Buffer crosses kernel boundary buf=0x%x count=%u", buf, count);
+        KDBG1("sys_write: SECURITY VIOLATION: Buffer crosses kernel boundary buf=0x%x count=%u",
+              buf, count);
         return -1;
     }
 
-    // stdout/stderr: write to serial sink for now.
+    // Stdout/stderr: write to the serial sink for now.
     if (fd == 1 || fd == 2) {
         ProcessControlBlock* process = Scheduler::activeInstance->GetCurrentProcess();
         char kbuf[256];
@@ -473,7 +552,7 @@ int32_t SyscallHandlers::Handle_sys_open(const char* path, int32_t flags) {
 }
 
 int32_t SyscallHandlers::Handle_sys_close(uint32_t fd) {
-    if (fd <= 2) return 0;  // stdin/stdout/stderr placeholders
+    if (fd <= 2) return 0;  // Stdin/stdout/stderr placeholders.
 
     ProcessControlBlock* process = Scheduler::activeInstance->GetCurrentProcess();
     File* file = GetFileByFd(process, fd);
@@ -495,12 +574,12 @@ int32_t SyscallHandlers::Handle_sys_lseek(uint32_t fd, int32_t offset, int32_t w
     if (!file) return -1;
 
     int64_t newPos;
-    if (whence == 0) {       // SEEK_SET
+    if (whence == 0) {  // SEEK_SET
         newPos = (int64_t)offset;
-    } else if (whence == 1) { // SEEK_CUR
+    } else if (whence == 1) {  // SEEK_CUR
         newPos = (int64_t)file->position + offset;
-    } else if (whence == 2) { // SEEK_END
-        newPos = (int64_t)file->size + offset;    // offset should be negative for SEEK_END
+    } else if (whence == 2) {                   // SEEK_END
+        newPos = (int64_t)file->size + offset;  // Offset should be negative for SEEK_END.
     } else {
         return -1;
     }
@@ -528,8 +607,9 @@ int32_t SyscallHandlers::Handle_sys_execve(const char* path, char* const argv[],
         FileSystem* fs = MSDOSPartitionTable::activeInstance->partitions[0];
         File* f = fs->Open(kpath);
         if (f && f->size > 0) {
-            // Hashx86 native loading spins up a new process rather than replacing context.
-            // Copy up to 5 argv strings from user space into kernel-owned memory for now.
+            // Hashx86 native loading spins up a new process rather than
+            // replacing context.  Copy up to 5 argv strings from user space
+            // into kernel-owned memory for now.
             ProgramArguments* args =
                 new ProgramArguments{nullptr, nullptr, nullptr, nullptr, nullptr};
             if (!args) {
@@ -542,25 +622,26 @@ int32_t SyscallHandlers::Handle_sys_execve(const char* path, char* const argv[],
                 const int MAX_ARGS = 5;
                 const int MAX_ARG_LEN = 512;
                 for (int i = 0; i < MAX_ARGS; i++) {
-                    // Read pointer from user argv array
+                    // Read pointer from the user argv array.
                     char* userPtr = nullptr;
                     if (!CopyFromUser(current_process, &userPtr, &argv[i], sizeof(void*))) {
                         argvFailed = true;
                         break;
                     }
-                    if (!userPtr) break;  // NULL terminator
+                    if (!userPtr) break;  // NULL terminator.
 
-                    // Measure and copy string safely (cap length)
+                    // Measure and copy the string safely (cap length).
                     char* buf = (char*)kmalloc(MAX_ARG_LEN);
                     if (!buf) {
                         argvFailed = true;
                         break;
                     }
-                    // Read at most MAX_ARG_LEN-1 bytes
+                    // Read at most MAX_ARG_LEN-1 bytes.
                     size_t read = 0;
                     while (read + 1 < (size_t)MAX_ARG_LEN) {
                         char c = 0;
-                        if (!CopyFromUser(current_process, &c, (const void*)((uint32_t)userPtr + read), 1)) {
+                        if (!CopyFromUser(current_process, &c,
+                                          (const void*)((uint32_t)userPtr + read), 1)) {
                             kfree(buf);
                             buf = nullptr;
                             break;
@@ -596,7 +677,7 @@ int32_t SyscallHandlers::Handle_sys_execve(const char* path, char* const argv[],
                     args = nullptr;
                     f->Close();
                     delete f;
-                    return -1;  // Abort — do not continue with null args
+                    return -1;  // Abort - do not continue with null args.
                 }
             }
 
@@ -605,7 +686,7 @@ int32_t SyscallHandlers::Handle_sys_execve(const char* path, char* const argv[],
             delete f;
             if (child) {
                 child->programArgs = args;
-                // Set getcwd()
+                // Set the working directory.
                 {
                     size_t klen = strlen(kpath);
                     char* lastSlash = nullptr;
@@ -718,7 +799,7 @@ int32_t SyscallHandlers::Handle_sys_brk(uint32_t brk) {
         process->heap.endAddress = brk;
     }
 
-    // We do not handle shrinking heap at the moment
+    // We do not handle shrinking the heap at the moment.
 
     return (int32_t)process->heap.endAddress;
 }
@@ -730,7 +811,7 @@ int32_t SyscallHandlers::Handle_sys_stat(const char* path, struct stat* statbuf)
     char kpath[256];
     if (!CopyUserString(process, path, kpath, sizeof(kpath))) return -1;
 
-    // Build stat in kernel memory, then copy to user at the end
+    // Build the stat in kernel memory, then copy to user at the end.
     struct stat k_stat;
     memset(&k_stat, 0, sizeof(k_stat));
 
@@ -738,7 +819,7 @@ int32_t SyscallHandlers::Handle_sys_stat(const char* path, struct stat* statbuf)
     if (MSDOSPartitionTable::activeInstance && MSDOSPartitionTable::activeInstance->partitions[0]) {
         FileSystem* fs = MSDOSPartitionTable::activeInstance->partitions[0];
 
-        // Handling Root Drive Stat Check
+        // Handle the root-drive stat check.
         if (kpath[0] == '/' && kpath[1] == '\0') {
             k_stat.st_mode = 0x4000;  // S_IFDIR
             k_stat.st_size = 0;
@@ -751,7 +832,7 @@ int32_t SyscallHandlers::Handle_sys_stat(const char* path, struct stat* statbuf)
             k_stat.st_ino = f->id;
             k_stat.st_blksize = 512;
             k_stat.st_blocks = (f->size + 511) / 512;
-            if (f->flags & 1) {           // Directory Flag mapped loosely
+            if (f->flags & 1) {           // Directory flag mapped loosely.
                 k_stat.st_mode = 0x4000;  // S_IFDIR
             } else {
                 k_stat.st_mode = 0x8000;  // S_IFREG
@@ -803,11 +884,11 @@ int32_t SyscallHandlers::Handle_sys_getdents(uint32_t fd, struct linux_dirent* d
     if (!dirFile || !dirFile->filesystem) return -1;
     if ((dirFile->flags & 1) == 0) return -1;
 
-    // Read stream of KernelDirentHeader entries
+    // Read the stream of KernelDirentHeader entries.
     uint8_t buffer[512];
     int bytesRead = dirFile->Read(buffer, 512);
 
-    if (bytesRead <= 0) return 0;  // EOF
+    if (bytesRead <= 0) return 0;  // EOF.
 
     uint32_t offsetWritten = 0;
     uint32_t bufOff = 0;
@@ -815,7 +896,8 @@ int32_t SyscallHandlers::Handle_sys_getdents(uint32_t fd, struct linux_dirent* d
     while (bufOff + sizeof(KernelDirentHeader) <= (uint32_t)bytesRead) {
         KernelDirentHeader* hdr = (KernelDirentHeader*)(buffer + bufOff);
         if (hdr->d_reclen < sizeof(KernelDirentHeader) + 1 ||
-            hdr->d_reclen > (uint32_t)bytesRead - bufOff) break;
+            hdr->d_reclen > (uint32_t)bytesRead - bufOff)
+            break;
 
         // Locate the NUL terminator within the payload; derive nameLen from it.
         uint32_t payloadLen = hdr->d_reclen - sizeof(KernelDirentHeader);
@@ -823,7 +905,7 @@ int32_t SyscallHandlers::Handle_sys_getdents(uint32_t fd, struct linux_dirent* d
         uint32_t nameLen = 0;
         while (nameLen < payloadLen && name[nameLen] != '\0') nameLen++;
 
-        // Skip . and .. entries
+        // Skip . and .. entries.
         if (nameLen == 0 ||
             (name[0] == '.' && (nameLen == 1 || (name[1] == '.' && nameLen == 2)))) {
             bufOff += hdr->d_reclen;
@@ -834,13 +916,13 @@ int32_t SyscallHandlers::Handle_sys_getdents(uint32_t fd, struct linux_dirent* d
         reclen = (reclen + 3) & ~3;
 
         if (offsetWritten + reclen > count) {
-            // Roll back file position to re-read this entry next time
+            // Roll back the file position to re-read this entry next time.
             dirFile->position -= (bytesRead - bufOff);
             if (offsetWritten == 0) return -1;
             return offsetWritten;
         }
 
-        // Build dirent in kernel memory, then copy to user space
+        // Build the dirent in kernel memory, then copy to user space.
         uint8_t* direntBuffer = (uint8_t*)kmalloc(reclen);
         if (!direntBuffer) {
             dirFile->position -= (bytesRead - bufOff);
@@ -853,7 +935,7 @@ int32_t SyscallHandlers::Handle_sys_getdents(uint32_t fd, struct linux_dirent* d
         k_dirent->d_off = dirFile->position;
         k_dirent->d_reclen = reclen;
 
-        // Copy name (without padding) into the flexible array
+        // Copy name (without padding) into the flexible array.
         for (uint32_t j = 0; j < nameLen; j++) {
             k_dirent->d_name[j] = name[j];
         }
@@ -877,7 +959,7 @@ int32_t SyscallHandlers::Handle_sys_getdents(uint32_t fd, struct linux_dirent* d
 int32_t SyscallHandlers::Handle_sys_nanosleep(struct timespec* req, struct timespec* rem) {
     ProcessControlBlock* process = Scheduler::activeInstance->GetCurrentProcess();
 
-    // Copy timespec structures from user space
+    // Copy the timespec structures from user space.
     struct timespec k_req, k_rem;
     memset(&k_req, 0, sizeof(k_req));
     memset(&k_rem, 0, sizeof(k_rem));
@@ -904,7 +986,7 @@ int32_t SyscallHandlers::Handle_sys_getcwd(char* buf, uint32_t size) {
 
     size_t len = strlen(process->cwd);
     if (!buf || size == 0) return -1;
-    if (len + 1 > size) return (int32_t)(len + 1);  // Buffer too small
+    if (len + 1 > size) return (int32_t)(len + 1);  // Buffer too small.
 
     char kbuf[256];
     memcpy(kbuf, process->cwd, len + 1);
@@ -916,7 +998,7 @@ int32_t SyscallHandlers::Handle_sys_debug(char* str) {
     ProcessControlBlock* process = Scheduler::activeInstance->GetCurrentProcess();
     char kstr[256];
     if (!CopyUserString(process, str, kstr, sizeof(kstr))) return -1;
-    // ATOMIC PRINT
+    // Atomic print.
     InterruptGuard guard;
     KDBG1N("PID %d, %s", g_scheduler->GetCurrentProcess()->pid, kstr);
     return 0;
@@ -941,9 +1023,9 @@ int32_t SyscallHandlers::Handle_sys_peek_memory(uint32_t address, uint32_t size,
         if (return_data) *return_data = 0;
         return -1;
     }
-    // Dev/debug: available to all processes (not just kernel).
-    // The identity-mapped range guard below prevents access outside 0-256MB.
-    // Only allow reading from identity-mapped kernel range (0 - 256MB)
+    // Dev/debug: this is available to all processes (not just the kernel).  The
+    // identity-mapped range guard below prevents access outside 0-256MB.
+    // Only allow reading from the identity-mapped kernel range (0 - 256MB).
     constexpr uint32_t limit = 256 * 1024 * 1024;
     if (size == 0 || size > 4 || address > limit - size) {
         if (return_data) {
@@ -1001,7 +1083,7 @@ int32_t SyscallHandlers::Handle_sys_Hcall(uint32_t hcall_id, uint32_t arg1, uint
 
         return (int32_t)thread->tid;
     } else if (hcall_id == Hsys_getFramebuffer) {
-        // Return framebuffer info: ptr to buffer, width, height passed in
+        // Return framebuffer info: pointer to buffer, width, height passed in.
         uint32_t* pBuffer = (uint32_t*)arg1;
         uint32_t* pWidth = (uint32_t*)arg2;
         uint32_t* pHeight = (uint32_t*)arg3;
@@ -1024,21 +1106,22 @@ int32_t SyscallHandlers::Handle_sys_Hcall(uint32_t hcall_id, uint32_t arg1, uint
                 return -1;
             }
 
-            // GRANT ACCESS: Grant user-mode access to the kernel backbuffer.
-            // The framebuffer resides in the kernel identity-mapped range (pd_idx < 64)
-            // whose PDEs and page tables are shared across all processes via
-            // CreateProcessDirectory(). We must not modify the shared tables; instead
-            // create per-process private copies that include PAGE_USER.
+            // Grant user-mode access to the kernel backbuffer.
+            // The framebuffer resides in the kernel identity-mapped range
+            // (pd_idx < 64) whose PDEs and page tables are shared across all
+            // processes via CreateProcessDirectory(). We must not modify the
+            // shared tables; instead create per-process private copies that
+            // include PAGE_USER.
             uint32_t size = width * height * 4;
 
-            // Align start/end to page boundaries
+            // Align start/end to page boundaries.
             uint32_t startPage = bufferAddr & ~(PAGE_SIZE - 1);
             uint32_t endPage = (bufferAddr + size + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
 
             uint32_t startPDIdx = startPage >> 22;
             uint32_t endPDIdx = endPage >> 22;
 
-            // First pass: un-share any kernel page tables covering the framebuffer
+            // First pass: un-share kernel page tables covering the framebuffer
             // by creating per-process copies so we can safely add PAGE_USER.
             for (uint32_t i = startPDIdx; i <= endPDIdx; i++) {
                 if (current_process->page_directory[i] == g_paging->KernelPageDirectory[i]) {
@@ -1051,7 +1134,7 @@ int32_t SyscallHandlers::Handle_sys_Hcall(uint32_t hcall_id, uint32_t arg1, uint
                 }
             }
 
-            // Second pass: grant user access to the specific PTEs and their PDEs
+            // Second pass: grant user access to the specific PTEs and their PDEs.
             for (uint32_t addr = startPage; addr < endPage; addr += PAGE_SIZE) {
                 uint32_t pd_idx = addr >> 22;
                 uint32_t pt_idx = (addr >> 12) & 0x03FF;
@@ -1061,10 +1144,10 @@ int32_t SyscallHandlers::Handle_sys_Hcall(uint32_t hcall_id, uint32_t arg1, uint
                 asm volatile("invlpg (%0)" ::"r"(addr) : "memory");
             }
 
-            // Flush TLB to ensure new permissions take effect immediately
+            // Flush the TLB so the new permissions take effect immediately.
             asm volatile("mov %%cr3, %%eax; mov %%eax, %%cr3" ::: "eax");
 
-            // STOP KERNEL GUI RENDERING
+            // Stop kernel GUI rendering.
             g_stop_gui_rendering = true;
             g_gui_owner_pid = Scheduler::activeInstance->GetCurrentProcess()->pid;
             KDBG1("Hsys_getFramebuffer: PID %d took ownership of screen", g_gui_owner_pid);
@@ -1102,8 +1185,8 @@ int32_t SyscallHandlers::Handle_sys_Hcall(uint32_t hcall_id, uint32_t arg1, uint
         if (!current_process) return -1;
 
         // arg1 == 0 means push to self (caller's own stdin)
-        ProcessControlBlock* target = (arg1 == 0) ? current_process
-                                                  : Scheduler::activeInstance->FindProcess(arg1);
+        ProcessControlBlock* target =
+            (arg1 == 0) ? current_process : Scheduler::activeInstance->FindProcess(arg1);
         if (!target) return -1;
 
         // Only allow the CLI host or the target process itself to push stdin
@@ -1146,14 +1229,14 @@ int32_t SyscallHandlers::Handle_sys_Hcall(uint32_t hcall_id, uint32_t arg1, uint
         if (userState && IsUserRange(current_process, (uint32_t)userState, sizeof(InputState))) {
             InputState tmp;
             memset(&tmp, 0, sizeof(InputState));
-            // Copy keyboard state
+            // Copy keyboard state.
             if (KeyboardDriver::activeInstance) {
                 uint8_t* keys = KeyboardDriver::activeInstance->GetKeyStates();
                 for (int i = 0; i < 128; i++) {
                     tmp.keyStates[i] = keys[i];
                 }
             }
-            // Copy and reset mouse state
+            // Copy and reset mouse state.
             if (MouseDriver::activeInstance) {
                 int32_t dx, dy;
                 MouseDriver::activeInstance->GetMouseDelta(dx, dy);
@@ -1169,7 +1252,7 @@ int32_t SyscallHandlers::Handle_sys_Hcall(uint32_t hcall_id, uint32_t arg1, uint
             return -1;
         }
     } else {
-        // Default case (optional: handle unknown Hcalls)
+        // Default case (optional: handle unknown Hcalls).
         KDBG1("Unknown Hcall ID: %d", hcall_id);
     }
     return -1;

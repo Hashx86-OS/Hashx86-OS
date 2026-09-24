@@ -1,35 +1,64 @@
-/**
- * @file        ModuleLoader.cpp
- * @brief       Module Loader for Kernel Drivers
+/*
+ * MIT License
  *
- * @date        01/02/2026
- * @version     1.0.0
+ * Copyright (c) 2025 Malaka Gunawardana
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
  */
 
 #define KDBG_COMPONENT "K.MODULELDR"
 #include <core/drivers/ModuleLoader.h>
 
-// ELF Macros for x86 Relocation
+// ELF macros for x86 relocation.
 #define ELF32_R_SYM(i) ((i) >> 8)
 #define ELF32_R_TYPE(i) ((unsigned char)(i))
-#define R_386_32 1    // Absolute 32-bit
-#define R_386_PC32 2  // PC-Relative 32-bit
+#define R_386_32 1    // Absolute 32-bit.
+#define R_386_PC32 2  // PC-relative 32-bit.
 
+/**
+ * ModuleLoader::LoadMatchingDriver() - Load a driver only if it matches.
+ * @file: ELF driver module to probe.
+ * @target_vid: Expected PCI vendor ID.
+ * @target_did: Expected PCI device ID.
+ *
+ * Reads the driver manifest and scans its supported-device list. On a match
+ * the module is fully linked and the CreateDriverInstance entry point is
+ * returned.
+ *
+ * Return: The driver entry point, or NULL when the module does not match or
+ *         cannot be loaded.
+ */
 void* ModuleLoader::LoadMatchingDriver(File* file, uint16_t target_vid, uint16_t target_did) {
     if (!file) return 0;
 
     DriverManifest manifest;
 
-    // Read the header
+    // Read the ELF header.
     if (!ModuleLoader::Probe(file, &manifest)) {
         KDBG1("Error: File is not a valid driver (Missing .driver_info)");
         return 0;
     }
 
-    // CHECK: Loop through the supported devices array
+    // Loop through the supported-device array.
     bool match = false;
     for (int i = 0; i < 4; i++) {
-        // Break if hit an empty slot
+        // Break on the first empty slot.
         if (manifest.devices[i].vendor_id == 0) break;
 
         if (manifest.devices[i].vendor_id == target_vid &&
@@ -50,10 +79,21 @@ void* ModuleLoader::LoadMatchingDriver(File* file, uint16_t target_vid, uint16_t
     }
 }
 
+/**
+ * ModuleLoader::LoadDriver() - Link a relocatable ELF module into memory.
+ * @file: Open ELF relocatable object (.o) to load.
+ *
+ * Validates the ELF header and section table, allocates kernel memory for
+ * every SHF_ALLOC section, applies R_386_32/R_386_PC32 relocations, and
+ * resolves external symbols against the kernel SymbolTable.
+ *
+ * Return: The address of CreateDriverInstance(), or NULL on any error. All
+ *         section image memory is released on failure.
+ */
 void* ModuleLoader::LoadDriver(File* file) {
     if (!file) return 0;
 
-    // Read ELF Header
+    // Read the ELF header.
     struct elf_header header;
     file->Seek(0);
     if (file->Read((uint8_t*)&header, sizeof(header)) != (int)sizeof(header)) {
@@ -65,12 +105,12 @@ void* ModuleLoader::LoadDriver(File* file) {
         KDBG1("Module Error: Invalid ELF Magic");
         return 0;
     }
-    if (header.type != 1) {  // ET_REL = 1 (Relocatable)
+    if (header.type != 1) {  // ET_REL = 1 (relocatable).
         KDBG1("Module Error: Not a relocatable object (.o)");
         return 0;
     }
 
-    // Validate section header metadata before using it
+    // Validate the section header metadata before using it.
     if (header.sh_entry_count == 0 || header.sh_size == 0) {
         KDBG1("Module Error: Empty section header table");
         return 0;
@@ -91,7 +131,7 @@ void* ModuleLoader::LoadDriver(File* file) {
     }
     uint32_t sh_size = (uint32_t)sh_size64;
 
-    // Read Section Headers
+    // Read the section header table.
     struct elf_section_header* sections = (struct elf_section_header*)kmalloc(sh_size);
     if (!sections) {
         KDBG1("Module Error: Failed to allocate section headers");
@@ -104,7 +144,7 @@ void* ModuleLoader::LoadDriver(File* file) {
         return 0;
     }
 
-    // Read Section String Table (to find section names if needed)
+    // Read the section string table (used to find section names).
     struct elf_section_header* strtab_hdr = &sections[header.sh_str_index];
     char* strtab = (char*)kmalloc(strtab_hdr->size);
     if (!strtab) {
@@ -120,12 +160,11 @@ void* ModuleLoader::LoadDriver(File* file) {
         return 0;
     }
 
-    // Allocate Memory for Sections
-    // Iterate all sections. If flags has SHF_ALLOC (0x2).
+    // Allocate memory for every SHF_ALLOC (0x2) section.
     bool alloc_failed = false;
     for (int i = 0; i < header.sh_entry_count; i++) {
         if (sections[i].flags & 0x2) {
-            // Skip sections with zero size (e.g. .note.GNU-stack, empty BSS)
+            // Skip zero-sized sections (e.g. .note.GNU-stack, empty BSS).
             if (sections[i].size == 0) {
                 sections[i].addr = 0;
                 continue;
@@ -137,7 +176,7 @@ void* ModuleLoader::LoadDriver(File* file) {
                 break;
             }
 
-            // If it is NOT BSS (NOBITS), read data from file
+            // BSS (SHT_NOBITS) is zeroed; everything else is read from file.
             if (sections[i].type != 8) {
                 file->Seek(sections[i].offset);
                 if (file->Read((uint8_t*)mem, sections[i].size) != (int)sections[i].size) {
@@ -147,18 +186,18 @@ void* ModuleLoader::LoadDriver(File* file) {
                     break;
                 }
             } else {
-                // Zero out BSS
+                // Zero out the BSS.
                 memset(mem, 0, sections[i].size);
             }
-            // Store the KERNEL VIRTUAL ADDRESS in the section header's 'addr' field
-            // Use this later to resolve addresses.
+            // Store the kernel virtual address in the section header's 'addr'
+            // field, used later to resolve addresses.
             sections[i].addr = (uint32_t)mem;
         } else {
             sections[i].addr = 0;
         }
     }
     if (alloc_failed) {
-        // Free any SHF_ALLOC sections allocated so far
+        // Free every SHF_ALLOC section allocated so far.
         for (int j = 0; j < header.sh_entry_count; j++) {
             if (sections[j].addr != 0 && (sections[j].flags & 0x2)) {
                 kfree((void*)sections[j].addr);
@@ -169,15 +208,15 @@ void* ModuleLoader::LoadDriver(File* file) {
         return 0;
     }
 
-    // Link (Relocate)
+    // Link (relocate) the module.
     struct elf32_symbol* symtab = 0;
     uint32_t symtab_count = 0;
     char* strtab_sym = 0;
     uint32_t strtab_sym_size = 0;
 
-    // Find Symbol Table
+    // Locate the SHT_SYMTAB section.
     for (int i = 0; i < header.sh_entry_count; i++) {
-        if (sections[i].type == 2) {  // SHT_SYMTAB
+        if (sections[i].type == 2) {  // SHT_SYMTAB.
             symtab = (struct elf32_symbol*)kmalloc(sections[i].size);
             if (!symtab) {
                 KDBG1("Module Error: Failed to allocate symbol table");
@@ -192,7 +231,7 @@ void* ModuleLoader::LoadDriver(File* file) {
             }
             symtab_count = sections[i].size / sizeof(elf32_symbol);
 
-            // Load associated string table
+            // Load the associated string table.
             int link = sections[i].link;
             if (link < 0 || (uint32_t)link >= header.sh_entry_count) {
                 KDBG1("Module Error: Symbol string table link out of range (%d)", link);
@@ -221,10 +260,10 @@ void* ModuleLoader::LoadDriver(File* file) {
         }
     }
 
-    // Process Relocation Sections
+    // Process the relocation sections.
     bool relocation_failed = false;
     for (int i = 0; i < header.sh_entry_count; i++) {
-        if (sections[i].type == 9) {  // SHT_REL (Relocation without Addend)
+        if (sections[i].type == 9) {  // SHT_REL (relocation without addend).
             if (sections[i].ent_size != sizeof(elf32_rel)) {
                 KDBG1("Module Link Error: Relocation ent_size=%u (expected %u)",
                       sections[i].ent_size, (uint32_t)sizeof(elf32_rel));
@@ -243,7 +282,7 @@ void* ModuleLoader::LoadDriver(File* file) {
                 break;
             }
 
-            // Allocate buffer for relocs
+            // Allocate a buffer for the relocation entries.
             struct elf32_rel* rels = (struct elf32_rel*)kmalloc(sections[i].size);
             if (!rels) {
                 KDBG1("Module Link Error: Failed to allocate relocation buffer");
@@ -259,7 +298,7 @@ void* ModuleLoader::LoadDriver(File* file) {
                 break;
             }
 
-            // The section modifying (patching)
+            // The section being patched in place.
             uint32_t target_section_idx = sections[i].info;
             if (target_section_idx >= header.sh_entry_count) {
                 KDBG1("Module Link Error: Invalid relocation target section index");
@@ -291,7 +330,7 @@ void* ModuleLoader::LoadDriver(File* file) {
             for (uint32_t r = 0; r < count; r++) {
                 uint32_t sym_idx = ELF32_R_SYM(rels[r].info);
                 uint32_t type = ELF32_R_TYPE(rels[r].info);
-                uint32_t offset = rels[r].offset;  // Offset inside the target section
+                uint32_t offset = rels[r].offset;  // Offset inside the target section.
 
                 if (sym_idx >= symtab_count) {
                     KDBG1("Module Link Error: Relocation symbol index out of range");
@@ -309,22 +348,21 @@ void* ModuleLoader::LoadDriver(File* file) {
                     break;
                 }
 
-                // Need to write the patched address
+                // This is the address being patched.
                 uint32_t* patch_addr = (uint32_t*)(target_base + offset);
 
-                // Resolve Symbol Value
+                // Resolve the symbol value.
                 uint32_t sym_val = 0;
 
                 if (symtab[sym_idx].shndx == 0) {
-                    // SHN_UNDEF: External Symbol
-                    // Lookup in Kernel Symbol Table
+                    // SHN_UNDEF: external symbol, looked up in the kernel table.
                     uint32_t name_off = symtab[sym_idx].name;
                     if (name_off >= strtab_sym_size) {
                         KDBG1("Module Link Error: Symbol name offset out of string-table bounds");
                         relocation_failed = true;
                         break;
                     }
-                    // Verify NUL terminator exists within the string table bounds
+                    // Verify the NUL terminator lies within the string table.
                     const char* name = strtab_sym + name_off;
                     size_t max_len = strtab_sym_size - name_off;
                     bool found_nul = false;
@@ -350,7 +388,7 @@ void* ModuleLoader::LoadDriver(File* file) {
                         break;
                     }
                 } else {
-                    // Internal Symbol (defined in another section of this module)
+                    // Internal symbol, defined in another section of this module.
                     uint32_t sec_idx = symtab[sym_idx].shndx;
                     if (sec_idx >= header.sh_entry_count) {
                         KDBG1("Module Link Error: Symbol section index out of range");
@@ -367,16 +405,16 @@ void* ModuleLoader::LoadDriver(File* file) {
                         relocation_failed = true;
                         break;
                     }
-                    // Address = Base of Section + Offset inside section
+                    // Address = section base + symbol offset.
                     sym_val = sections[sec_idx].addr + symtab[sym_idx].value;
                 }
 
-                // Apply Logic
+                // Apply the relocation.
                 if (type == R_386_32) {
-                    // S + A (Addend is implicit in the target memory location)
+                    // S + A; the addend is implicit in the patched location.
                     *patch_addr += sym_val;
                 } else if (type == R_386_PC32) {
-                    // S + A - P (Symbol - Location)
+                    // S + A - P (symbol minus patch location).
                     *patch_addr += (sym_val - (uint32_t)patch_addr);
                 }
             }
@@ -386,7 +424,7 @@ void* ModuleLoader::LoadDriver(File* file) {
     }
 
     if (relocation_failed) {
-        // Free any SHF_ALLOC section memory before releasing section table
+        // Free the SHF_ALLOC section images before releasing the metadata.
         for (int i = 0; i < header.sh_entry_count; i++) {
             if (sections[i].addr != 0 && (sections[i].flags & 0x2)) {
                 kfree((void*)sections[i].addr);
@@ -399,7 +437,7 @@ void* ModuleLoader::LoadDriver(File* file) {
         return 0;
     }
 
-    // Find Entry Point (CreateDriverInstance)
+    // Find the entry point (CreateDriverInstance).
     void* entry_point = 0;
     if (symtab && strtab_sym) {
         for (uint32_t i = 0; i < symtab_count; i++) {
@@ -407,7 +445,7 @@ void* ModuleLoader::LoadDriver(File* file) {
             if (name_off >= strtab_sym_size) continue;
             const char* name = strtab_sym + name_off;
 
-            // Check for the magic function name
+            // Check for the magic function name.
             const char* target = "CreateDriverInstance";
             uint32_t target_len = 20;
             bool match = false;
@@ -432,9 +470,9 @@ void* ModuleLoader::LoadDriver(File* file) {
         }
     }
 
-    // Cleanup
+    // Clean up.
     if (entry_point == 0) {
-        // Entry point not found — free SHF_ALLOC section images before releasing metadata
+        // Entry point missing: free the SHF_ALLOC images before the metadata.
         for (int i = 0; i < header.sh_entry_count; i++) {
             if (sections[i].addr != 0 && (sections[i].flags & 0x2)) {
                 kfree((void*)sections[i].addr);
@@ -449,18 +487,28 @@ void* ModuleLoader::LoadDriver(File* file) {
     return entry_point;
 }
 
-// Returns true if valid metadata is found, filling the 'info' struct
+/**
+ * ModuleLoader::Probe() - Check a file for a matching .driver_info section.
+ * @file: Open ELF module to inspect.
+ * @info: Output manifest, filled on success.
+ *
+ * Reads the ELF section table and string table, locates the .driver_info
+ * section, and (guarding against stale struct layouts) copies the manifest
+ * into @info. The file cursor is reset to offset 0.
+ *
+ * Return: True when valid metadata was found.
+ */
 bool ModuleLoader::Probe(File* file, DriverManifest* info) {
     if (!file || !info) return false;
 
-    // Read ELF Header
+    // Read the ELF header.
     struct elf_header header;
     file->Seek(0);
     if (file->Read((uint8_t*)&header, sizeof(header)) != (int32_t)sizeof(header)) return false;
 
     if (header.magic != ELF_MAGIC) return false;
 
-    // Validate section header metadata before using it
+    // Validate the section header metadata before using it.
     if (header.sh_entry_count == 0 || header.sh_size == 0) return false;
     if (header.sh_entry_count > 65536 || header.sh_size != sizeof(elf_section_header)) {
         KDBG1("Probe: Section header size mismatch (expected %d, got %d)",
@@ -472,7 +520,7 @@ bool ModuleLoader::Probe(File* file, DriverManifest* info) {
     if (sh_size64 > 0xFFFFFFFFu) return false;
     uint32_t sh_size = (uint32_t)sh_size64;
 
-    // Read Section Headers
+    // Read the section header table.
     struct elf_section_header* sections = (struct elf_section_header*)kmalloc(sh_size);
     if (!sections) return false;
     file->Seek(header.sh_offset);
@@ -481,8 +529,7 @@ bool ModuleLoader::Probe(File* file, DriverManifest* info) {
         return false;
     }
 
-    // Read Section String Table (to find section names)
-    // Need this to search for ".driver_info" by name
+    // Read the section string table, used to search for ".driver_info".
     struct elf_section_header* strtab_hdr = &sections[header.sh_str_index];
     char* strtab = 0;
     uint32_t strtab_size = strtab_hdr->size;
@@ -499,14 +546,14 @@ bool ModuleLoader::Probe(File* file, DriverManifest* info) {
 
     bool found = false;
 
-    // Iterate Sections to find ".driver_info"
+    // Iterate the sections looking for ".driver_info".
     for (int i = 0; i < header.sh_entry_count; i++) {
         if (!strtab) break;
         uint32_t name_off = sections[i].name;
         if (name_off >= strtab_size) continue;
         const char* sec_name = strtab + name_off;
 
-        // Manual string comparison for ".driver_info"
+        // Compare the section name against ".driver_info" manually.
         const char* target = ".driver_info";
         bool match = true;
         for (int c = 0; target[c] != 0; c++) {
@@ -520,7 +567,7 @@ bool ModuleLoader::Probe(File* file, DriverManifest* info) {
                 break;
             }
         }
-        // Ensure the names are the same length (null terminator check)
+        // Ensure the names are the same length (NULL-terminator check).
         if (match) {
             uint32_t idx = name_off + 12;
             if (idx >= strtab_size)
@@ -529,11 +576,10 @@ bool ModuleLoader::Probe(File* file, DriverManifest* info) {
                 match = false;
         }
 
-        // If found, verify size and read data
+        // If found, verify the size and read the data.
         if (match) {
-            // Safety Check:
-            // This prevents reading garbage if the driver was compiled with an old struct
-            // definition.
+            // Safety check: refuse to read garbage produced by an older
+            // DriverManifest definition.
             if (sections[i].size >= sizeof(DriverManifest)) {
                 file->Seek(sections[i].offset);
                 int bytesRead = file->Read((uint8_t*)info, sizeof(DriverManifest));
@@ -548,15 +594,15 @@ bool ModuleLoader::Probe(File* file, DriverManifest* info) {
             } else {
                 KDBG1("Warning: '.driver_info' section too small (Old driver version?)");
             }
-            break;  // Stop searching once found
+            break;  // Stop searching once found.
         }
     }
 
-    // Cleanup Heap
+    // Clean up the heap.
     kfree(sections);
     kfree(strtab);
 
-    // Important: Reset file pointer to 0
+    // Reset the file pointer to 0.
     file->Seek(0);
 
     return found;

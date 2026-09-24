@@ -1,9 +1,25 @@
-/**
- * @file        bga.cpp
- * @brief       BGA Graphics Driver Implementation
+/*
+ * MIT License
  *
- * @date        01/02/2026
- * @version     1.0.0
+ * Copyright (c) 2025 Malaka Gunawardana
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
  */
 
 #include <core/driver.h>
@@ -37,21 +53,43 @@ DEFINE_DRIVER_INFO("BGA Driver for Hashx86", "0.1.0", {0x1234, 0x1111},  // QEMU
                    {0x15AD, 0x0405}                                      // VMware / VBox SVGA
 );
 
+/**
+ * class DynamicBGADriver - Bochs/VirtualBox/VMware SVGA graphics driver.
+ * @physFramebufferAddr: Physical address of the linear framebuffer.
+ */
 class DynamicBGADriver : public Driver, public GraphicsDriver {
 private:
     uint32_t physFramebufferAddr;
 
+    /**
+     * WriteRegister() - Write one VBE-DISPI register pair.
+     * @index: Register index.
+     * @value: Value to write.
+     */
     void WriteRegister(uint16_t index, uint16_t value) {
         outw(VBE_DISPI_IOPORT_INDEX, index);
         outw(VBE_DISPI_IOPORT_DATA, value);
     }
 
+    /**
+     * ReadRegister() - Read one VBE-DISPI register.
+     * @index: Register index.
+     *
+     * Return: The register value.
+     */
     uint16_t ReadRegister(uint16_t index) {
         outw(VBE_DISPI_IOPORT_INDEX, index);
         return inw(VBE_DISPI_IOPORT_DATA);
     }
 
-    // Returns Physical Address of LFB, or 0 if failed
+    /**
+     * FindFramebufferPCI() - Locate the LFB physical address for a BGA adapter.
+     *
+     * Scans the PCI bus for a known BGA/SVGA device, enables bus mastering
+     * and reads the first memory-mapped BAR.
+     *
+     * Return: The framebuffer physical address, or 0 on failure.
+     */
     uint32_t FindFramebufferPCI() {
         PeripheralComponentInterconnectController pci;
         PeripheralComponentInterconnectDeviceDescriptor* dev;
@@ -67,17 +105,17 @@ private:
             return 0;
         }
 
-        // Enable Bus Master
+        // Enable bus mastering.
         uint32_t pci_cmd = pci.Read(dev->bus, dev->device, dev->function, 0x04);
         pci.Write(dev->bus, dev->device, dev->function, 0x04, pci_cmd | 0x07);
 
-        // Scan BARs
+        // Scan the BARs.
         for (int i = 0; i < 6; i++) {
             BaseAddressRegister bar =
                 pci.GetBaseAddressRegister(dev->bus, dev->device, dev->function, i);
 
             if (bar.type == MemoryMapping && bar.address != 0) {
-                // PCI Spec: Lower 4 bits are flags (prefetchable, type, etc.)
+                // PCI spec: the lower 4 bits are flags (prefetchable, type, etc.).
                 uint32_t addr = (uint32_t)((uint32_t)bar.address & (uint32_t)0xFFFFFFF0);
                 return addr;
             }
@@ -86,13 +124,19 @@ private:
     }
 
 public:
+    /**
+     * DynamicBGADriver() - Construct the driver without attaching hardware.
+     */
     DynamicBGADriver() : GraphicsDriver(GUI_SCREEN_WIDTH, GUI_SCREEN_HEIGHT, GUI_SCREEN_BPP, 0) {
         this->driverName = "BGA Driver for Hashx86";
         this->physFramebufferAddr = 0;
     }
 
+    /**
+     * Activate() - Find the framebuffer and set up the video mode.
+     */
     void Activate() override {
-        // Find the Hardware
+        // Locate the hardware and its framebuffer.
         this->physFramebufferAddr = FindFramebufferPCI();
 
         if (this->physFramebufferAddr == 0) {
@@ -102,9 +146,9 @@ public:
 
         printf("[BGA] Hardware Found. LFB @ 0x%x\n", this->physFramebufferAddr);
 
-        // Set Video Mode
+        // Set the video mode.
         WriteRegister(VBE_DISPI_INDEX_ENABLE, VBE_DISPI_DISABLED);
-        WriteRegister(VBE_DISPI_INDEX_ID, 0xB0C5);  // VBE 3.0
+        WriteRegister(VBE_DISPI_INDEX_ID, 0xB0C5);  // VBE 3.0.
         WriteRegister(VBE_DISPI_INDEX_X_OFFSET, 0);
         WriteRegister(VBE_DISPI_INDEX_Y_OFFSET, 0);
         WriteRegister(VBE_DISPI_INDEX_XRES, this->width);
@@ -150,32 +194,54 @@ public:
             }
         }
 
-        // Update GraphicsDriver Pointers
+        // Update the GraphicsDriver framebuffer pointer.
         this->videoMemory = (uint32_t*)this->physFramebufferAddr;
 
         printf("[BGA] Mode Set: %dx%d\n", this->width, this->height);
         this->is_Active = true;
     }
 
+    /**
+     * Deactivate() - Disable the display.
+     */
     void Deactivate() override {
         WriteRegister(VBE_DISPI_INDEX_ENABLE, VBE_DISPI_DISABLED);
     }
 
+    /**
+     * Reset() - Re-activate the driver.
+     *
+     * Return: 0 on success.
+     */
     int Reset() override {
         Activate();
         return 0;
     }
 
-    // Helper for the kernel to know where to map pages
+    /**
+     * GetPhysicalAddress() - Expose the framebuffer physical address for mapping.
+     *
+     * Return: The linear framebuffer address.
+     */
     uint32_t GetPhysicalAddress() {
         return physFramebufferAddr;
     }
 
+    /**
+     * AsGraphicsDriver() - Expose this driver through the graphics interface.
+     *
+     * Return: This instance as a GraphicsDriver.
+     */
     GraphicsDriver* AsGraphicsDriver() override {
         return this;
     }
 };
 
+/**
+ * CreateDriverInstance() - Driver entry point returning a new BGA driver.
+ *
+ * Return: A newly constructed DynamicBGADriver instance.
+ */
 extern "C" Driver* CreateDriverInstance() {
     DynamicBGADriver* drv = new DynamicBGADriver();
     if (!drv) {

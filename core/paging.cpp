@@ -1,9 +1,25 @@
-/**
- * @file        paging.cpp
- * @brief       Page Table Manager for #x86
+/*
+ * MIT License
  *
- * @date        29/01/2026
- * @version     1.0.0-beta
+ * Copyright (c) 2025 Malaka Gunawardana
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
  */
 
 #define KDBG_COMPONENT "PAGING"
@@ -13,30 +29,27 @@ Paging::Paging() : is_paging_active(false) {}
 
 Paging::~Paging() {}
 
-// Recursion guard: increment before any PMM allocation in MapPage,
-// decrement after. Page-fault handlers check this to avoid
-// recursive fault when pmm_alloc_block_low touches the PMM bitmap.
+// Recursion guard: incremented before any PMM allocation in MapPage and
+// decremented after. Page-fault handlers check this to avoid a recursive fault
+// when pmm_alloc_block_low touches the PMM bitmap.
 static int paging_map_depth = 0;
 
 void Paging::Activate() {
-    // Allocate the Master Page Directory
-    // Must be in identity-mapped range (<256MB) so kernel can access it after paging
+    // Allocate the master page directory. It must live in the identity-mapped
+    // range (<256 MB) so the kernel can access it after paging is enabled.
     KernelPageDirectory = (uint32_t*)pmm_alloc_block_low(256 * 1024 * 1024);
 
     if (!KernelPageDirectory || ((uint32_t)KernelPageDirectory & 0xFFF)) {
         KDBG1("CRITICAL ERROR: Page Directory NOT Aligned! Addr: 0x%x", KernelPageDirectory);
-        while (1);  // Halt
+        while (1);  // Halt.
     }
 
-    // Memset 0;
+    // Clear the directory.
     memset(KernelPageDirectory, 0, 4096);
 
-    // --------------------------------------------------------
-    // Map Lower Memory (0MB - 256MB) | Kernel Code
-    // 256MB / 4MB per table = 64 Tables
+    // Map lower memory (0-256 MB) for kernel code: 256 MB / 4 MB per table = 64 tables.
     for (uint32_t i = 0; i < 64; i++) {
-        // Allocate a Page Table (Holds 1024 pages)
-        // Must be in identity-mapped range (<256MB)
+        // Allocate a page table (1024 pages), again from low memory.
         uint32_t* page_table = (uint32_t*)pmm_alloc_block_low(256 * 1024 * 1024);
         if (!page_table) {
             KDBG1("CRITICAL: Failed to allocate page table for index %d!", i);
@@ -44,22 +57,21 @@ void Paging::Activate() {
         }
         memset(page_table, 0, 4096);
 
-        // Fill the table (Identity Map: Virtual X = Physical X)
+        // Fill the table with identity mappings (virtual X = physical X).
         for (uint32_t j = 0; j < 1024; j++) {
             uint32_t phys_addr = (i * 1024 + j) * 4096;
-            // Flags: Present | ReadWrite
+            // Present and read/write flags.
             page_table[j] = phys_addr | PAGE_PRESENT | PAGE_RW;
         }
 
-        // Put the table into the Directory
+        // Install the table into the directory.
         KernelPageDirectory[i] = ((uint32_t)page_table) | PAGE_PRESENT | PAGE_RW;
     }
 
-    // --------------------------------------------------------
-    // Map High Memory (3GB - 4GB) | VRAM / MMIO
-    // Indices 768 to 1024. Covers 0xC0000000 to 0xFFFFFFFF.
+    // Map high memory (3-4 GB) for VRAM/MMIO: indices 768 to 1024, covering
+    // 0xC0000000 to 0xFFFFFFFF.
     for (uint32_t i = 768; i < 1024; i++) {
-        // Must be in identity-mapped range (<256MB)
+        // Also from the identity-mapped range so the kernel can reach the tables.
         uint32_t* page_table = (uint32_t*)pmm_alloc_block_low(256 * 1024 * 1024);
         if (!page_table) {
             KDBG1("CRITICAL: Failed to allocate high-mem page table for index %d!", i);
@@ -67,7 +79,7 @@ void Paging::Activate() {
         }
         memset(page_table, 0, 4096);
 
-        // Identity map high memory address
+        // Identity-map the high memory addresses.
         for (uint32_t j = 0; j < 1024; j++) {
             uint32_t phys_addr = (i * 1024 + j) * 4096;
             page_table[j] = phys_addr | PAGE_PRESENT | PAGE_RW;
@@ -76,12 +88,10 @@ void Paging::Activate() {
         KernelPageDirectory[i] = ((uint32_t)page_table) | PAGE_PRESENT | PAGE_RW;
     }
 
-    // --------------------------------------------------------
-    // Enable Paging
-    // Load CR3 with the Physical Address of the Directory
+    // Enable paging: load CR3 with the physical address of the directory.
     asm volatile("mov %0, %%cr3" : : "r"(KernelPageDirectory));
 
-    // Enable PG bit in CR0
+    // Enable the PG bit in CR0.
     uint32_t cr0;
     asm volatile("mov %%cr0, %0" : "=r"(cr0));
     cr0 |= 0x80000000;
@@ -92,20 +102,20 @@ void Paging::Activate() {
 }
 
 uint32_t* Paging::CreateProcessDirectory() {
-    // Allocate a new Directory with pmm_alloc for 4kb alignment
-    // Must be in identity-mapped range (<256MB) so kernel can read/write entries
+    // Allocate a new directory with pmm_alloc for 4KB alignment. Must be in
+    // the identity-mapped range (<256 MB) so the kernel can read/write entries.
     uint32_t* new_dir = (uint32_t*)pmm_alloc_block_low(256 * 1024 * 1024);
     if (!new_dir) return 0;
 
-    // Clear user space
+    // Clear the user space.
     memset(new_dir, 0, 4096);
 
-    // Link Kernel Space (Low Memory: 0-256MB)
+    // Link the kernel space (low memory: 0-256 MB).
     for (int i = 0; i < 64; i++) {
         new_dir[i] = KernelPageDirectory[i];
     }
 
-    // Link Hardware Space (High Memory: 3GB-4GB)
+    // Link the hardware space (high memory: 3-4 GB).
     for (int i = 768; i < 1024; i++) {
         new_dir[i] = KernelPageDirectory[i];
     }
@@ -125,7 +135,7 @@ bool Paging::MapPage(uint32_t* directory, uint32_t virtual_addr, uint32_t physic
     uint32_t pd_idx = virtual_addr >> 22;
     uint32_t pt_idx = (virtual_addr >> 12) & 0x03FF;
 
-    // Guard against modifying kernel-shared PDE ranges (0–64 and 768–1023)
+    // Guard against modifying kernel-shared PDE ranges (0-64 and 768-1023).
     // These entries are shared across all processes via CreateProcessDirectory;
     // altering them would corrupt kernel mappings for every process.
     if (pd_idx < 64 || (pd_idx >= 768 && pd_idx < 1024)) {
@@ -136,16 +146,16 @@ bool Paging::MapPage(uint32_t* directory, uint32_t virtual_addr, uint32_t physic
         return false;
     }
 
-    // Check if Page Table exists
+    // Allocate the page table if one does not exist yet.
     if (!(directory[pd_idx] & PAGE_PRESENT)) {
-        // Recursion guard: detect if PMM alloc causes a page fault
+        // Recursion guard: detect if the PMM allocation causes a page fault.
         if (paging_map_depth > 0) {
             KDBG1("MapPage: RECURSION DETECTED! paging_map_depth=%d", paging_map_depth);
             return false;
         }
         paging_map_depth++;
 
-        // Allocate new table via PMM (LOW MEMORY < 256MB)
+        // Allocate the new table via the PMM (low memory, <256 MB).
         uint32_t* new_table = (uint32_t*)pmm_alloc_block_low(256 * 1024 * 1024);
 
         paging_map_depth--;
@@ -157,16 +167,16 @@ bool Paging::MapPage(uint32_t* directory, uint32_t virtual_addr, uint32_t physic
 
         memset(new_table, 0, 4096);
 
-        // Link it
+        // Link the table into the directory.
         directory[pd_idx] = (uint32_t)new_table | PAGE_PRESENT | PAGE_RW | PAGE_USER;
     }
 
     uint32_t* table = (uint32_t*)(directory[pd_idx] & 0xFFFFF000);
     table[pt_idx] = (physical_addr & 0xFFFFF000) | flags;
 
-    // Invalidate TLB entry for this virtual address.
-    // Without this, stale TLB entries can cause phantom page faults
-    // when pages are newly mapped or permissions are changed.
+    // Invalidate the TLB entry for this virtual address. Without this, stale
+    // TLB entries can cause phantom page faults when pages are newly mapped
+    // or permissions are changed.
     asm volatile("invlpg (%0)" ::"r"(virtual_addr) : "memory");
     KDBG2("MapPage virt=0x%x phys=0x%x flags=0x%x", virtual_addr, physical_addr, flags);
     return true;

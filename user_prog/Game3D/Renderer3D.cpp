@@ -1,28 +1,44 @@
-/**
- * @file        Renderer3D.cpp
- * @brief       User-space 3D Rendering Engine
- *
- * @date        28/01/2026
- * @version     2.0.0
- */
-
 /*
- * 3D Game Engine Module
+ * MIT License
  *
- * NOTE: The 3D rendering logic and math libraries in this file were generated
- * with assistance from Gemini and Claude to demonstrate user-space capabilities.
- * Therefore, full credit goes to the LLMs :)
+ * Copyright (c) 2025 Malaka Gunawardana
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
  */
 
 #include <Hx86/debug.h>
 #include <Hx86/memory.h>
 #include <Renderer3D.h>
 
-// Constants
+// Renderer constants.
 #define NEAR_PLANE 0.1f
 #define FAR_PLANE 1000.0f
 #define FOV_FACTOR 800.0f
 
+/**
+ * Renderer3D() - Construct a rasterizer for a given framebuffer size.
+ * @w: Framebuffer width in pixels.
+ * @h: Framebuffer height in pixels.
+ *
+ * Allocates the depth and shadow buffers and initializes the default material,
+ * lighting and culling settings.
+ */
 Renderer3D::Renderer3D(int w, int h) {
     this->width = w;
     this->height = h;
@@ -35,7 +51,7 @@ Renderer3D::Renderer3D(int w, int h) {
     this->skybox = nullptr;
     this->currentTexture = nullptr;
 
-    // Default Material
+    // Default material settings.
     this->ambientStrength = 0.2f;
     this->specularStrength = 0.5f;
     this->shininess = 32.0f;
@@ -44,7 +60,7 @@ Renderer3D::Renderer3D(int w, int h) {
     this->enableZWrite = true;
     this->enableLighting = true;
 
-    // Shadow map
+    // Shadow map state.
     this->shadowMap = new float[SHADOW_MAP_SIZE * SHADOW_MAP_SIZE];
     this->shadowsEnabled = false;
     this->shadowOrthoSize = 50.0f;
@@ -52,7 +68,7 @@ Renderer3D::Renderer3D(int w, int h) {
     this->shadowFar = 200.0f;
     this->shadowLightDir = Vec3(0, -1, 0);
 
-    // Skybox camera
+    // Skybox camera rotation.
     this->skyYaw = 0.0f;
     this->skyPitch = 0.0f;
 }
@@ -62,6 +78,14 @@ Renderer3D::~Renderer3D() {
     delete[] this->shadowMap;
 }
 
+/**
+ * Clear() - Reset the depth buffer and fill the framebuffer.
+ * @buffer: 32-bit framebuffer to fill.
+ * @color: Clear color packed as 0xAARRGGBB.
+ *
+ * When a valid skybox is bound it is stretched to fill the framebuffer instead
+ * of the flat color.
+ */
 void Renderer3D::Clear(uint32_t* buffer, uint32_t color) {
     int size = width * height;
     for (int i = 0; i < size; i++) zBuffer[i] = 0.0f;
@@ -86,16 +110,23 @@ void Renderer3D::Clear(uint32_t* buffer, uint32_t color) {
     }
 }
 
-// Camera-aware panoramic skybox render
+/**
+ * ClearSky() - Render the sky with camera yaw/pitch scrolling and reset depth.
+ * @buffer: 32-bit framebuffer to fill.
+ * @camYaw: Camera yaw in radians, mapped to horizontal sky scrolling.
+ * @camPitch: Camera pitch in radians, mapped to vertical sky offset.
+ *
+ * Falls back to a gradient when no skybox is bound.
+ */
 void Renderer3D::ClearSky(uint32_t* buffer, float camYaw, float camPitch) {
     int size = width * height;
     for (int i = 0; i < size; i++) zBuffer[i] = 0.0f;
 
     if (!skybox || !skybox->IsValid()) {
-        // Gradient sky fallback
+        // Gradient sky fallback.
         for (int y = 0; y < height; y++) {
             float t = (float)y / (float)height;
-            // Blend from deep blue (top) to light cyan (horizon) to warm (bottom)
+            // Blend from deep blue (top) to light cyan (horizon) to warm (bottom).
             int r, g, b;
             if (t < 0.5f) {
                 float s = t * 2.0f;
@@ -124,21 +155,20 @@ void Renderer3D::ClearSky(uint32_t* buffer, float camYaw, float camPitch) {
     int skyH = skybox->GetHeight();
     uint32_t* skyData = skybox->GetBuffer();
 
-    // Simple UV offset approach: scroll horizontally by yaw, offset vertically by pitch
-    // This is MUCH faster than per-pixel trig (no sin/cos/atan2 per pixel)
-    // Yaw maps to horizontal scroll (full 2*PI = full texture width)
-    float yawNorm = camYaw / TWO_PI;  // Normalize to [0, 1) range
+    // Scroll by camera yaw and pitch instead of per-pixel trig.
+    // Yaw maps to a horizontal scroll (full 2*PI = full texture width).
+    float yawNorm = camYaw / TWO_PI;  // Normalize to [0, 1).
     int xOffset = (int)(yawNorm * skyW);
-    // Keep positive
+    // Keep the offset positive.
     xOffset = ((xOffset % skyW) + skyW) % skyW;
 
-    // Pitch maps to vertical offset (clamp to reasonable range)
-    float pitchNorm = camPitch / PI;  // -0.5 to 0.5
+    // Pitch maps to a vertical offset (clamped to a reasonable range).
+    float pitchNorm = camPitch / PI;  // -0.5 to 0.5.
     int yOffset = (int)(pitchNorm * skyH * 0.5f);
 
     for (int y = 0; y < height; y++) {
         int srcY = (y * skyH) / height + yOffset;
-        // Clamp vertically (don't wrap sky)
+        // Clamp vertically (don't wrap the sky).
         if (srcY < 0) srcY = 0;
         if (srcY >= skyH) srcY = skyH - 1;
 
@@ -152,6 +182,10 @@ void Renderer3D::ClearSky(uint32_t* buffer, float camYaw, float camPitch) {
     }
 }
 
+/**
+ * BindTexture() - Set the texture sampled by FillTriangle().
+ * @tex: Bitmap to bind, or null to keep the previous one.
+ */
 void Renderer3D::BindTexture(Bitmap* tex) {
     this->currentTexture = tex;
     if (tex && tex->IsValid()) {
@@ -160,36 +194,46 @@ void Renderer3D::BindTexture(Bitmap* tex) {
     }
 }
 
+/**
+ * SetSkybox() - Bind a texture used as the environment sky.
+ * @sky: Bitmap to use as the skybox.
+ */
 void Renderer3D::SetSkybox(Bitmap* sky) {
     this->skybox = sky;
 }
 
+/**
+ * SetMaterial() - Configure the lighting material.
+ * @a: Ambient light strength.
+ * @s: Specular light strength.
+ * @sh: Specular shininess exponent.
+ */
 void Renderer3D::SetMaterial(float a, float s, float sh) {
     ambientStrength = a;
     specularStrength = s;
     shininess = sh;
 }
 
-// ============================================================================
+// --------------------------------------------------------------------------
 // LIGHTING
-// ============================================================================
+// --------------------------------------------------------------------------
 
 float Renderer3D::CalculateLighting(const Vec3& normal, const Vec3& viewDir, Light* lights,
                                     int lightCount) {
     float total = ambientStrength;
 
     for (int i = 0; i < lightCount; i++) {
-        // Diffuse (Lambert)
+        // Diffuse (Lambert).
         float ndotl = normal.Dot(lights[i].direction * -1.0f);
         if (ndotl < 0.0f) ndotl = 0.0f;
         total += ndotl * lights[i].intensity;
 
-        // Specular (Blinn-Phong)
+        // Specular (Blinn-Phong).
         if (specularStrength > 0.0f && ndotl > 0.0f) {
             Vec3 halfDir = (viewDir + lights[i].direction * -1.0f).Normalized();
             float spec = normal.Dot(halfDir);
             if (spec < 0.0f) spec = 0.0f;
-            // Approximate pow with multiplications
+            // Approximate pow() with repeated multiplications.
             float specPow = spec;
             int shinInt = (int)shininess;
             for (int s = 1; s < shinInt && s < 32; s *= 2) {
@@ -203,10 +247,17 @@ float Renderer3D::CalculateLighting(const Vec3& normal, const Vec3& viewDir, Lig
     return total;
 }
 
-// ============================================================================
+// --------------------------------------------------------------------------
 // SHADOW MAP
-// ============================================================================
+// --------------------------------------------------------------------------
 
+/**
+ * SetupShadows() - Enable and configure shadow mapping.
+ * @lightDir: Direction the light is shining.
+ * @orthoSize: Half-size of the orthographic shadow volume.
+ * @nearPlane: Near plane of the shadow frustum.
+ * @farPlane: Far plane of the shadow frustum.
+ */
 void Renderer3D::SetupShadows(const Vec3& lightDir, float orthoSize, float nearPlane,
                               float farPlane) {
     shadowLightDir = lightDir;
@@ -218,24 +269,24 @@ void Renderer3D::SetupShadows(const Vec3& lightDir, float orthoSize, float nearP
 }
 
 void Renderer3D::BeginShadowPass(float centerX, float centerY, float centerZ) {
-    // Clear shadow map
+    // Clear the shadow map.
     int smSize = SHADOW_MAP_SIZE * SHADOW_MAP_SIZE;
     for (int i = 0; i < smSize; i++) {
-        shadowMap[i] = 1e30f;  // Far away
+        shadowMap[i] = 1e30f;  // Far away.
     }
 
-    // Cache the light-space transform center
+    // Cache the light-space transform center.
     slCenterX = centerX;
     slCenterY = centerY;
     slCenterZ = centerZ;
 
-    // Build light view rotation
-    // Look along the light direction
-    // Light direction = direction light is shining (e.g. (0, -1, 0) = straight down)
+    // Build the light-space rotation from the light direction. The light
+    // direction is the direction the light is shining (e.g. (0, -1, 0) is
+    // straight down).
     Vec3 lightForward = shadowLightDir;
     lightForward.Normalize();
 
-    // Compute yaw/pitch from light direction
+    // Extract yaw and pitch from the light direction.
     float yaw = atan2(lightForward.x, lightForward.z);
     float pitch = asin(-lightForward.y);
 
@@ -246,34 +297,34 @@ void Renderer3D::BeginShadowPass(float centerX, float centerY, float centerZ) {
 }
 
 Vec3 Renderer3D::WorldToShadowUV(const Vec3& worldPos) {
-    // Translate to shadow center
+    // Translate to the shadow center.
     float tx = worldPos.x - slCenterX;
     float ty = worldPos.y - slCenterY;
     float tz = worldPos.z - slCenterZ;
 
-    // Rotate by yaw (Y-axis)
+    // Rotate by yaw (Y axis).
     float rx = tx * slCosY - tz * slSinY;
     float rz = tx * slSinY + tz * slCosY;
 
-    // Rotate by pitch (X-axis)
+    // Rotate by pitch (X axis).
     float ry = ty * slCosP - rz * slSinP;
     float rz2 = ty * slSinP + rz * slCosP;
 
-    // Orthographic projection to [0,1]
+    // Orthographically project to [0, 1].
     float invSize = 0.5f / shadowOrthoSize;
     float u = rx * invSize + 0.5f;
     float v = ry * invSize + 0.5f;
 
-    return Vec3(u, v, -rz2);  // z = depth in light space (negated so farther from light = larger)
+    return Vec3(u, v, -rz2);  // Depth in light space (negated: farther = larger).
 }
 
 void Renderer3D::RasterizeShadowTriangle(Vec3 p0, Vec3 p1, Vec3 p2) {
-    // Convert world positions to shadow UV + depth
+    // Convert world positions to shadow UV plus depth.
     Vec3 s0 = WorldToShadowUV(p0);
     Vec3 s1 = WorldToShadowUV(p1);
     Vec3 s2 = WorldToShadowUV(p2);
 
-    // Convert to shadow map pixel coordinates
+    // Convert to shadow-map pixel coordinates.
     float sm = (float)SHADOW_MAP_SIZE;
     s0.x *= sm;
     s0.y *= sm;
@@ -282,7 +333,7 @@ void Renderer3D::RasterizeShadowTriangle(Vec3 p0, Vec3 p1, Vec3 p2) {
     s2.x *= sm;
     s2.y *= sm;
 
-    // Sort by Y
+    // Sort the vertices by Y.
     if (s0.y > s1.y) {
         Vec3 tmp = s0;
         s0 = s1;
@@ -376,7 +427,7 @@ void Renderer3D::RenderMeshToShadowMap(Mesh* mesh) {
 }
 
 void Renderer3D::EndShadowPass() {
-    // Shadow map is complete - nothing to finalize
+    // The shadow map is complete; nothing to finalize.
 }
 
 float Renderer3D::SampleShadow(const Vec3& worldPos) {
@@ -384,26 +435,26 @@ float Renderer3D::SampleShadow(const Vec3& worldPos) {
 
     Vec3 shadowUV = WorldToShadowUV(worldPos);
 
-    // Out of shadow map bounds = lit
+    // Out of shadow-map bounds means lit.
     if (shadowUV.x < 0.01f || shadowUV.x > 0.99f || shadowUV.y < 0.01f || shadowUV.y > 0.99f) {
         return 1.0f;
     }
 
     float currentDepth = shadowUV.z;
 
-    // 3x3 PCF (Percentage Closer Filtering) for smooth shadow edges
+    // 3x3 PCF (percentage-closer filtering) for smooth shadow edges.
     float fx = shadowUV.x * (SHADOW_MAP_SIZE - 1);
     float fy = shadowUV.y * (SHADOW_MAP_SIZE - 1);
     int ix = (int)fx;
     int iy = (int)fy;
 
-    // Clamp to valid range (leaving room for -1 and +1 neighbors)
+    // Clamp to a valid range, leaving room for the +-1 neighbors.
     if (ix < 1) ix = 1;
     if (ix >= SHADOW_MAP_SIZE - 1) ix = SHADOW_MAP_SIZE - 2;
     if (iy < 1) iy = 1;
     if (iy >= SHADOW_MAP_SIZE - 1) iy = SHADOW_MAP_SIZE - 2;
 
-    // Sample 9 neighboring texels (3x3 kernel) and count lit samples
+    // Sample the 3x3 kernel and count lit texels.
     float litCount = 0.0f;
     for (int dy = -1; dy <= 1; dy++) {
         int sy = iy + dy;
@@ -416,67 +467,79 @@ float Renderer3D::SampleShadow(const Vec3& worldPos) {
         }
     }
 
-    // Normalize: 0 = fully shadowed, 9 = fully lit
+    // Normalize: 0.0 = fully shadowed, 1.0 = fully lit.
     float shadowFactor = litCount * (1.0f / 9.0f);
 
-    // Map to shadow intensity: 0.3 (full shadow) to 1.0 (full light)
+    // Map to a shadow intensity from 0.3 (full shadow) to 1.0 (full light).
     return 0.3f + shadowFactor * 0.7f;
 }
 
-// ============================================================================
+// --------------------------------------------------------------------------
 // MESH DRAWING
-// ============================================================================
+// --------------------------------------------------------------------------
 
+/**
+ * DrawMesh() - Transform, clip and rasterize a mesh.
+ * @buffer: 32-bit framebuffer destination.
+ * @mesh: Mesh to draw.
+ * @camX: Camera X position in world space.
+ * @camY: Camera Y position in world space.
+ * @camZ: Camera Z position in world space.
+ * @camYaw: Camera yaw in radians.
+ * @camPitch: Camera pitch in radians.
+ * @lights: Directional lights used for per-vertex lighting.
+ * @lightCount: Number of entries in @lights.
+ */
 void Renderer3D::DrawMesh(uint32_t* buffer, Mesh* mesh, float camX, float camY, float camZ,
                           float camYaw, float camPitch, Light* lights, int lightCount) {
     if (!mesh || mesh->triCount == 0) return;
 
-    // Build view matrix
+    // Build the view matrix from yaw and pitch.
     float yaw = -camYaw;
     float cosY = cos(yaw), sinY = sin(yaw);
     float cosP = cos(camPitch), sinP = sin(camPitch);
 
-    // Forward direction
+    // Camera forward direction, used for specular lighting.
     Vec3 viewDir(sinY * cosP, -sinP, cosY * cosP);
     viewDir.Normalize();
 
     for (int t = 0; t < mesh->triCount; t++) {
         Triangle& tri = mesh->tris[t];
 
-        // Transform vertices to camera space
+        // Transform vertices to camera space.
         Vertex v[3];
         for (int i = 0; i < 3; i++) {
-            // Store world position for shadow lookup
+            // Keep the world position for the shadow lookup.
             v[i].worldPos = tri.p[i];
 
-            // Translate relative to camera
+            // Translate relative to the camera.
             float tx = tri.p[i].x - camX;
             float ty = tri.p[i].y - camY;
             float tz = tri.p[i].z - camZ;
 
-            // Rotate by yaw (Y-axis)
+            // Rotate by yaw (Y axis).
             float rx = tx * cosY - tz * sinY;
             float rz = tx * sinY + tz * cosY;
 
-            // Rotate by pitch (X-axis)
+            // Rotate by pitch (X axis).
             float ry = ty * cosP - rz * sinP;
             float rz2 = ty * sinP + rz * cosP;
 
             v[i].pos = Vec3(rx, ry, rz2);
             v[i].uv = tri.uv[i];
 
-            // Transform normal
+            // Transform the normal into camera space.
             float nx = tri.n[i].x * cosY - tri.n[i].z * sinY;
             float nz = tri.n[i].x * sinY + tri.n[i].z * cosY;
             float ny = tri.n[i].y * cosP - nz * sinP;
             float nz2 = tri.n[i].y * sinP + nz * cosP;
             v[i].normal = Vec3(nx, ny, nz2);
 
-            // Per-vertex lighting
+            // Per-vertex lighting.
             v[i].light = CalculateLighting(tri.n[i], viewDir, lights, lightCount);
         }
 
-        // Backface culling in camera space
+        // Backface culling in camera space.
         if (enableBackfaceCulling) {
             Vec3 e1 = v[1].pos - v[0].pos;
             Vec3 e2 = v[2].pos - v[0].pos;
@@ -484,14 +547,14 @@ void Renderer3D::DrawMesh(uint32_t* buffer, Mesh* mesh, float camX, float camY, 
             if (faceNormal.Dot(v[0].pos) >= 0.0f) continue;
         }
 
-        // Clip and project
+        // Clip and project.
         ClipTriangle(v[0], v[1], v[2], buffer);
     }
 }
 
-// ============================================================================
+// --------------------------------------------------------------------------
 // CLIPPING (Near plane)
-// ============================================================================
+// --------------------------------------------------------------------------
 
 static Vertex LerpVertex(const Vertex& a, const Vertex& b, float t) {
     Vertex result;
@@ -504,7 +567,7 @@ static Vertex LerpVertex(const Vertex& a, const Vertex& b, float t) {
 }
 
 void Renderer3D::ClipTriangle(Vertex v1, Vertex v2, Vertex v3, uint32_t* buffer) {
-    // Near plane clipping (z > NEAR_PLANE in camera space)
+    // Clip against the near plane (z > NEAR_PLANE in camera space).
     Vertex verts[3] = {v1, v2, v3};
     Vertex clipped[4];
     int clipCount = 0;
@@ -521,28 +584,28 @@ void Renderer3D::ClipTriangle(Vertex v1, Vertex v2, Vertex v3, uint32_t* buffer)
         }
 
         if (currInside != nextInside) {
-            // Compute intersection
+            // Compute the intersection with the near plane.
             float t = (NEAR_PLANE - curr.pos.z) / (next.pos.z - curr.pos.z);
             if (clipCount < 4) clipped[clipCount++] = LerpVertex(curr, next, t);
         }
     }
 
-    // Project and rasterize the clipped polygon
+    // Project and rasterize the clipped polygon.
     if (clipCount < 3) return;
 
     for (int i = 0; i < clipCount; i++) {
-        // Perspective projection
+        // Perspective projection.
         float invZ = 1.0f / clipped[i].pos.z;
         clipped[i].pos.x = clipped[i].pos.x * FOV_FACTOR * invZ + halfWidth;
         clipped[i].pos.y = -clipped[i].pos.y * FOV_FACTOR * invZ + halfHeight;
 
-        // Store 1/z for z-buffer AND perspective-correct interpolation
-        // Pre-divide UV and lighting by Z for perspective-correct interpolation
+        // Store 1/z for the depth buffer and pre-divide the UV and lighting by
+        // z, enabling perspective-correct interpolation during rasterization.
         clipped[i].uv.x *= invZ;
         clipped[i].uv.y *= invZ;
         clipped[i].light *= invZ;
         clipped[i].worldPos = clipped[i].worldPos * invZ;
-        clipped[i].pos.z = invZ;  // Store 1/z
+        clipped[i].pos.z = invZ;  // Store 1/z.
     }
 
     FillTriangle(buffer, clipped[0], clipped[1], clipped[2]);
@@ -552,13 +615,24 @@ void Renderer3D::ClipTriangle(Vertex v1, Vertex v2, Vertex v3, uint32_t* buffer)
     }
 }
 
-// ============================================================================
+// --------------------------------------------------------------------------
 // TRIANGLE RASTERIZER
-// Perspective-correct texturing + optimized scanline with delta-stepping
-// ============================================================================
+// Perspective-correct texturing with delta-stepping scanlines.
+// --------------------------------------------------------------------------
 
+/**
+ * FillTriangle() - Rasterize a perspective-projected triangle.
+ * @buffer: 32-bit framebuffer destination.
+ * @v1: First vertex, with pos.z holding 1/z and uv/light pre-divided by z.
+ * @v2: Second vertex.
+ * @v3: Third vertex.
+ *
+ * Interpolates 1/z, uv/z, light/z and worldPos/z along the scanlines and
+ * recovers the true values by dividing by 1/z for depth, texture and shadow
+ * tests.
+ */
 void Renderer3D::FillTriangle(uint32_t* buffer, Vertex v1, Vertex v2, Vertex v3) {
-    // Sort vertices by Y (top to bottom)
+    // Sort the vertices by Y (top to bottom).
     if (v1.pos.y > v2.pos.y) {
         Vertex tmp = v1;
         v1 = v2;
@@ -579,9 +653,9 @@ void Renderer3D::FillTriangle(uint32_t* buffer, Vertex v1, Vertex v2, Vertex v3)
     int y2 = (int)ceilf(v2.pos.y);
     int y3 = (int)ceilf(v3.pos.y);
 
-    if (y1 == y3) return;  // Degenerate
+    if (y1 == y3) return;  // Degenerate triangle.
 
-    // Clamp to screen
+    // Clamp to the screen.
     if (y1 < 0) y1 = 0;
     if (y3 > height) y3 = height;
 
@@ -594,13 +668,13 @@ void Renderer3D::FillTriangle(uint32_t* buffer, Vertex v1, Vertex v2, Vertex v3)
     int texW = hasTexture ? currentTexture->GetWidth() : 0;
     int texH = hasTexture ? currentTexture->GetHeight() : 0;
 
-    // NOTE: At this point, uv, light, and worldPos are already pre-divided by Z
-    // in ClipTriangle (perspective-correct setup). pos.z stores 1/Z.
+    // NOTE: At this point uv, light and worldPos are already pre-divided by z
+    // in ClipTriangle() (perspective-correct setup), and pos.z holds 1/z.
 
     for (int y = y1; y < y3; y++) {
         if (y < 0 || y >= height) continue;
 
-        // Interpolate along long edge (v1 -> v3)
+        // Interpolate along the long edge (v1 -> v3).
         float t13 = ((float)y - v1.pos.y) * invDy13;
 
         float xA = v1.pos.x + (v3.pos.x - v1.pos.x) * t13;
@@ -614,7 +688,7 @@ void Renderer3D::FillTriangle(uint32_t* buffer, Vertex v1, Vertex v2, Vertex v3)
         float wyozA = v1.worldPos.y + (v3.worldPos.y - v1.worldPos.y) * t13;
         float wzozA = v1.worldPos.z + (v3.worldPos.z - v1.worldPos.z) * t13;
 
-        // Interpolate along short edge
+        // Interpolate along the short edge.
         float xB, zB, uozB, vozB, lozB;
         float wxozB, wyozB, wzozB;
 
@@ -644,7 +718,7 @@ void Renderer3D::FillTriangle(uint32_t* buffer, Vertex v1, Vertex v2, Vertex v3)
             wzozB = v2.worldPos.z + (v3.worldPos.z - v2.worldPos.z) * t23;
         }
 
-        // Ensure left < right
+        // Ensure the left edge is <= the right edge.
         if (xA > xB) {
             float tmp;
             tmp = xA;
@@ -682,7 +756,7 @@ void Renderer3D::FillTriangle(uint32_t* buffer, Vertex v1, Vertex v2, Vertex v3)
         if (dxAB == 0.0f) continue;
         float invDxAB = 1.0f / dxAB;
 
-        // Pre-compute per-scanline deltas (delta-stepping optimization)
+        // Pre-compute per-scanline deltas (delta-stepping optimization).
         float dz = (zB - zA) * invDxAB;
         float duoz = (uozB - uozA) * invDxAB;
         float dvoz = (vozB - vozA) * invDxAB;
@@ -691,7 +765,7 @@ void Renderer3D::FillTriangle(uint32_t* buffer, Vertex v1, Vertex v2, Vertex v3)
         float dwyoz = (wyozB - wyozA) * invDxAB;
         float dwzoz = (wzozB - wzozA) * invDxAB;
 
-        // Starting values (sub-pixel correct)
+        // Starting values, sub-pixel correct.
         float startOffset = (float)xStart - xA;
         float z = zA + dz * startOffset;
         float uoz = uozA + duoz * startOffset;
@@ -706,7 +780,7 @@ void Renderer3D::FillTriangle(uint32_t* buffer, Vertex v1, Vertex v2, Vertex v3)
         for (int x = xStart; x < xEnd; x++) {
             int idx = yOffset + x;
 
-            // Z-buffer test (higher 1/z = closer)
+            // Z-buffer test: higher 1/z is closer.
             if (z <= zBuffer[idx]) {
                 z += dz;
                 uoz += duoz;
@@ -719,7 +793,7 @@ void Renderer3D::FillTriangle(uint32_t* buffer, Vertex v1, Vertex v2, Vertex v3)
             }
             zBuffer[idx] = z;
 
-            // Perspective-correct recovery: divide by 1/z to get actual value
+            // Perspective-correct recovery: divide by 1/z to get the real value.
             float realZ = 1.0f / z;
             float u = uoz * realZ;
             float v = voz * realZ;
@@ -727,7 +801,7 @@ void Renderer3D::FillTriangle(uint32_t* buffer, Vertex v1, Vertex v2, Vertex v3)
 
             uint32_t color;
             if (hasTexture) {
-                // Sample texture with wrapping
+                // Sample the texture with wrapping.
                 int texX = (int)(u * texW) & (texW - 1);
                 int texY = (int)(v * texH) & (texH - 1);
                 if (texX < 0) texX += texW;
@@ -735,18 +809,18 @@ void Renderer3D::FillTriangle(uint32_t* buffer, Vertex v1, Vertex v2, Vertex v3)
 
                 color = texData[texY * texW + texX];
             } else {
-                color = 0xFFCCCCCC;  // Default grey
+                color = 0xFFCCCCCC;  // Default grey.
             }
 
-            // Shadow test
+            // Shadow test.
             if (shadowsEnabled) {
-                // Recover world position
+                // Recover the world position.
                 Vec3 wp(wxoz * realZ, wyoz * realZ, wzoz * realZ);
                 float shadow = SampleShadow(wp);
                 light *= shadow;
             }
 
-            // Apply lighting
+            // Apply lighting.
             if (light != 1.0f) {
                 uint8_t r = (color >> 16) & 0xFF;
                 uint8_t g = (color >> 8) & 0xFF;
@@ -764,7 +838,7 @@ void Renderer3D::FillTriangle(uint32_t* buffer, Vertex v1, Vertex v2, Vertex v3)
 
             buffer[idx] = color;
 
-            // Step deltas
+            // Step the deltas.
             z += dz;
             uoz += duoz;
             voz += dvoz;
@@ -776,9 +850,9 @@ void Renderer3D::FillTriangle(uint32_t* buffer, Vertex v1, Vertex v2, Vertex v3)
     }
 }
 
-// ============================================================================
-// OBJ LOADER (from raw memory buffer)
-// ============================================================================
+// --------------------------------------------------------------------------
+// OBJ LOADER (from a raw memory buffer)
+// --------------------------------------------------------------------------
 
 void Renderer3D::SkipWhitespace(char*& ptr) {
     while (*ptr == ' ' || *ptr == '\t') ptr++;
@@ -825,10 +899,21 @@ int Renderer3D::ParseInt(char*& ptr) {
     return result * sign;
 }
 
+/**
+ * LoadOBJ() - Parse a Wavefront OBJ file from memory into a mesh.
+ * @data: Raw OBJ text data.
+ * @dataSize: Size of @data in bytes.
+ *
+ * First counts every element, then parses vertex, normal, texture-coordinate
+ * and face records. Quads are split into two triangles, and faces without
+ * normals receive the computed face normal.
+ *
+ * Return: A newly allocated mesh, or null on parse failure.
+ */
 Mesh* Renderer3D::LoadOBJ(uint8_t* data, uint32_t dataSize) {
     if (!data || dataSize == 0) return nullptr;
 
-    // First pass: count vertices, normals, UVs, and faces
+    // First pass: count vertices, normals, UVs, and faces.
     int vertCount = 0, uvCount = 0, normCount = 0, faceCount = 0;
 
     char* ptr = (char*)data;
@@ -846,7 +931,7 @@ Mesh* Renderer3D::LoadOBJ(uint8_t* data, uint32_t dataSize) {
         } else if (*ptr == 'f' && (*(ptr + 1) == ' ' || *(ptr + 1) == '\t')) {
             faceCount++;
         }
-        // Skip to next line
+        // Skip to the next line.
         while (ptr < end && *ptr != '\n') ptr++;
         if (ptr < end) ptr++;
     }
@@ -856,7 +941,7 @@ Mesh* Renderer3D::LoadOBJ(uint8_t* data, uint32_t dataSize) {
     printf("OBJ: %d verts, %d uvs, %d normals, %d faces\n", vertCount, uvCount, normCount,
            faceCount);
 
-    // Allocate temporary arrays
+    // Allocate temporary arrays.
     Vec3* verts = new Vec3[vertCount + 1];
     Vec2* uvs = uvCount > 0 ? new Vec2[uvCount + 1] : nullptr;
     Vec3* norms = normCount > 0 ? new Vec3[normCount + 1] : nullptr;
@@ -866,7 +951,7 @@ Mesh* Renderer3D::LoadOBJ(uint8_t* data, uint32_t dataSize) {
         return nullptr;
     }
 
-    // Allocate mesh (overestimate: each face could be a quad = 2 triangles)
+    // Allocate the mesh, overestimating the triangle count (quads become two).
     Mesh* mesh = new Mesh();
     if (!mesh) {
         delete[] verts;
@@ -886,7 +971,7 @@ Mesh* Renderer3D::LoadOBJ(uint8_t* data, uint32_t dataSize) {
     }
     mesh->triCount = 0;
 
-    // Second pass: parse data
+    // Second pass: parse the data.
     ptr = (char*)data;
     int vi = 1, ui = 1, ni = 1;
 
@@ -894,7 +979,7 @@ Mesh* Renderer3D::LoadOBJ(uint8_t* data, uint32_t dataSize) {
         if (*ptr == 'v') {
             ptr++;
             if (*ptr == ' ' || *ptr == '\t') {
-                // Vertex position
+                // Vertex position.
                 float x = ParseFloat(ptr);
                 float y = ParseFloat(ptr);
                 float z = ParseFloat(ptr);
@@ -913,7 +998,7 @@ Mesh* Renderer3D::LoadOBJ(uint8_t* data, uint32_t dataSize) {
             }
         } else if (*ptr == 'f' && (*(ptr + 1) == ' ' || *(ptr + 1) == '\t')) {
             ptr++;
-            // Parse face indices (v/vt/vn format)
+            // Parse face indices in the v/vt/vn format.
             int faceVerts[4] = {0, 0, 0, 0};
             int faceUVs[4] = {0, 0, 0, 0};
             int faceNorms[4] = {0, 0, 0, 0};
@@ -944,7 +1029,7 @@ Mesh* Renderer3D::LoadOBJ(uint8_t* data, uint32_t dataSize) {
             }
 
             if (faceVertCount >= 3) {
-                // Triangle 1
+                // Triangle 1.
                 Triangle* t = &mesh->tris[mesh->triCount++];
                 for (int i = 0; i < 3; i++) {
                     int idx = (i == 0) ? 0 : (i == 1) ? 1 : 2;
@@ -954,7 +1039,7 @@ Mesh* Renderer3D::LoadOBJ(uint8_t* data, uint32_t dataSize) {
                         t->n[i] = norms[faceNorms[idx]];
                 }
 
-                // If no normals, compute face normal
+                // Without normals, compute the face normal.
                 if (normCount == 0) {
                     Vec3 fn = t->GetFaceNormal();
                     t->n[0] = t->n[1] = t->n[2] = fn;
@@ -962,7 +1047,7 @@ Mesh* Renderer3D::LoadOBJ(uint8_t* data, uint32_t dataSize) {
             }
 
             if (faceVertCount == 4) {
-                // Triangle 2 (quad)
+                // Triangle 2 (quad).
                 Triangle* t = &mesh->tris[mesh->triCount++];
                 int indices[3] = {0, 2, 3};
                 for (int i = 0; i < 3; i++) {
@@ -980,12 +1065,12 @@ Mesh* Renderer3D::LoadOBJ(uint8_t* data, uint32_t dataSize) {
             }
         }
 
-        // Skip to next line
+        // Skip to the next line.
         while (ptr < end && *ptr != '\n') ptr++;
         if (ptr < end) ptr++;
     }
 
-    // Cleanup temp arrays
+    // Clean up the temporary arrays.
     delete[] verts;
     if (uvs) delete[] uvs;
     if (norms) delete[] norms;

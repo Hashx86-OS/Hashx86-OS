@@ -1,3 +1,27 @@
+/*
+ * MIT License
+ *
+ * Copyright (c) 2025 Malaka Gunawardana
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
+ */
+
 #ifndef VGA_H
 #define VGA_H
 
@@ -10,14 +34,14 @@
 #include <types.h>
 
 /**
- * @brief Class for handling VGA (Video Graphics Array) graphics.
+ * class VideoGraphicsArray - VGA (Video Graphics Array) graphics driver.
  *
- * This class provides functions for setting video modes, drawing graphics, and handling
- * pixel manipulation in VGA mode 13h (320x200, 256 colors).
+ * Sets video modes, draws graphics, and performs pixel manipulation in VGA
+ * mode 13h (320x200, 256 colors).
  */
 class VideoGraphicsArray {
 protected:
-    /// VGA port registers for controlling video settings
+    // VGA port registers for controlling video settings.
     Port8Bit miscPort;
     Port8Bit crtcIndexPort;
     Port8Bit crtcDataPort;
@@ -33,157 +57,186 @@ protected:
     Port8Bit paletteDataPort;
 
     /**
-     * @brief Writes a set of VGA registers to configure the graphics mode.
-     *
-     * @param registers Pointer to an array of register values.
+     * WriteRegisters() - Program a set of VGA registers to configure the mode.
+     * @registers: Array of register values.
      */
     void WriteRegisters(uint8_t* registers);
 
     /**
-     * @brief Retrieves the memory segment where the VGA framebuffer is located.
+     * GetFrameBufferSegment() - Get the VGA framebuffer segment address.
      *
-     * @return Pointer to the framebuffer memory.
+     * Return: Pointer to the framebuffer memory.
      */
     uint8_t* GetFrameBufferSegment();
 
-    /// Default VGA screen resolution
+    // Default VGA screen resolution.
     uint32_t VGA_SCREEN_WIDTH = 320;
     uint32_t VGA_SCREEN_HEIGHT = 200;
 
 public:
     /**
-     * @brief Constructs a VideoGraphicsArray instance and initializes VGA registers.
+     * VideoGraphicsArray() - Initialize a VideoGraphicsArray instance.
      */
     VideoGraphicsArray();
 
     /**
-     * @brief Destructor for the VideoGraphicsArray class.
+     * ~VideoGraphicsArray() - Destroy a VideoGraphicsArray instance.
      */
     ~VideoGraphicsArray();
 
     /**
-     * @brief Checks if the requested resolution and color depth are supported.
+     * SupportsMode() - Check whether a resolution and color depth are supported.
+     * @width: Screen width.
+     * @height: Screen height.
+     * @colordepth: Bits per pixel.
      *
-     * @param width Screen width.
-     * @param height Screen height.
-     * @param colordepth Bits per pixel.
-     * @return True if the mode is supported, false otherwise.
+     * Return: True if the mode is supported, false otherwise.
      */
     virtual bool SupportsMode(uint32_t width, uint32_t height, uint32_t colordepth);
 
     /**
-     * @brief Sets the VGA graphics mode.
+     * SetMode() - Set the VGA graphics mode.
+     * @width: Screen width.
+     * @height: Screen height.
+     * @colordepth: Bits per pixel.
      *
-     * @param width Screen width.
-     * @param height Screen height.
-     * @param colordepth Bits per pixel.
-     * @return True if the mode was successfully set, false otherwise.
+     * Return: True if the mode was successfully set, false otherwise.
      */
     virtual bool SetMode(uint32_t width, uint32_t height, uint32_t colordepth);
 
     /**
-     * @brief Sets the VGA palette colors.
-     *
-     * @param palette 2D array representing RGB values for 256 colors.
+     * SetVGAPalette() - Write the VGA palette colors.
+     * @palette: RGB values for all 256 colors.
      */
     void SetVGAPalette(const uint8_t palette[256][3]);
 
     /**
-     * @brief Finds the closest matching VGA color index for an RGB color.
+     * GetClosestColorIndex() - Find the closest VGA color index for an RGB color.
+     * @r: Red component (0-255).
+     * @g: Green component (0-255).
+     * @b: Blue component (0-255).
      *
-     * @param r Red component (0-255).
-     * @param g Green component (0-255).
-     * @param b Blue component (0-255).
-     * @return The closest matching VGA color index.
+     * Return: The closest matching VGA color index.
      */
     uint8_t GetClosestColorIndex(uint8_t r, uint8_t g, uint8_t b);
 
     /**
-     * @brief Copies the back buffer contents to the framebuffer (screen update).
+     * Flush() - Copy the back buffer to the framebuffer (screen update).
      */
     void Flush();
 
     /**
-     * @brief Draws a pixel at (x, y) with specified RGB color.
-     *
-     * @param x X-coordinate.
-     * @param y Y-coordinate.
-     * @param r Red component (0-255).
-     * @param g Green component (0-255).
-     * @param b Blue component (0-255).
+     * PutPixel() - Draw a pixel at (x, y) with an RGB color.
+     * @x: X-coordinate.
+     * @y: Y-coordinate.
+     * @r: Red component (0-255).
+     * @g: Green component (0-255).
+     * @b: Blue component (0-255).
      */
     virtual void PutPixel(int32_t x, int32_t y, uint8_t r, uint8_t g, uint8_t b);
 
     /**
-     * @brief Draws a pixel at (x, y) using a color index from the VGA palette.
-     *
-     * @param x X-coordinate.
-     * @param y Y-coordinate.
-     * @param colorIndex VGA color index (0-255).
+     * PutPixel() - Draw a pixel at (x, y) using a VGA palette index.
+     * @x: X-coordinate.
+     * @y: Y-coordinate.
+     * @colorIndex: VGA color index (0-255).
      */
     virtual void PutPixel(int32_t x, int32_t y, uint8_t colorIndex);
 
     /**
-     * @brief Draws a bitmap image at the specified coordinates.
-     *
-     * @param x X-coordinate of the top-left corner.
-     * @param y Y-coordinate of the top-left corner.
-     * @param bitmapData Pointer to the bitmap data.
-     * @param bitmapWidth Width of the bitmap.
-     * @param bitmapHeight Height of the bitmap.
+     * DrawBitmap() - Draw a bitmap image at the given coordinates.
+     * @x: X-coordinate of the top-left corner.
+     * @y: Y-coordinate of the top-left corner.
+     * @bitmapData: Pointer to the bitmap data.
+     * @bitmapWidth: Width of the bitmap.
+     * @bitmapHeight: Height of the bitmap.
      */
     void DrawBitmap(int32_t x, int32_t y, const uint8_t* bitmapData, int32_t bitmapWidth,
                     int32_t bitmapHeight);
 
     /**
-     * @brief Fills a rectangle with a solid color.
-     *
-     * @param x X-coordinate of the top-left corner.
-     * @param y Y-coordinate of the top-left corner.
-     * @param w Width of the rectangle.
-     * @param h Height of the rectangle.
-     * @param colorIndex VGA color index (0-255).
+     * FillRectangle() - Fill a rectangle with a solid color.
+     * @x: X-coordinate of the top-left corner.
+     * @y: Y-coordinate of the top-left corner.
+     * @w: Width of the rectangle.
+     * @h: Height of the rectangle.
+     * @colorIndex: VGA color index (0-255).
      */
     virtual void FillRectangle(uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint8_t colorIndex);
 
     /**
-     * @brief Draws a rectangular outline with a specified color.
+     * DrawRectangle() - Draw a rectangular outline with the given color.
+     * @x: X-coordinate of the top-left corner.
+     * @y: Y-coordinate of the top-left corner.
+     * @w: Width of the rectangle.
+     * @h: Height of the rectangle.
+     * @colorIndex: VGA color index (0-255).
      */
     void DrawRectangle(uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint8_t colorIndex);
 
     /**
-     * @brief Fills a rounded rectangle with a solid color.
+     * FillRoundedRectangle() - Fill a rounded rectangle with a solid color.
+     * @x: X-coordinate of the top-left corner.
+     * @y: Y-coordinate of the top-left corner.
+     * @w: Width of the rectangle.
+     * @h: Height of the rectangle.
+     * @radius: Corner radius.
+     * @colorIndex: VGA color index (0-255).
      */
     void FillRoundedRectangle(uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint32_t radius,
                               uint8_t colorIndex);
 
     /**
-     * @brief Draws the outline of a circle.
+     * DrawCircle() - Draw the outline of a circle.
+     * @cx: Center X-coordinate.
+     * @cy: Center Y-coordinate.
+     * @radius: Circle radius.
+     * @colorIndex: VGA color index (0-255).
      */
     void DrawCircle(uint32_t cx, uint32_t cy, uint32_t radius, uint8_t colorIndex);
 
     /**
-     * @brief Fills a circle with a solid color.
+     * FillCircle() - Fill a circle with a solid color.
+     * @cx: Center X-coordinate.
+     * @cy: Center Y-coordinate.
+     * @radius: Circle radius.
+     * @colorIndex: VGA color index (0-255).
      */
     void FillCircle(uint32_t cx, uint32_t cy, uint32_t radius, uint8_t colorIndex);
 
     /**
-     * @brief Draws a horizontal line.
+     * DrawHorizontalLine() - Draw a horizontal line.
+     * @x: Starting X-coordinate.
+     * @y: Y-coordinate.
+     * @length: Line length in pixels.
+     * @colorIndex: VGA color index (0-255).
      */
     void DrawHorizontalLine(int32_t x, int32_t y, int32_t length, uint8_t colorIndex);
 
     /**
-     * @brief Draws a vertical line.
+     * DrawVerticalLine() - Draw a vertical line.
+     * @x: X-coordinate.
+     * @y: Starting Y-coordinate.
+     * @length: Line length in pixels.
+     * @colorIndex: VGA color index (0-255).
      */
     void DrawVerticalLine(int32_t x, int32_t y, int32_t length, uint8_t colorIndex);
 
     /**
-     * @brief Draws a character at the specified coordinates.
+     * DrawCharacter() - Draw a character at the given coordinates.
+     * @x: X-coordinate.
+     * @y: Y-coordinate.
+     * @c: Character to draw.
+     * @colorIndex: VGA color index (0-255).
      */
     void DrawCharacter(int32_t x, int32_t y, char c, uint8_t colorIndex);
 
     /**
-     * @brief Draws a string of characters.
+     * DrawString() - Draw a string of characters.
+     * @x: X-coordinate.
+     * @y: Y-coordinate.
+     * @str: String to draw.
+     * @colorIndex: VGA color index (0-255).
      */
     void DrawString(int32_t x, int32_t y, const char* str, uint8_t colorIndex);
 };

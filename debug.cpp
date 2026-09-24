@@ -1,15 +1,31 @@
-/**
- * @file        debug.cpp
- * @brief       Debug with Ring Buffer & Fast Serial
+/*
+ * MIT License
  *
- * @date        17/01/2025
- * @version     1.1.0
+ * Copyright (c) 2025 Malaka Gunawardana
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
  */
 
 #include <core/Iguard.h>
 #include <debug.h>
 
-// --- Ring Buffer Configuration ---
+// --- Ring buffer configuration ---
 #define SERIAL_BUFFER_SIZE 2048
 static char serialBuffer[SERIAL_BUFFER_SIZE];
 static volatile uint32_t readHead = 0;
@@ -17,27 +33,42 @@ static volatile uint32_t writeHead = 0;
 
 void vprintf(const char* format, va_list args);
 
+/**
+ * initSerial() - Configure the serial port for 115200 baud logging.
+ *
+ * Programs the UART line control, FIFO and modem control registers on the
+ * first COM port (0x3F8).
+ */
 void initSerial() {
-    outb(0x3F8 + 1, 0x00);  // Disable interrupts
-    outb(0x3F8 + 3, 0x80);  // Enable DLAB (set baud rate divisor)
+    outb(0x3F8 + 1, 0x00);  // Disable interrupts.
+    outb(0x3F8 + 3, 0x80);  // Enable DLAB (set baud rate divisor).
 
-    // Set baud rate to max speed (115200 Baud)
-    outb(0x3F8 + 0, 0x01);  // Set divisor to 1 (lo byte)
-    outb(0x3F8 + 1, 0x00);  // Set divisor to 1 (hi byte)
+    // Set the baud rate to max speed (115200 baud).
+    outb(0x3F8 + 0, 0x01);  // Set divisor to 1 (low byte).
+    outb(0x3F8 + 1, 0x00);  // Set divisor to 1 (high byte).
 
-    outb(0x3F8 + 3, 0x03);  // 8 bits, no parity, one stop bit
-    outb(0x3F8 + 2, 0xC7);  // Enable FIFO, clear them, 14-byte threshold
-    outb(0x3F8 + 4, 0x0B);  // IRQs enabled, RTS/DSR set
+    outb(0x3F8 + 3, 0x03);  // 8 bits, no parity, one stop bit.
+    outb(0x3F8 + 2, 0xC7);  // Enable FIFO, clear it, 14-byte threshold.
+    outb(0x3F8 + 4, 0x0B);  // Enable IRQs, RTS/DSR set.
 }
 
-// Helper: Check if Serial Port is ready to transmit
+/**
+ * IsSerialReady() - Check whether the serial port can transmit.
+ *
+ * Return: True when the transmit-holding register is empty.
+ */
 bool IsSerialReady() {
     return (inb(0x3F8 + 5) & 0x20) != 0;
 }
 
+/**
+ * FlushSerial() - Drain the ring buffer to the serial port.
+ *
+ * Writes buffered characters while the hardware is ready and data remains.
+ */
 void FlushSerial() {
     InterruptGuard guard;
-    // Keep flushing as long as hardware is ready AND we have data
+    // Keep flushing while the hardware is ready and data remains.
     while (readHead != writeHead && IsSerialReady()) {
         char c = serialBuffer[readHead];
         outb(0x3F8, c);
@@ -45,24 +76,36 @@ void FlushSerial() {
     }
 }
 
+/**
+ * SerialPush() - Queue one character and attempt an immediate flush.
+ * @c: Character to transmit.
+ */
 void SerialPush(char c) {
     InterruptGuard guard;
-    // Push to buffer first
+    // Push to the buffer first.
     uint32_t nextHead = (writeHead + 1) % SERIAL_BUFFER_SIZE;
     if (nextHead != readHead) {
         serialBuffer[writeHead] = c;
         writeHead = nextHead;
     }
 
-    // Attempt to flush immediately if hardware is ready
-    // This ensures logs continue even if scheduler is slow
+    // Attempt to flush immediately if the hardware is ready.
+    // This keeps logs flowing even when the scheduler is slow.
     FlushSerial();
 }
 
+/**
+ * writeSerial() - Transmit one character.
+ * @c: Character to transmit.
+ */
 void writeSerial(char c) {
     SerialPush(c);
 }
 
+/**
+ * SerialPrint() - Transmit a NUL-terminated string.
+ * @str: String to transmit; a null pointer is printed as "(null)".
+ */
 void SerialPrint(const char* str) {
     if (str == nullptr) {
         const char* nullStr = "(null)";
@@ -74,14 +117,24 @@ void SerialPrint(const char* str) {
     }
 }
 
+/**
+ * printf() - Format and print a message to the serial port.
+ * @format: printf-style format string.
+ * @...: Arguments referenced by the format string.
+ */
 void printf(const char* format, ...) {
-    InterruptGuard guard;  // Protects the formatting & buffer push
+    InterruptGuard guard;  // Protects the formatting and buffer push.
     va_list args;
     va_start(args, format);
     vprintf(format, args);
     va_end(args);
 }
 
+/**
+ * vprintf() - Format and print a message using an explicit arg list.
+ * @format: printf-style format string.
+ * @args: Pre-initialized argument list for the format string.
+ */
 void vprintf(const char* format, va_list args) {
     for (int i = 0; format[i] != '\0'; i++) {
         if (format[i] == '%') {
@@ -163,9 +216,15 @@ void vprintf(const char* format, va_list args) {
     }
 }
 
+/**
+ * DebugPrintf() - Print a tagged log line terminated by a newline.
+ * @tag: Tag identifying the component.
+ * @format: printf-style format string.
+ * @...: Arguments referenced by the format string.
+ */
 void DebugPrintf(const char* tag, const char* format, ...) {
     InterruptGuard guard;
-    // This runs extremely fast now (microseconds) because it only writes to RAM
+    // This runs extremely fast (microseconds) because it only writes to RAM.
     printf("%s:", tag);
     va_list args;
     va_start(args, format);
@@ -174,6 +233,12 @@ void DebugPrintf(const char* tag, const char* format, ...) {
     printf("\n");
 }
 
+/**
+ * Printf() - Print a tagged message without a trailing newline.
+ * @tag: Tag identifying the component.
+ * @format: printf-style format string.
+ * @...: Arguments referenced by the format string.
+ */
 void Printf(const char* tag, const char* format, ...) {
     InterruptGuard guard;
     printf("%s:", tag);

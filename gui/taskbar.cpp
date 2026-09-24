@@ -1,9 +1,25 @@
-/**
- * @file        taskbar.cpp
- * @brief       Taskbar with Start Menu (part of #x86 GUI Framework)
+/*
+ * MIT License
  *
- * @date        11/02/2026
- * @version     2.0.0
+ * Copyright (c) 2025 Malaka Gunawardana
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
  */
 
 #define KDBG_COMPONENT "GUI:TASKBAR"
@@ -11,7 +27,7 @@
 #include <core/timing.h>
 #include <gui/taskbar.h>
 
-// StartMenuButton
+// StartMenuButton.
 StartMenuButton::StartMenuButton(Widget* parent, int32_t x, int32_t y, int32_t w, int32_t h,
                                  const char* label, const char* description, const char* binPath)
     : Widget(parent, x, y, w, h), isPressed(false), isHovered(false) {
@@ -45,22 +61,22 @@ void StartMenuButton::RedrawToCache() {
         bgColor = START_MENU_ITEM_BG_HOVER;
     }
 
-    // Only draw background if non-transparent
+    // Only draw the background if non-transparent.
     if ((bgColor >> 24) != 0) {
         NINA::activeInstance->FillRoundedRectangle(cache, w, h, 4, 0, w - 8, h, 4, bgColor);
     }
 
-    // App icon placeholder(small colored dot)
+    // App icon placeholder (small colored dot).
     int32_t iconX = 14;
     int32_t iconY = (h - 8) / 2;
     NINA::activeInstance->FillCircle(cache, w, h, iconX + 4, iconY + 4, 4, 0xFF0078D4);
 
-    // App name
+    // App name.
     int32_t textX = 30;
     int32_t textY = 4;
     NINA::activeInstance->DrawString(cache, w, h, textX, textY, label, font, START_MENU_ITEM_TEXT);
 
-    // Description
+    // Description.
     if (strlen(description) > 0) {
         Font* descFont = FontManager::activeInstance->getNewFont();
         descFont->setSize(TINY);
@@ -123,11 +139,11 @@ void StartMenuButton::LaunchProgram() {
     }
 }
 
-// StartMenu
+// StartMenu.
 StartMenu::StartMenu(CompositeWidget* parent, int32_t x, int32_t y, int32_t w, int32_t h)
     : CompositeWidget(parent, x, y, w, h), itemCount(0) {
     this->isFocussable = false;
-    this->isVisible = false;  // Hidden by default
+    this->isVisible = false;  // Hidden by default.
 }
 
 StartMenu::~StartMenu() {}
@@ -145,12 +161,12 @@ void StartMenu::AddApp(const char* name, const char* description, const char* bi
     this->AddChild(btn);
     itemCount++;
 
-    // Resize menu height to fit content
+    // Resize the menu height to fit the content.
     int32_t totalH = START_MENU_HEADER_HEIGHT + START_MENU_PADDING +
                      itemCount * (START_MENU_ITEM_HEIGHT + 2) + START_MENU_PADDING;
     this->h = totalH;
 
-    // Reallocate cache for new size
+    // Reallocate the cache for the new size.
     if (this->cache) delete[] this->cache;
     if (this->w > 0 && this->h > 0) {
         this->cache = new uint32_t[this->w * this->h]();
@@ -160,7 +176,7 @@ void StartMenu::AddApp(const char* name, const char* description, const char* bi
 void StartMenu::Draw(GraphicsDriver* gc) {
     if (!isVisible) return;
 
-    // Check children dirty
+    // Check whether any child is dirty.
     for (auto& child : childrenList) {
         if (child->isDirty) this->isDirty = true;
     }
@@ -178,24 +194,24 @@ void StartMenu::Draw(GraphicsDriver* gc) {
 void StartMenu::RedrawToCache() {
     memset(cache, 0, sizeof(uint32_t) * w * h);
 
-    // Background with rounded corners
+    // Background with rounded corners.
     NINA::activeInstance->FillRoundedRectangle(cache, w, h, 0, 0, w, h, 8, START_MENU_BG);
 
-    // Border
+    // Border.
     NINA::activeInstance->DrawRoundedRectangle(cache, w, h, 0, 0, w, h, 8, START_MENU_BORDER);
 
-    // Header area
+    // Header area.
     Font* headerFont = FontManager::activeInstance->getNewFont();
     headerFont->setSize(SMALL);
     NINA::activeInstance->DrawString(cache, w, h, 14, 12, "Applications", headerFont,
                                      START_MENU_HEADER_TEXT);
     delete headerFont;
 
-    // Separator line under header
+    // Separator line under the header.
     NINA::activeInstance->DrawHorizontalLine(cache, w, h, 10, START_MENU_HEADER_HEIGHT - 2, w - 20,
                                              START_MENU_SEPARATOR);
 
-    // Composite children (menu items) onto cache
+    // Composite children (menu items) onto the cache.
     for (auto& child : childrenList) {
         if (!child->isVisible) continue;
         if (child->isDirty) child->RedrawToCache();
@@ -205,7 +221,7 @@ void StartMenu::RedrawToCache() {
     }
 }
 
-// StartButton
+// StartButton.
 StartButton::StartButton(Widget* parent, int32_t x, int32_t y, int32_t w, int32_t h)
     : Widget(parent, x, y, w, h), isPressed(false), isActive(false) {
     this->font = FontManager::activeInstance->getNewFont();
@@ -235,7 +251,7 @@ void StartButton::RedrawToCache() {
         bgColor = START_BTN_BG_NORMAL;
     }
 
-    // Circle background
+    // Circle background.
     int32_t radius = (w < h ? w : h) / 2;
     int32_t cx = w / 2;
     int32_t cy = h / 2;
@@ -245,7 +261,7 @@ void StartButton::RedrawToCache() {
         NINA::activeInstance->DrawCircle(cache, w, h, cx, cy, radius, START_BTN_BORDER);
     }
 
-    // Draw the OS icon (icon_main_20x20) centered
+    // Draw the OS icon (icon_main_20x20) centered.
     int32_t iconX = (w - 20) / 2;
     int32_t iconY = (h - 20) / 2;
     NINA::activeInstance->DrawBitmap(cache, w, h, iconX, iconY, (const uint32_t*)icon_main_20x20,
@@ -266,7 +282,7 @@ void StartButton::OnMouseUp(int32_t x, int32_t y, uint8_t button) {
         isPressed = false;
         MarkDirty();
 
-        // Tell the parent Taskbar to toggle the menu
+        // Tell the parent Taskbar to toggle the menu.
         Taskbar* tb = (this->parent && this->parent->IsTaskbar())
                           ? static_cast<Taskbar*>(this->parent)
                           : nullptr;
@@ -282,7 +298,7 @@ void StartButton::OnMouseMove(int32_t oldx, int32_t oldy, int32_t newx, int32_t 
     }
 }
 
-// TaskbarTab
+// TaskbarTab.
 TaskbarTab::TaskbarTab(Widget* parent, int32_t x, int32_t y, int32_t w, int32_t h,
                        const char* label, uint32_t pid, Widget* window)
     : Widget(parent, x, y, w, h),
@@ -325,16 +341,16 @@ void TaskbarTab::RedrawToCache() {
         bgColor = TASKBAR_TAB_BG_HOVER;
     }
 
-    // Tab background
+    // Tab background.
     NINA::activeInstance->FillRoundedRectangle(cache, w, h, 0, 0, w, h, 4, bgColor);
 
-    // Active indicator line at the bottom
+    // Active indicator line at the bottom.
     if (isActive) {
         NINA::activeInstance->FillRectangle(cache, w, h, 4, h - 3, w - 8, 2,
                                             TASKBAR_TAB_INDICATOR_ACTIVE);
     }
 
-    // Tab title text (truncated to fit)
+    // Tab title text (truncated to fit).
     int32_t textX = 8;
     int32_t textY = (h - font->getLineHeight()) / 2;
     NINA::activeInstance->DrawString(cache, w, h, textX, textY, label, font, textColor);
@@ -345,12 +361,12 @@ void TaskbarTab::RedrawToCache() {
 void TaskbarTab::OnMouseDown(int32_t x, int32_t y, uint8_t button) {
     if (!isVisible) return;
 
-    // Bring the associated window to the front
+    // Bring the associated window to the front.
     if (windowWidget && windowWidget->parent) {
         windowWidget->parent->GetFocus(windowWidget);
     }
 
-    // Set this tab as active
+    // Set this tab as active.
     Taskbar* tb =
         (this->parent && this->parent->IsTaskbar()) ? static_cast<Taskbar*>(this->parent) : nullptr;
     if (tb) {
@@ -373,12 +389,12 @@ void TaskbarTab::OnMouseMove(int32_t oldx, int32_t oldy, int32_t newx, int32_t n
     }
 }
 
-// Taskbar tab management
+// Taskbar tab management.
 void Taskbar::AddTab(uint32_t pid, const char* title, Widget* window) {
     InterruptGuard guard;
     if (tabCount >= TASKBAR_TAB_MAX_TABS) return;
 
-    // Don't add duplicate tabs for the same PID
+    // Don't add duplicate tabs for the same PID.
     bool exists = false;
     tabs.ForEach([&](TaskbarTab* t) {
         if (t->GetPID() == pid) exists = true;
@@ -398,7 +414,7 @@ void Taskbar::AddTab(uint32_t pid, const char* title, Widget* window) {
 
     RepositionTabs();
 
-    // Set the new tab as active
+    // Set the new tab as active.
     SetActiveTab(window);
 }
 
@@ -440,14 +456,14 @@ void Taskbar::SetActiveTab(Widget* window) {
 }
 
 void Taskbar::RepositionTabs() {
-    // Calculate available space for tabs
+    // Calculate the available space for tabs.
     int32_t tabAreaStart = TASKBAR_PADDING + START_BUTTON_WIDTH + TASKBAR_PADDING + TASKBAR_PADDING;
     int32_t tabAreaEnd = w - TASKBAR_CLOCK_WIDTH - TASKBAR_PADDING * 3;
     int32_t availableWidth = tabAreaEnd - tabAreaStart;
 
     if (tabCount <= 0 || availableWidth <= 0) return;
 
-    // Calculate tab width
+    // Calculate the tab width.
     int32_t tabWidth = (availableWidth - (tabCount - 1) * TASKBAR_TAB_PADDING) / tabCount;
     if (tabWidth > TASKBAR_TAB_MAX_WIDTH) tabWidth = TASKBAR_TAB_MAX_WIDTH;
     if (tabWidth < TASKBAR_TAB_MIN_WIDTH) tabWidth = TASKBAR_TAB_MIN_WIDTH;
@@ -457,7 +473,7 @@ void Taskbar::RepositionTabs() {
         tab->x = currentX;
         tab->w = tabWidth;
 
-        // Reallocate cache for new size
+        // Reallocate the cache for the new size.
         if (tab->cache) delete[] tab->cache;
         tab->cache = new uint32_t[tab->w * tab->h]();
 
@@ -468,27 +484,27 @@ void Taskbar::RepositionTabs() {
     MarkDirty();
 }
 
-// Taskbar
+// Taskbar.
 Taskbar::Taskbar(CompositeWidget* parent, int32_t screenW, int32_t screenH)
     : CompositeWidget(parent, 0, screenH - TASKBAR_HEIGHT, screenW, TASKBAR_HEIGHT) {
     this->lastUpdateTick = 0;
     this->isFocussable = false;
 
-    // Start Button (left)
+    // Start button (left).
     int32_t startBtnX = TASKBAR_PADDING;
     int32_t startBtnY = (TASKBAR_HEIGHT - START_BUTTON_HEIGHT) / 2;
     startButton =
         new StartButton(this, startBtnX, startBtnY, START_BUTTON_WIDTH, START_BUTTON_HEIGHT);
     this->AddChild(startButton);
 
-    // Clock Label (right)
+    // Clock label (right).
     int32_t clockX = screenW - TASKBAR_CLOCK_WIDTH - TASKBAR_PADDING;
     int32_t clockY = (TASKBAR_HEIGHT - 20) / 2;
     clockLabel = new Label(this, clockX, clockY, TASKBAR_CLOCK_WIDTH, 20, "12:00 AM");
     clockLabel->setSize(SMALL);
     this->AddChild(clockLabel);
 
-    // Start Menu (positioned above the taskbar)
+    // Start menu, positioned above the taskbar.
     int32_t menuH = START_MENU_HEADER_HEIGHT + START_MENU_PADDING * 2;
     int32_t menuX = TASKBAR_PADDING;
     int32_t menuY = -(menuH);
@@ -504,7 +520,7 @@ void Taskbar::AddApp(const char* name, const char* description, const char* binP
 
     startMenu->AddApp(name, description, binPath);
 
-    // Reposition menu Y to sit just above the taskbar
+    // Reposition the menu Y to sit just above the taskbar.
     startMenu->y = -(startMenu->h);
 }
 
@@ -538,7 +554,7 @@ bool Taskbar::IsStartMenuOpen() const {
 bool Taskbar::StartMenuContains(int32_t screenX, int32_t screenY) const {
     if (!startMenu || !startMenu->isVisible) return false;
 
-    // The menu is at taskbar.x + menu.x, taskbar.y + menu.y (in screen coords)
+    // The menu is at taskbar.x + menu.x, taskbar.y + menu.y in screen coordinates.
     int32_t menuScreenX = this->x + startMenu->x;
     int32_t menuScreenY = this->y + startMenu->y;
 
@@ -546,54 +562,52 @@ bool Taskbar::StartMenuContains(int32_t screenX, int32_t screenY) const {
             screenY >= menuScreenY && screenY < menuScreenY + startMenu->h);
 }
 
-// Read a CMOS/RTC register (NMI disabled during read cycle)
+// Read a CMOS/RTC register (NMI disabled during the read cycle).
 static uint8_t rtc_read(uint8_t reg) {
-    outb(0x70, reg | 0x80);  // select register, disable NMI
+    outb(0x70, reg | 0x80);  // Select the register, disable NMI.
     uint8_t val = inb(0x71);
-    outb(0x70, reg);  // restore NMI to enabled state
+    outb(0x70, reg);  // Restore NMI to the enabled state.
     return val;
 }
 
-// Convert BCD to binary
+// Convert BCD to binary.
 static uint8_t bcd_to_bin(uint8_t bcd) {
     return ((bcd >> 4) * 10) + (bcd & 0x0F);
 }
 
 void Taskbar::UpdateClock() {
-    // Wait until RTC update is not in progress (bounded retry)
+    // Wait until the RTC update is not in progress (bounded retry).
     int retries = 1000;
     while (rtc_read(0x0A) & 0x80) {
-        if (--retries <= 0) return;  // retain previous clock value, skip update
+        if (--retries <= 0) return;  // Retain the previous clock value and skip the update.
     }
 
-    // [uint8_t seconds = rtc_read(0x00);]
     uint8_t minutes = rtc_read(0x02);
     uint8_t hours = rtc_read(0x04);
 
-    // Check if RTC is in BCD mode (bit 2 of status register B = 0 means BCD)
+    // Check whether the RTC is in BCD mode (bit 2 of status register B = 0 means BCD).
     uint8_t regB = rtc_read(0x0B);
     bool is24Hour = regB & 0x02;
     bool isPM = false;
 
     if (!is24Hour) {
-        // 12-hour mode: bit 7 of hours is PM flag
+        // 12-hour mode: bit 7 of hours is the PM flag.
         isPM = hours & 0x80;
-        hours &= 0x7F;  // strip PM bit before BCD conversion
+        hours &= 0x7F;  // Strip the PM bit before BCD conversion.
     }
 
     if (!(regB & 0x04)) {
-        // seconds = bcd_to_bin(seconds);
         minutes = bcd_to_bin(minutes);
         hours = bcd_to_bin(hours);
     }
 
-    // Convert 12-hour RTC to 24-hour for timezone math
+    // Convert 12-hour RTC time to 24-hour for timezone math.
     if (!is24Hour) {
         if (isPM && hours != 12) hours += 12;
         if (!isPM && hours == 12) hours = 0;
     }
 
-    // Apply timezone offset
+    // Apply the timezone offset.
     int32_t totalMinutes = (int32_t)hours * 60 + (int32_t)minutes;
     totalMinutes += TIMEZONE_HOURS * 60 + TIMEZONE_MINUTES;
     while (totalMinutes < 0) totalMinutes += 1440;
@@ -601,7 +615,7 @@ void Taskbar::UpdateClock() {
     hours = (uint8_t)(totalMinutes / 60);
     minutes = (uint8_t)(totalMinutes % 60);
 
-    // Convert to 12-hour format with AM/PM
+    // Convert to 12-hour format with AM/PM.
     const char* ampm = "AM";
     if (hours >= 12) {
         ampm = "PM";
@@ -624,14 +638,14 @@ void Taskbar::UpdateClock() {
 }
 
 void Taskbar::Draw(GraphicsDriver* gc) {
-    // Clock update
+    // Clock update.
     uint32_t currentTick = (uint32_t)timerTicks;
     if (currentTick - lastUpdateTick >= 1000) {
         UpdateClock();
         lastUpdateTick = currentTick;
     }
 
-    // Check children dirty
+    // Check whether any child is dirty.
     for (auto& child : childrenList) {
         if (child->isDirty) this->isDirty = true;
     }
@@ -651,9 +665,9 @@ void Taskbar::Draw(GraphicsDriver* gc) {
         gc->DrawBitmap(X, Y, (const uint32_t*)cache, w, h);
     }
 
-    // Draw start menu ON TOP
+    // Draw the start menu on top.
     if (startMenu && startMenu->isVisible) {
-        // Check if menu is dirty
+        // Check whether the menu is dirty.
         if (startMenu->isDirty) {
             startMenu->RedrawToCache();
             startMenu->isDirty = false;
@@ -672,20 +686,20 @@ void Taskbar::RedrawToCache() {
     NINA::activeInstance->FillRectangle(cache, w, h, 0, 0, w, 1, TASKBAR_BG_COLOR_TOP);
     NINA::activeInstance->FillRectangle(cache, w, h, 0, 1, w, h - 1, TASKBAR_BG_COLOR);
 
-    // Top border
+    // Top border.
     NINA::activeInstance->DrawHorizontalLine(cache, w, h, 0, 0, w, TASKBAR_BORDER_COLOR);
 
-    // Separator after start button
+    // Separator after the start button.
     int32_t sepX = TASKBAR_PADDING + START_BUTTON_WIDTH + TASKBAR_PADDING;
     NINA::activeInstance->DrawVerticalLine(cache, w, h, sepX, 8, TASKBAR_HEIGHT - 16,
                                            TASKBAR_SEPARATOR_COLOR);
 
-    // Separator before clock
+    // Separator before the clock.
     int32_t clockSepX = w - TASKBAR_CLOCK_WIDTH - TASKBAR_PADDING * 2;
     NINA::activeInstance->DrawVerticalLine(cache, w, h, clockSepX, 8, TASKBAR_HEIGHT - 16,
                                            TASKBAR_SEPARATOR_COLOR);
 
-    // Composite children (start button + clock) onto cache
+    // Composite children (start button and clock) onto the cache.
     for (auto& child : childrenList) {
         if (!child->isVisible) continue;
         if (child->isDirty) child->RedrawToCache();
@@ -699,7 +713,7 @@ void Taskbar::OnMouseDown(int32_t x, int32_t y, uint8_t button) {
     int32_t localX = x - this->x;
     int32_t localY = y - this->y;
 
-    // Check start menu first
+    // Check the start menu first.
     if (startMenu && startMenu->isVisible) {
         int32_t menuLocalX = localX - startMenu->x;
         int32_t menuLocalY = localY - startMenu->y;
@@ -710,7 +724,7 @@ void Taskbar::OnMouseDown(int32_t x, int32_t y, uint8_t button) {
         }
     }
 
-    // clicked children in the taskbar
+    // Clicked children in the taskbar.
     Widget* clicked = nullptr;
     childrenList.ReverseForEach([&](Widget* child) {
         if (!clicked && child->ContainsCoordinate(localX, localY)) {
@@ -724,14 +738,14 @@ void Taskbar::OnMouseUp(int32_t x, int32_t y, uint8_t button) {
     int32_t localX = x - this->x;
     int32_t localY = y - this->y;
 
-    // Route to start menu if visible
+    // Route to the start menu if visible.
     if (startMenu && startMenu->isVisible) {
         int32_t menuLocalX = localX - startMenu->x;
         int32_t menuLocalY = localY - startMenu->y;
         if (menuLocalX >= 0 && menuLocalX < startMenu->w && menuLocalY >= 0 &&
             menuLocalY < startMenu->h) {
             startMenu->OnMouseUp(localX, localY, button);
-            // Close menu after launching
+            // Close the menu after launching.
             CloseStartMenu();
             return;
         }
@@ -750,12 +764,12 @@ void Taskbar::OnMouseMove(int32_t oldx, int32_t oldy, int32_t newx, int32_t newy
     int32_t localNewX = newx - this->x;
     int32_t localNewY = newy - this->y;
 
-    // Route to start menu
+    // Route to the start menu.
     if (startMenu && startMenu->isVisible) {
         startMenu->OnMouseMove(localOldX, localOldY, localNewX, localNewY);
     }
 
-    // Route to children
+    // Route to the children.
     childrenList.ForEach([&](Widget* child) {
         bool inOld = child->ContainsCoordinate(localOldX, localOldY);
         bool inNew = child->ContainsCoordinate(localNewX, localNewY);
