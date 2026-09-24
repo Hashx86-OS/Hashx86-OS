@@ -1,0 +1,30 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build and publish release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build and stage installer ISO
+        uses: ./.github/actions/build
+        with:
+          package: "true"
+          release_version: ${{ github.ref_name }}
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release-artifacts/Hashx86-OS-installer-${{ github.ref_name }}.iso
+          generate_release_notes: true
+          draft: false
+          prerelease: false

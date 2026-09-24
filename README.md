@@ -92,10 +92,13 @@ Hashx86 is currently under active development. Upcoming improvements include:
 ## 🛠 Build Instructions
 
 > Prerequisites:
-> - GCC cross-compiler for i686
-> - GRUB and `xorriso` (for ISO generation)
-> - `qemu-system-i386` and `qemu-img`
+> - `gcc` / `g++` with 32-bit multilib support (the OS builds with `-m32`)
+> - `nasm` (assembly sources)
 > - `make`
+> - GRUB (`grub-mkrescue` / `grub-mkimage`, from `grub-common` and `grub-pc-bin`)
+> - `xorriso` (ISO generation)
+> - `clang-format` (for `make check-style`)
+> - `qemu-system-i386` and `qemu-img` (for running the OS)
 
 ### 1. Clone the Repository
 ```bash
