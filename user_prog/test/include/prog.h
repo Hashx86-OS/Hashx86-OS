@@ -1,31 +1,47 @@
+/*
+ * MIT License
+ *
+ * Copyright (c) 2025 Malaka Gunawardana
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
+ */
+
 #ifndef PROGRAM_H
 #define PROGRAM_H
 
 #include <Hx86/stdint.h>
 #include <Hx86/utils/string.h>
 
-/**
- * @typedef constructor
- * @brief Defines a pointer to a function with no arguments and no return value.
+/** @typedef constructor - Pointer to a no-argument, no-return function.
  *
- * This is used to reference global constructors during initialization.
+ * Used to reference global constructors during initialization.
  */
 typedef void (*constructor)();
 
-/**
- * @brief External declaration for the start and end of the constructors section.
- *
- * These symbols are defined by the linker and mark the range of global constructors to call during
- * initialization.
- */
+// Linker-provided bounds of the global constructors section.
 extern "C" constructor start_ctors;
 extern "C" constructor end_ctors;
 
-/**
- * @brief Calls all global constructors in the range defined by `start_ctors` and `end_ctors`.
+/** callConstructors() - Call every global constructor between start_ctors and end_ctors.
  *
- * This function is called during kernel initialization to ensure all static/global objects are
- * properly constructed.
+ * Invoked during initialization so that all static/global objects are properly
+ * constructed before main() runs.
  */
 extern "C" void callConstructors() {
     for (constructor* i = &start_ctors; i != &end_ctors; i++) {
@@ -33,7 +49,7 @@ extern "C" void callConstructors() {
     }
 }
 
-// Forward declaration of Calculator class
+/** class Calculator - Simple GUI calculator application. */
 class Calculator {
 public:
     Calculator();

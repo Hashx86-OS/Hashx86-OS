@@ -1,21 +1,41 @@
+/*
+ * MIT License
+ *
+ * Copyright (c) 2025 Malaka Gunawardana
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
+ */
+
 #define KDBG_COMPONENT "K.STACK"
 #include <core/Iguard.h>
 #include <core/kstack.h>
 #include <kernel.h>
 
-// --------------------------------------------------------------------------
-// Kernel-stack zone allocator
-//
 // Fixed-size, page-aligned stack slots carved out of a dedicated reserved
 // region in the identity-mapped low-memory space.  Every slot is preceded by
-// an unmapped guard page (see kstack_zone_activate) so that a stack overflow
+// an unmapped guard page (see kstack_zone_activate) so a stack overflow
 // faults immediately instead of silently corrupting the kernel heap or other
-// kernel objects.  Kernel stacks NEVER come from the TLSF heap.
+// kernel objects.  Kernel stacks never come from the TLSF heap.
 //
-// IMPORTANT: This allocator must NOT depend on the kernel heap.  It is
-// initialized before kheap_init() (so the heap carving skips the zone), so
-// it uses a static bitmap rather than heap-backed data structures.
-// --------------------------------------------------------------------------
+// IMPORTANT: this allocator must not depend on the kernel heap.  It is
+// initialized before kheap_init() (so the heap carving skips the zone), so it
+// uses a static bitmap rather than heap-backed data structures.
 
 // Minimum size the kernel-stack zone must retain after clamping so that it
 // can hold a useful number of slots (16 MiB).
@@ -48,7 +68,7 @@ int kstack_init() {
 
     // The zone must stay inside the identity-mapped low-memory range and
     // inside usable RAM.  If the fixed base does not fit, clamp to whatever
-    // is available (shrinking to a whole number of slots).
+    // is available, shrinking to a whole number of slots.
     uint32_t avail_end = g_kmap.available.end_addr;
     uint32_t cap = (avail_end < 0x10000000) ? avail_end : 0x10000000;
 
@@ -92,7 +112,7 @@ void* kstack_alloc() {
         return NULL;
     }
 
-    // Scan for the first free slot (linear is fine; slot count is small).
+    // Scan for the first free slot (linear is fine; the slot count is small).
     uint32_t words = (g_slotCount + 31) / 32;
     for (uint32_t w = 0; w < words; w++) {
         if (g_slotBitmap[w] == 0xFFFFFFFF) continue;

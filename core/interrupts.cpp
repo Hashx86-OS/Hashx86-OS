@@ -1,9 +1,25 @@
-/**
- * @file        interrupts.cpp
- * @brief       Interrupts Manager
+/*
+ * MIT License
  *
- * @date        11/02/2026
- * @version     1.0.0
+ * Copyright (c) 2025 Malaka Gunawardana
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
  */
 
 #define KDBG_COMPONENT "IDT"
@@ -20,6 +36,11 @@ static uint16_t HWInterruptOffset = 0x20;
 extern void FlushSerial();
 uint32_t audioTickCounter = 0;
 
+/**
+ * InterruptHandler::InterruptHandler() - Register a handler for an interrupt.
+ * @InterruptNumber: Vector (0-255) to handle.
+ * @interruptManager: The manager to register with.
+ */
 InterruptHandler::InterruptHandler(uint8_t InterruptNumber, InterruptManager* interruptManager) {
     this->InterruptNumber = InterruptNumber;
     this->interruptManager = interruptManager;
@@ -38,6 +59,14 @@ uint32_t InterruptHandler::HandleInterrupt(uint32_t esp) {
 InterruptManager::GateDescriptor InterruptManager::interruptDescriptorTable[256];
 InterruptManager* InterruptManager::activeInstance = 0;
 
+/**
+ * InterruptManager::SetInterruptDescriptorTableEntry() - Program one IDT gate.
+ * @interruptNumber: Vector (0-255) to install.
+ * @codeSegmentSelectorOffset: GDT selector for the handler.
+ * @handler: The interrupt handler routine.
+ * @DescriptorPrivilegeLevel: DPL (0-3) for the gate.
+ * @DescriptorType: Gate type (e.g. interrupt gate).
+ */
 void InterruptManager::SetInterruptDescriptorTableEntry(uint8_t interruptNumber,
                                                         uint16_t codeSegmentSelectorOffset,
                                                         void (*handler)(),
@@ -54,6 +83,14 @@ void InterruptManager::SetInterruptDescriptorTableEntry(uint8_t interruptNumber,
     interruptDescriptorTable[interruptNumber].reserved = 0;
 }
 
+/**
+ * InterruptManager::InterruptManager() - Build the IDT and reprogram the PIC.
+ * @scheduler: Scheduler to hand off to on timer interrupts.
+ * @pager: Page manager used for user stack tracing and panics.
+ *
+ * Installs per-vector exception handlers for vectors 0x00-0x13, hardware
+ * interrupt handlers at IRQ_BASE(0x20)-0x2F, and the two syscall gates.
+ */
 InterruptManager::InterruptManager(Scheduler* scheduler, Paging* pager)
     : picMasterCommand(0x20), picMasterData(0x21), picSlaveCommand(0xA0), picSlaveData(0xA1) {
     activeInstance = this;
@@ -165,10 +202,6 @@ InterruptManager::InterruptManager(Scheduler* scheduler, Paging* pager)
     picMasterData.Write(0x00);
     picSlaveData.Write(0x00);
 
-    // Mask
-    // picMasterData.Write(0xFD);
-    // picSlaveData.Write(0xFF);
-
     InterruptDescriptorTablePointer idt;
     idt.size = 256 * sizeof(GateDescriptor) - 1;
     idt.base = (uint32_t)interruptDescriptorTable;
@@ -177,16 +210,18 @@ InterruptManager::InterruptManager(Scheduler* scheduler, Paging* pager)
 
 InterruptManager::~InterruptManager() {}
 
+/**
+ * InterruptManager::Activate() - Enable interrupts.
+ */
 void InterruptManager::Activate() {
     KDBG1("Activating InterruptManager.");
-    /*     if (activeInstance != 0){
-            KDBG1("An active InterruptManager found.");
-            activeInstance->Deactivate();
-        } */
     asm("sti");
     KDBG1("InterruptManager Activated.");
 }
 
+/**
+ * InterruptManager::Deactivate() - Disable interrupts and clear the instance.
+ */
 void InterruptManager::Deactivate() {
     if (activeInstance == this) {
         KDBG1("Deactivating InterruptManager.");
@@ -196,6 +231,13 @@ void InterruptManager::Deactivate() {
     }
 }
 
+/**
+ * InterruptManager::handleInterrupt() - Dispatch an interrupt request.
+ * @interruptNumber: Vector that fired.
+ * @esp: Interrupted CPU state.
+ *
+ * Return: The (possibly rescheduled) CPU state pointer.
+ */
 uint32_t InterruptManager::handleInterrupt(uint8_t interruptNumber, uint32_t esp) {
     InterruptGuard guard;
     if (activeInstance != 0) {
@@ -205,6 +247,13 @@ uint32_t InterruptManager::handleInterrupt(uint8_t interruptNumber, uint32_t esp
     }
 }
 
+/**
+ * InterruptManager::handleException() - Dispatch a CPU exception.
+ * @interruptNumber: Exception vector that fired.
+ * @esp: Interrupted CPU state.
+ *
+ * Return: The CPU state pointer (or schedules a new thread for user faults).
+ */
 uint32_t InterruptManager::handleException(uint8_t interruptNumber, uint32_t esp) {
     InterruptGuard guard;
     if (activeInstance != 0) {
@@ -217,33 +266,43 @@ uint32_t InterruptManager::handleException(uint8_t interruptNumber, uint32_t esp
         KDBG1("DOUBLE FAULT: Nested exception 0x%x while handling previous exception. HALTING.\n",
               interruptNumber);
         // MUST hard-flush serial before halting, otherwise exception info is lost!
-        // Keep calling FlushSerial (it drains while hardware is ready)
-        // Loop until the hardware has had time to accept all bytes
+        // FlushSerial drains while the hardware is ready; spin long enough for
+        // the hardware to accept every byte.
         for (int i = 0; i < 100000; i++) {
             FlushSerial();
         }
         asm volatile("cli; hlt");
         while (1) {
-        }  // unreachable
+        }  // Unreachable.
         return esp;
     }
 }
 
+/**
+ * InterruptManager::DoHandleInterrupt() - Acknowledge and dispatch one IRQ.
+ * @interruptNumber: Vector that fired.
+ * @esp: Interrupted CPU state.
+ *
+ * Sends EOI to the PICs, updates the timer tick, invokes any registered
+ * handler, and schedules a new thread on timer/syscall/yield paths.
+ *
+ * Return: The (possibly rescheduled) CPU state pointer.
+ */
 uint32_t InterruptManager::DoHandleInterrupt(uint8_t interruptNumber, uint32_t esp) {
     CPUState* cpu = (CPUState*)esp;
     if (interruptNumber >= HWInterruptOffset && interruptNumber < HWInterruptOffset + 16) {
-        picMasterCommand.Write(0x20);  // Send EOI to Master PIC
+        picMasterCommand.Write(0x20);  // Send EOI to the master PIC.
 
         if (interruptNumber >= HWInterruptOffset + 8)
-            picSlaveCommand.Write(0x20);  // Send EOI to Slave PIC
+            picSlaveCommand.Write(0x20);  // Send EOI to the slave PIC.
     }
 
-    // Handle Timer
+    // Handle the timer tick.
     if (interruptNumber == HWInterruptOffset) {
         timerTicks++;
     }
 
-    // Call Registered Handlers
+    // Invoke the registered handler for the vector.
     if (handlers[interruptNumber] != nullptr) {
         esp = handlers[interruptNumber]->HandleInterrupt(esp);
     } else if (interruptNumber != HWInterruptOffset && interruptNumber != 0x2E &&
@@ -251,21 +310,20 @@ uint32_t InterruptManager::DoHandleInterrupt(uint8_t interruptNumber, uint32_t e
         KDBG1("UNHANDLED INTERRUPT: 0x%x\n", interruptNumber);
     }
 
-    // After a syscall (int 0x80 arrives as 0xA0 because ASM adds IRQ_BASE=0x20),
-    // check if the current thread was terminated or killed
+    // After a syscall (int 0x80 arrives as 0xA0 because the ASM adds IRQ_BASE=0x20),
+    // check if the current thread was terminated or killed.
     if (interruptNumber == HWInterruptOffset + 0x80) {
         if (!scheduler->currentThread ||
             scheduler->currentThread->state == THREAD_STATE_TERMINATED) {
             // Thread was killed (currentThread == null) or terminated.
-            // Must call Schedule to switch to a living thread.
+            // Schedule to switch to a living thread.
             return (uint32_t)scheduler->Schedule((CPUState*)esp);
         }
         return esp;
     }
 
-    // Timer Interrupt
+    // Timer interrupt: drive the audio mixer every 10ms and schedule.
     if (interruptNumber == HWInterruptOffset) {
-        // Call mixer every 10ms
         audioTickCounter++;
         if (audioTickCounter >= 10) {
             audioTickCounter = 0;
@@ -275,15 +333,25 @@ uint32_t InterruptManager::DoHandleInterrupt(uint8_t interruptNumber, uint32_t e
         return (uint32_t)scheduler->Schedule((CPUState*)esp);
     }
 
-    // Explicit Yield / Sleep
+    // Explicit yield / sleep syscall.
     if (interruptNumber == 0x2E) {
         return (uint32_t)scheduler->Schedule((CPUState*)esp);
     }
 
-    // No context switch needed, return original stack pointer
+    // No context switch needed; return the original stack pointer.
     return esp;
 }
 
+/**
+ * InterruptManager::DohandleException() - Report and recover from an exception.
+ * @interruptNumber: Exception vector that fired.
+ * @esp: Interrupted CPU state.
+ *
+ * Logs the fault, produces a kernel or user stack trace, and either kills the
+ * offending user process or shows the graphical panic and reboots.
+ *
+ * Return: The CPU state pointer.
+ */
 uint32_t InterruptManager::DohandleException(uint8_t interruptNumber, uint32_t esp) {
     CPUState* state = (CPUState*)esp;
 
@@ -318,11 +386,11 @@ uint32_t InterruptManager::DohandleException(uint8_t interruptNumber, uint32_t e
 
     if (!isUserFault) {
         KernelSymbolTable::PrintStackTrace(20);
-        // FLUSH serial NOW before Deactivate/BSOD, because BSOD code may fault
+        // Fflush serial NOW before Deactivate/BSOD, because the BSOD code may fault.
         FlushSerial();
     }
 
-    // User-mode stack trace: walk EBP chain via physical address translation
+    // User-mode stack trace: walk the EBP chain via physical address translation.
     if (isUserFault && scheduler && scheduler->currentThread && scheduler->currentThread->parent) {
         uint32_t crashedPid = scheduler->currentThread->pid;
         uint32_t crashedTid = scheduler->currentThread->tid;
@@ -332,7 +400,7 @@ uint32_t InterruptManager::DohandleException(uint8_t interruptNumber, uint32_t e
 
         uint32_t userEBP = state->ebp;
         for (int i = 0; i < 32 && userEBP >= 0x1000; i++) {
-            // Validate both words [EBP+0] and [EBP+4] are mapped before reading
+            // Validate both words [EBP+0] and [EBP+4] are mapped before reading.
             uint32_t physAddr0 = pager->GetPhysicalAddress(userPD, userEBP);
             uint32_t physAddr4 = pager->GetPhysicalAddress(userPD, userEBP + 4);
             if (physAddr0 == 0xFFFFFFFF || physAddr4 == 0xFFFFFFFF) {
@@ -340,15 +408,15 @@ uint32_t InterruptManager::DohandleException(uint8_t interruptNumber, uint32_t e
                 break;
             }
 
-            // Defensive: kernel identity-maps only the first 256MB; reject
+            // Defensive: the kernel identity-maps only the first 256MB; reject
             // addresses outside that range to avoid accidental wild derefs.
             if (physAddr0 >= 0x10000000 || physAddr4 >= 0x10000000) {
                 KDBG1(" (EBP 0x%x outside identity-mapped range)", userEBP);
                 break;
             }
             uint32_t* frame = (uint32_t*)physAddr0;
-            uint32_t nextEBP = frame[0];  // saved EBP at [EBP+0]
-            uint32_t retAddr = frame[1];  // return address at [EBP+4]
+            uint32_t nextEBP = frame[0];  // Saved EBP at [EBP+0].
+            uint32_t retAddr = frame[1];  // Return address at [EBP+4].
 
             if (retAddr == 0) break;
             KDBG1(" 0x%x", retAddr);
@@ -513,7 +581,7 @@ uint32_t InterruptManager::DohandleException(uint8_t interruptNumber, uint32_t e
             }
             g_GraphicsDriver->DrawString(120, 620, message, g_GraphicsDriver_font, 0xFFFFFFFF);
 
-            // Show register dump
+            // Show register dump.
             int x = 450;
             int y = 540;
             g_GraphicsDriver->DrawString(x, y, "Registers:", g_GraphicsDriver_font, 0xFFFFFFFF);
@@ -549,25 +617,25 @@ uint32_t InterruptManager::DohandleException(uint8_t interruptNumber, uint32_t e
 
     Port8Bit keyboard_command_port(0x64);
 
-    // Disable interrupts to prevent interference during the reset sequence
+    // Disable interrupts to prevent interference during the reset sequence.
     asm volatile("cli");
 
-    // Wait for the keyboard controller to be ready (input buffer empty)
-    // Timeout after ~1M iterations to prevent infinite spin in some VMs
+    // Wait for the keyboard controller to be ready (input buffer empty).
+    // Time out after ~1M iterations to avoid an infinite spin in some VMs.
     for (volatile int i = 0; i < 1000000; i++) {
         if ((keyboard_command_port.Read() & 0x02) == 0) break;
     }
 
-    // Send the "CPU reset" command (0xFE) to the keyboard controller
+    // Send the "CPU reset" command (0xFE) to the keyboard controller.
     keyboard_command_port.Write(0xFE);
 
-    // If keyboard reset didn't work, try triple-fault as fallback
-    // Load a null IDT and trigger an interrupt → guaranteed triple fault → CPU reset
+    // If the keyboard reset didn't work, force a triple fault: load a null IDT
+    // and trigger an interrupt, guaranteeing the CPU resets.
     asm volatile(
         "lidt (%0)\n\t"
         "int3\n\t" ::"r"(0));
 
-    // Halt the CPU (should be unreachable)
+    // Halt the CPU (should be unreachable).
     while (1) {
         asm volatile("hlt");
     }

@@ -1,9 +1,25 @@
-/**
- * @file        button.cpp
- * @brief       Button (part of #x86 GUI Framework)
+/*
+ * MIT License
  *
- * @date        11/02/2026
- * @version     1.0.0-beta
+ * Copyright (c) 2025 Malaka Gunawardana
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
  */
 
 #define KDBG_COMPONENT "GUI:BUTTON"
@@ -20,13 +36,13 @@ Button::Button(Widget* parent, int32_t x, int32_t y, int32_t w, int32_t h, const
     }
     strcpy(this->label, label);
 
-    // cache is allocated by Widget constructor; do not reallocate here
+    // The cache is allocated by the Widget constructor; do not reallocate here.
 }
 
 Button::~Button() {
     if (label) delete[] label;
     if (font) delete font;
-    // cache is owned and freed by Widget::~Widget
+    // The cache is owned and freed by ~Widget().
 }
 
 void Button::update() {
@@ -106,7 +122,8 @@ void Button::RedrawToCache() {
     }
 
     if (isFocused && enabled) {
-        NINA::activeInstance->DrawRoundedRectangle(cache, w, h, 1, 1, w - 2, h - 2, 3, BUTTON_BORDER_FOCUS);
+        NINA::activeInstance->DrawRoundedRectangle(cache, w, h, 1, 1, w - 2, h - 2, 3,
+                                                   BUTTON_BORDER_FOCUS);
     }
 
     isDirty = false;
@@ -128,7 +145,7 @@ void Button::OnMouseUp(int32_t x, int32_t y, uint8_t) {
         isPressed = false;
         MarkDirty();
 
-        // Only emit click if release is still inside button bounds.
+        // Emit the click only if the release is still inside the button bounds.
         if (!ContainsCoordinate(x, y)) {
             return;
         }
@@ -138,11 +155,11 @@ void Button::OnMouseUp(int32_t x, int32_t y, uint8_t) {
 }
 
 void Button::OnMouseMove(int32_t x, int32_t y, int32_t newx, int32_t newy) {
-    // Coordinates newx and newy are parent-relative (window coordinates)
-    // Use ContainsCoordinate for accurate hit testing
+    // newx and newy are parent-relative (window) coordinates; use
+    // ContainsCoordinate for accurate hit testing.
     bool inside = this->ContainsCoordinate(newx, newy);
 
-    // If the mouse dragged OUTSIDE the button, release the press visual
+    // Release the press visual if the mouse dragged outside the button.
     if (isPressed && !inside) {
         isPressed = false;
         MarkDirty();
@@ -175,9 +192,15 @@ void Button::OnKeyDown(const char* key) {
 void Button::EmitClickEvent() {
     Event* new_event = new Event{this->ID, ON_CLICK};
     if (!new_event) return;
-    if (!Desktop::activeInstance) { delete new_event; return; }
+    if (!Desktop::activeInstance) {
+        delete new_event;
+        return;
+    }
     EventHandler* handler = Desktop::activeInstance->getHandler(this->PID);
-    if (!handler) { delete new_event; return; }
+    if (!handler) {
+        delete new_event;
+        return;
+    }
     handler->eventQueue.Add(new_event);
     if (g_scheduler && handler->thread) {
         g_scheduler->WakeThread(handler->thread);

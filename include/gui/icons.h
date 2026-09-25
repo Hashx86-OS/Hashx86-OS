@@ -1,8 +1,35 @@
+/*
+ * MIT License
+ *
+ * Copyright (c) 2025 Malaka Gunawardana
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
+ */
+
 #ifndef ICONS_H
 #define ICONS_H
 
 #include <types.h>
 
+/**
+ * icon_cursor_20x20 - 20x20 ARGB cursor sprite (0xAARRGGBB, row-major).
+ */
 const uint32_t icon_cursor_20x20[20][20] = {
     {0xFF9D9D9D, 0xD89D9D9D, 0x049D9D9D, 0x00FFFFFF, 0x00FFFFFF, 0x00FFFFFF, 0x00FFFFFF,
      0x00FFFFFF, 0x00FFFFFF, 0x00FFFFFF, 0x00FFFFFF, 0x00FFFFFF, 0x00FFFFFF, 0x00FFFFFF,
@@ -66,6 +93,9 @@ const uint32_t icon_cursor_20x20[20][20] = {
      0x00FFFFFF, 0x00FFFFFF, 0x00FFFFFF, 0x00FFFFFF, 0x00FFFFFF, 0x00FFFFFF},
 };
 
+/**
+ * icon_main_20x20 - 20x20 ARGB main-logo sprite (0xAARRGGBB, row-major).
+ */
 const uint32_t icon_main_20x20[20][20] = {
     {0x00FEF0D9, 0x00FEF0DB, 0x00FDF5E6, 0x00FADA9C, 0x00FDC96B, 0x0AFBBF4F, 0x10FDD89C,
      0x00FFF4EF, 0x00FFEADE, 0x00FEF1DA, 0x00FCFFCD, 0x00FCFFD0, 0x02FCFFD3, 0x23FDF694,

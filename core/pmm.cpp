@@ -1,9 +1,25 @@
-/**
- * @file        pmm.cpp
- * @brief       Physical Memory Manager for #x86
+/*
+ * MIT License
  *
- * @date        29/01/2026
- * @version     1.0.0-beta
+ * Copyright (c) 2025 Malaka Gunawardana
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
  */
 
 #define KDBG_COMPONENT "PMM"
@@ -12,19 +28,19 @@
 
 PMM_INFO g_pmm_info;
 
-// Set bit in memory map array with bounds check
+// Set a bit in the memory-map array, bounds-checked.
 static inline void pmm_mmap_set(int bit) {
     if (bit >= 0 && bit < (int)g_pmm_info.max_blocks)
         g_pmm_info.memory_map_array[bit / 32] |= (1u << (bit % 32));
 }
 
-// Unset bit in memory map array with bounds check
+// Clear a bit in the memory-map array, bounds-checked.
 static inline void pmm_mmap_unset(int bit) {
     if (bit >= 0 && bit < (int)g_pmm_info.max_blocks)
         g_pmm_info.memory_map_array[bit / 32] &= ~(1u << (bit % 32));
 }
 
-// Test if given nth bit is set with bounds check
+// Test the given bit in the memory-map array, bounds-checked.
 static inline int pmm_mmap_test(int bit) {
     if (bit >= 0 && bit < (int)g_pmm_info.max_blocks)
         return (g_pmm_info.memory_map_array[bit / 32] & (1u << (bit % 32))) != 0;
@@ -41,7 +57,7 @@ uint32_t pmm_get_used_blocks() {
     return g_pmm_info.used_blocks;
 }
 
-// Find first free frame in bitmap array and return its index
+// Find the first free frame in the bitmap and return its index.
 int pmm_mmap_first_free() {
     uint32_t entries = (g_pmm_info.max_blocks + 31) / 32;
     for (uint32_t i = 0; i < entries; i++) {
@@ -60,11 +76,11 @@ int pmm_mmap_first_free() {
     return -1;
 }
 
-// Find first free frame below a certain limit (for Low Mem Alloc)
+// Find the first free frame below a limit (for low-memory allocations).
 int pmm_mmap_first_free_low(uint32_t limit_frame) {
     uint32_t entries = (g_pmm_info.max_blocks + 31) / 32;
     for (uint32_t i = 0; i < entries; i++) {
-        // If we exceed limit, stop early (i*32 is the first bit in this chunk)
+        // Stop early if the chunk's first bit already exceeds the limit.
         if (i * 32 >= limit_frame) {
             KDBG2("low-memory search result=none limit_frame=%u", limit_frame);
             return -1;
@@ -93,7 +109,7 @@ int pmm_mmap_first_free_low(uint32_t limit_frame) {
     return -1;
 }
 
-// Find first free number of frames(size) and return its index
+// Find the first run of `size` contiguous free frames and return its index.
 int pmm_mmap_first_free_by_size(uint32_t size) {
     if (size == 0) {
         KDBG2("contiguous search invalid request size=0");
@@ -127,7 +143,7 @@ int pmm_mmap_first_free_by_size(uint32_t size) {
                 }
             }
         } else {
-            // Fully-used word: reset run so it cannot span across a used chunk
+            // Fully-used word: reset the run so it cannot span a used chunk.
             free = 0;
             start_index = -1;
         }
@@ -136,14 +152,14 @@ int pmm_mmap_first_free_by_size(uint32_t size) {
     return -1;
 }
 
-// Initialize memory bitmap
+// Find the next run of free frames of the given size.
 int pmm_next_free_frame(int size) {
     int next = pmm_mmap_first_free_by_size(size);
     KDBG3("next_free_frame size=%d next=%d", size, next);
     return next;
 }
 
-// Initialize memory bitmap
+// Initialize the physical memory bitmap over the given range.
 void pmm_init(PMM_PHYSICAL_ADDRESS bitmap, uint32_t total_memory_size) {
     g_pmm_info.memory_size = total_memory_size;
     g_pmm_info.memory_map_array = (uint32_t*)bitmap;
@@ -151,15 +167,14 @@ void pmm_init(PMM_PHYSICAL_ADDRESS bitmap, uint32_t total_memory_size) {
     g_pmm_info.max_blocks = total_memory_size / PMM_BLOCK_SIZE;
     g_pmm_info.used_blocks = g_pmm_info.max_blocks;
 
-    // Mark ALL memory as Used (0xFF)
+    // Mark every block as used (all bits set).
     uint32_t map_size = (g_pmm_info.max_blocks + 7) / 8;
     memset(g_pmm_info.memory_map_array, 0xff, map_size);
 
-    // Calculate End of Bitmap
+    // Record the end of the bitmap.
     g_pmm_info.memory_map_end = (uint32_t)g_pmm_info.memory_map_array + map_size;
 
-    // FORCE ALIGNMENT
-    // Align the end marker to the next 4096 byte boundary.
+    // Align the end marker to the next 4096-byte boundary.
     if (g_pmm_info.memory_map_end % PMM_BLOCK_SIZE != 0) {
         g_pmm_info.memory_map_end += PMM_BLOCK_SIZE - (g_pmm_info.memory_map_end % PMM_BLOCK_SIZE);
     }
@@ -228,7 +243,7 @@ void* pmm_alloc_block() {
 
     pmm_mmap_set(frame);
 
-    // Use Absolute Addressing
+    // Use absolute addressing.
     PMM_PHYSICAL_ADDRESS addr = (frame * PMM_BLOCK_SIZE);
 
     g_pmm_info.used_blocks++;
@@ -254,7 +269,7 @@ void* pmm_alloc_block_low(uint32_t limit_addr) {
 
     pmm_mmap_set(frame);
 
-    // Use Absolute Addressing
+    // Use absolute addressing.
     PMM_PHYSICAL_ADDRESS addr = (frame * PMM_BLOCK_SIZE);
     g_pmm_info.used_blocks++;
 
@@ -271,17 +286,17 @@ void pmm_free_block(void* p) {
     }
     PMM_PHYSICAL_ADDRESS addr = (PMM_PHYSICAL_ADDRESS)p;
 
-    // Reject unaligned addresses to prevent freeing the wrong frame
+    // Reject unaligned addresses to prevent freeing the wrong frame.
     if ((addr % PMM_BLOCK_SIZE) != 0) {
         KDBG2("free_block rejected: unaligned addr=0x%x", addr);
         return;
     }
 
-    // Guard: Refuse to free kernel identity-map page table frames
+    // Guard: refuse to free kernel identity-map page-table frames.
     extern Paging* g_paging;
     if (g_paging && g_paging->KernelPageDirectory) {
         uint32_t frame_addr = addr & 0xFFFFF000;
-        // Grab caller return addresses via EBP chain
+        // Collect caller return addresses via the EBP chain for diagnostics.
         uint32_t caller1 = 0, caller2 = 0, caller3 = 0;
         uint32_t ebp;
         asm volatile("mov %%ebp, %0" : "=r"(ebp));
@@ -318,7 +333,7 @@ void pmm_free_block(void* p) {
         }
     }
 
-    // Use Absolute Addressing
+    // Use absolute addressing.
     int frame = addr / PMM_BLOCK_SIZE;
 
     if (frame < 0 || (uint32_t)frame >= g_pmm_info.max_blocks) {
@@ -350,7 +365,7 @@ void* pmm_alloc_blocks(uint32_t size) {
 
     for (i = 0; i < size; i++) pmm_mmap_set(frame + i);
 
-    // Use Absolute Addressing
+    // Use absolute addressing.
     PMM_PHYSICAL_ADDRESS addr = (frame * PMM_BLOCK_SIZE);
 
     g_pmm_info.used_blocks += size;
@@ -368,13 +383,13 @@ void pmm_free_blocks(void* p, uint32_t size) {
     }
     PMM_PHYSICAL_ADDRESS addr = (PMM_PHYSICAL_ADDRESS)p;
 
-    // Reject unaligned addresses
+    // Reject unaligned addresses.
     if ((addr % PMM_BLOCK_SIZE) != 0) {
         KDBG2("free_blocks rejected: unaligned addr=0x%x", addr);
         return;
     }
 
-    // Use Absolute Addressing
+    // Use absolute addressing.
     int frame = addr / PMM_BLOCK_SIZE;
 
     if (frame < 0 || (uint32_t)frame >= g_pmm_info.max_blocks ||

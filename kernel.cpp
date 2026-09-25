@@ -1,16 +1,32 @@
-/**
- * @file        kernel.cpp
- * @brief       Main Kernel of #x86
+/*
+ * MIT License
  *
- * @date        24/02/2025
- * @version     1.2.0-beta
+ * Copyright (c) 2025 Malaka Gunawardana
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
  */
 
 #define KDBG_COMPONENT "KERNEL"
-#include <kernel.h>
 #include <core/filesystem/Paths.h>
 #include <core/kstack.h>
 #include <gui/bootanim.h>
+#include <kernel.h>
 
 #define DEBUG_ENABLED TRUE;
 #define PIT_COMMAND_PORT 0x43
@@ -19,13 +35,33 @@
 KERNEL_MEMORY_MAP g_kmap;
 
 extern "C" uint32_t pci_find_bar0(uint16_t vendor, uint16_t device);
+/**
+ * __cxa_pure_virtual() - Abort when a pure virtual function is called.
+ *
+ * The C++ runtime invokes this whenever an abstract method is called. Halt the
+ * system: there is nothing sensible to do in a freestanding kernel.
+ *
+ * Context: Called from the compiler-generated vtable dispatch path.
+ */
 extern "C" void __cxa_pure_virtual() {
     HALT("Pure Virtual Function Called! System Halted.");
 }
 
+/**
+ * get_kernel_memory_map() - Populate the kernel memory layout from multiboot.
+ * @kmap: Pointer to the KERNEL_MEMORY_MAP structure to fill in.
+ * @mboot_info: Multiboot info structure, must carry the memory map (bit 6).
+ *
+ * Records the linker-provided ranges for each kernel section, computes the
+ * total system memory, then scans the multiboot memory map for the first
+ * available region that fully contains the kernel (plus 1 MiB of slack) and
+ * uses it as the allocatable heap span.
+ *
+ * Return: 0 on success, -1 when the layout could not be determined.
+ */
 int get_kernel_memory_map(KERNEL_MEMORY_MAP* kmap, MultibootInfo* mboot_info) {
     if (kmap == NULL) return -1;
-    if (!(mboot_info->flags & (1 << 6))) return -1;  // memory map not present in multiboot info
+    if (!(mboot_info->flags & (1 << 6))) return -1;  // Multiboot memory map not present.
     kmap->kernel.k_start_addr = (uint32_t)&__kernel_section_start;
     kmap->kernel.k_end_addr = (uint32_t)&__kernel_section_end;
     kmap->kernel.k_len = ((uint32_t)&__kernel_section_end - (uint32_t)&__kernel_section_start);
@@ -59,18 +95,17 @@ int get_kernel_memory_map(KERNEL_MEMORY_MAP* kmap, MultibootInfo* mboot_info) {
             offset += mmap->size + sizeof(mmap->size);
             continue;
         }
-        // Check that this available range contains the kernel,
-        // not just starts at the same address
+        // Check that this available range fully contains the kernel.
         if (mmap->addr_low <= kmap->kernel.text_start_addr &&
             mmap->addr_low + mmap->len_low >= kmap->kernel.k_end_addr) {
-            // set available memory starting from end of our kernel, leaving 1MB size for functions
-            // execution
+            // Set available memory starting from the end of our kernel,
+            // leaving 1 MiB for runtime function execution.
             uint32_t suggested_start = kmap->kernel.k_end_addr + 1024 * 1024;
             kmap->available.start_addr = (suggested_start <= mmap->addr_low + mmap->len_low)
                                              ? suggested_start
                                              : kmap->kernel.k_end_addr;
             kmap->available.end_addr = mmap->addr_low + mmap->len_low;
-            // get available memory in bytes
+            // Compute the available region size in bytes.
             kmap->available.size = kmap->available.end_addr - kmap->available.start_addr;
             return 0;
         }
@@ -97,6 +132,16 @@ void display_kernel_memory_map(KERNEL_MEMORY_MAP* kmap) {
     KDBG1("AvailableRAM start=0x%x end=0x%x", kmap->available.start_addr, kmap->available.end_addr);
 }
 
+/**
+ * init_memory() - Layout the kernel heap, PMM bitmap and stack zone.
+ * @mbinfo: Multiboot info structure describing the available memory.
+ *
+ * Derives the allocatable region from the multiboot memory map, bootstraps
+ * the physical memory manager, reserves the kernel-stack zone, and carves a
+ * 64 MiB identity-mapped kernel heap for kmalloc.
+ *
+ * Context: Called once during early boot, before paging is activated.
+ */
 void init_memory(MultibootInfo* mbinfo) {
     memset(&g_kmap, 0, sizeof(KERNEL_MEMORY_MAP));
     if (get_kernel_memory_map(&g_kmap, mbinfo) != 0) {
@@ -106,11 +151,10 @@ void init_memory(MultibootInfo* mbinfo) {
 
     display_kernel_memory_map(&g_kmap);
 
-    // Initialize PMM at end of Kernel (Respect BSS/Stack)
-    // Use bss_end_addr to ensure we are past the stack
+    // Initialize the PMM at the end of the kernel, past the BSS/stack.
     uint32_t heap_start_addr = g_kmap.kernel.bss_end_addr;
 
-    // Safety Fallback: Use k_end_addr if bss calc seems wrong
+    // Safety fallback: use k_end_addr if the BSS calculation seems wrong.
     if (g_kmap.kernel.k_end_addr > heap_start_addr) {
         heap_start_addr = g_kmap.kernel.k_end_addr;
     }
@@ -119,10 +163,10 @@ void init_memory(MultibootInfo* mbinfo) {
         heap_start_addr = 0x200000;
     }
 
-    // Add 4MB padding to be safe.
+    // Add 4 MiB of padding to be safe.
     heap_start_addr += 4 * 1024 * 1024;
 
-    if (mbinfo->flags & (1 << 3)) {  // mods flag present
+    if (mbinfo->flags & (1 << 3)) {  // Multiboot "mods" flag present.
         struct multiboot_module* modules = (struct multiboot_module*)mbinfo->mods_addr;
         if (mbinfo->mods_count > 0) {
             for (int mod_idx = 0; mod_idx < (int)mbinfo->mods_count; mod_idx++) {
@@ -134,30 +178,29 @@ void init_memory(MultibootInfo* mbinfo) {
         }
     }
 
-    // Align to Page Boundary
+    // Align the heap start to a page boundary.
     if ((heap_start_addr & 0xFFF) != 0) {
         heap_start_addr = (heap_start_addr & 0xFFFFF000) + 0x1000;
     }
 
-    // initialize PMM
+    // Initialize the PMM and size its allocation bitmap.
     pmm_init(heap_start_addr, g_kmap.available.end_addr);
-    // Calculate how big the bitmap
     uint32_t bitmap_size = (g_kmap.available.end_addr / PMM_BLOCK_SIZE) / 8;
-    // Align bitmap size to page boundary so the free region starts on a clean page
+    // Align the bitmap so the free region starts on a clean page.
     if (bitmap_size & 0xFFF) {
         bitmap_size = (bitmap_size & 0xFFFFF000) + 0x1000;
     }
-    // Mark FREE Region, but SKIP the bitmap!
+    // Mark the free region, but skip the bitmap itself.
     pmm_init_region(heap_start_addr + bitmap_size, g_kmap.available.end_addr);
 
-    // Reserve the dedicated kernel-stack zone BEFORE the heap is carved out,
+    // Reserve the dedicated kernel-stack zone before the heap is carved out,
     // so the heap allocator and user allocations skip this region entirely.
     // Kernel thread stacks live here (with guard pages), never in the heap.
     if (kstack_init() != 0) {
         HALT("CRITICAL: Failed to initialize kernel stack zone!\n");
     }
 
-    // HEAP ALLOCATION
+    // Compute the final heap start, page-aligned past the bitmap.
     uint32_t actual_heap_start = heap_start_addr + bitmap_size;
     if ((actual_heap_start & 0xFFF) != 0) {
         actual_heap_start = (actual_heap_start & 0xFFFFF000) + 0x1000;
@@ -197,41 +240,63 @@ void init_memory(MultibootInfo* mbinfo) {
     kheap_init(heap_start, heap_end);
 }
 
+/**
+ * InitializePIT() - Program the PIT to fire timer interrupts at a fixed rate.
+ * @frequency: Desired interrupt frequency, in Hertz.
+ *
+ * Uses channel 0 in mode 3 (square wave generator, binary counting). The
+ * divisor for the ~1.193182 MHz input clock is written low byte first, per
+ * the 82C54 programming protocol.
+ *
+ * Context: Called once during early boot, before interrupts are enabled.
+ */
 void InitializePIT(uint32_t frequency) {
-    // The PIT's input clock is approximately 1.193182 MHz
+    // The PIT input clock is approximately 1.193182 MHz.
     uint32_t divisor = 1193180 / frequency;
 
-    // Send the command byte.
+    // Send the command byte:
     // 0x36 = 00 11 01 10
-    // 00 (Channel 0)
-    // 11 (Access mode: lobyte/hibyte)
-    // 011 (Mode 3: Square Wave Generator)
-    // 0 (Binary mode)
+    //   00  (channel 0)
+    //   11  (access mode: lobyte/hibyte)
+    //   011 (mode 3: square wave generator)
+    //   0   (binary mode)
     outb(PIT_COMMAND_PORT, 0x36);
 
-    // Divisor has to be sent byte-wise, so split it into Low and High bytes.
+    // The divisor must be sent byte-wise, so split it into low and high bytes.
     uint8_t low = (uint8_t)(divisor & 0xFF);
     uint8_t high = (uint8_t)((divisor >> 8) & 0xFF);
 
-    // Send the frequency divisor
+    // Send the frequency divisor.
     outb(PIT_CHANNEL0_PORT, low);
     outb(PIT_CHANNEL0_PORT, high);
 
     KDBG1("PIT Initialized at %d Hz", (int32_t)frequency);
 }
 
+/**
+ * init_pci() - Probe PCI devices and load the matching graphics/audio drivers.
+ * @boot_partition: Mounted boot partition used to read the driver modules.
+ * @driverManager: Driver manager that takes ownership of the loaded drivers.
+ *
+ * Scans the PCI bus for a known BGA/SVGA adapter (Bochs, VirtualBox or
+ * VMware) and loads the matching .sys graphics module, then probes for a
+ * Synaptics AC97 controller and loads the audio driver. Newly created devices
+ * are registered with the driver manager.
+ *
+ * Context: Called from the boot worker with IRQs masked via InterruptGuard.
+ */
 void init_pci(FileSystem* boot_partition, DriverManager* driverManager) {
     KDBG1("Initializing Drivers (PCI Scan)...");
-    // ---------------------------------------------------------
-    // Dynamic Graphics Loading (with PCI)
-    // ---------------------------------------------------------
+    // -----------------------------------------------------------------
+    // Dynamic graphics loading (with PCI).
+    // -----------------------------------------------------------------
 
-    // Scan for known BGA/SVGA Vendors
-    // 0x1234:0x1111 = Bochs / QEMU
-    // 0x80EE:0xBEEF = VirtualBox Graphics Adapter
-    // 0x15AD:0x0405 = VMware SVGA II (often used by VBox)
+    // Known BGA/SVGA vendor IDs:
+    //   0x1234:0x1111  Bochs / QEMU
+    //   0x80EE:0xBEEF  VirtualBox Graphics Adapter
+    //   0x15AD:0x0405  VMware SVGA II
 
-    // Check if BGA Hardware Exists via PCI
+    // Check whether BGA hardware exists on the PCI bus.
     PeripheralComponentInterconnectController* pciCheck =
         new PeripheralComponentInterconnectController();
     if (!pciCheck) {
@@ -243,7 +308,7 @@ void init_pci(FileSystem* boot_partition, DriverManager* driverManager) {
     if (dev == nullptr || dev->vendor_id == 0) dev = pciCheck->FindHardwareDevice(0x80EE, 0xBEEF);
     if (dev == nullptr || dev->vendor_id == 0) dev = pciCheck->FindHardwareDevice(0x15AD, 0x0405);
 
-    // Only Proceed if Device Found
+    // Proceed only when a device was found.
     if (dev != nullptr && dev->vendor_id != 0) {
         const char* BGAfilename = PATH_BGA_DRIVER;
 
@@ -257,25 +322,22 @@ void init_pci(FileSystem* boot_partition, DriverManager* driverManager) {
 
             if (entryPoint) {
                 GetDriverInstancePtr createDriver = (GetDriverInstancePtr)entryPoint;
-                void* raw = createDriver();  // Create the object
+                void* raw = createDriver();
 
                 if (raw) {
                     Driver* drv = (Driver*)raw;
                     driverManager->AddDriver(drv);
 
-                    // SAFE CAST
+                    // Safely downcast to a graphics driver.
                     GraphicsDriver* newScreen = drv->AsGraphicsDriver();
 
                     if (newScreen) {
                         GraphicsDriver* oldDR = g_GraphicsDriver;
 
-                        // Update Local Reference
+                        // Update the global graphics driver reference.
                         g_GraphicsDriver = newScreen;
 
-                        // UPDATE GLOBAL VARIABLE
-                        g_GraphicsDriver = newScreen;
-
-                        // Copy Old Screen to New Screen
+                        // Copy the old screen content to the new screen.
                         int32_t x, y;
                         g_GraphicsDriver->GetScreenCenter(oldDR->GetWidth(), oldDR->GetHeight(), x,
                                                           y);
@@ -302,15 +364,15 @@ void init_pci(FileSystem* boot_partition, DriverManager* driverManager) {
         KDBG1("No BGA Hardware found. Skipping driver load.");
     }
 
-    // Clean up dev for next search
+    // Clean up the descriptor before the next search.
     if (dev) delete dev;
     dev = nullptr;
 
-    // ---------------------------------------------------------
-    // 2. Dynamic Audio Loading
-    // ---------------------------------------------------------
+    // -----------------------------------------------------------------
+    // Dynamic audio loading.
+    // -----------------------------------------------------------------
 
-    // Check for AC97 (0x8086:0x2415)
+    // Check for an AC97 controller (0x8086:0x2415).
     dev = pciCheck->FindHardwareDevice(0x8086, 0x2415);
 
     if (dev != nullptr && dev->vendor_id != 0) {
@@ -327,8 +389,8 @@ void init_pci(FileSystem* boot_partition, DriverManager* driverManager) {
                 if (raw) {
                     Driver* drv = (Driver*)raw;
 
-                    // CRITICAL: Activate() registers the IRQ.
-                    // InterruptManager MUST exist before this line runs.
+                    // Activate() registers the IRQ; the InterruptManager
+                    // must exist before this line runs.
                     drv->Activate();
 
                     driverManager->AddDriver(drv);
@@ -336,13 +398,13 @@ void init_pci(FileSystem* boot_partition, DriverManager* driverManager) {
 
                     if (audio) {
                         KDBG1("Initializing Audio Mixer...");
-                        // Create the Mixer and link it to the driver
+                        // Create the mixer and link it to the audio driver.
                         g_AudioMixer = new AudioMixer(audio);
                         if (!g_AudioMixer) {
                             HALT("CRITICAL: Failed to allocate AudioMixer!\n");
                         }
 
-                        // Set Master Volume
+                        // Set the master volume.
                         audio->SetVolume(90);
                     }
                 }
@@ -352,8 +414,16 @@ void init_pci(FileSystem* boot_partition, DriverManager* driverManager) {
         }
     }
     delete pciCheck;
-};
+}
 
+/**
+ * pDesktop() - Desktop rendering thread entry point.
+ * @arg: Pointer to a DesktopArgs struct.
+ *
+ * Runs the main GUI loop: redraws the desktop only when it is dirty or the
+ * mouse has moved, draws the per-frame render time, and sleeps while idle.
+ * Fullscreen applications suspend the desktop draw path.
+ */
 void pDesktop(void* arg) {
     DesktopArgs* args = (DesktopArgs*)arg;
 
@@ -376,48 +446,19 @@ void pDesktop(void* arg) {
 
     Font* VBE_font = FontManager::activeInstance->getNewFont();
     VBE_font->setSize(MEDIUM);
-/* 
-    
-    // Font demo window
-    Window* fontWin = new Window(desktop, 50, 50, 320, 260);
-    if (fontWin) {
-        fontWin->setWindowTitle("Font Demo");
-
-        struct FontDemoEntry { const char* text; int y; FontSize size; FontType type; };
-        FontDemoEntry entries[] = {
-            {"Regular TINY",       30, TINY,   REGULAR},
-            {"Regular SMALL",      52, SMALL,  REGULAR},
-            {"Regular MEDIUM",     76, MEDIUM, REGULAR},
-            {"Regular LARGE",     104, LARGE,  REGULAR},
-            {"Bold SMALL",        134, SMALL,  BOLD},
-            {"Italic SMALL",      156, SMALL,  ITALIC},
-            {"Bold Italic MEDIUM",180, MEDIUM, BOLD_ITALIC},
-            {"Regular XLARGE",    212, XLARGE, REGULAR},
-        };
-        for (int i = 0; i < (int)(sizeof(entries)/sizeof(entries[0])); i++) {
-            Label* lbl = new Label(fontWin, 10, entries[i].y, 300, 30, entries[i].text);
-            if (lbl) {
-                lbl->setSize(entries[i].size);
-                lbl->setType(entries[i].type);
-                fontWin->AddChild(lbl);
-            }
-        }
-    }
-
-    desktop->AddChild(fontWin); */
 
     while (true) {
-        // Only swap buffers if something actually changed
+        // Swap buffers only when something actually changed.
         uint32_t start = timerTicks;
 
-        // If a fullscreen app is running, skip desktop drawing
+        // If a fullscreen app is running, skip desktop drawing.
         if (g_stop_gui_rendering) {
             screen->Flush();
             Scheduler::activeInstance->Sleep(16);
             continue;
         }
 
-        // Periodic clock update check for taskbar
+        // Periodic clock update for the taskbar.
         static uint32_t lastClockTick = 0;
         if (timerTicks - lastClockTick >= 1000) {
             lastClockTick = timerTicks;
@@ -440,8 +481,18 @@ void pDesktop(void* arg) {
     }
 }
 
-// Boot worker thread: slow/filesystem stages, then starts the desktop thread.
-// Returning runs ThreadExit -> KillProcess for this worker process.
+/**
+ * BootMain() - Boot worker thread that runs the slow boot stages.
+ * @arg: Pointer to a BootMainArgs struct.
+ *
+ * Probes the ATA drives, mounts the boot partition, starts the boot splash,
+ * loads the fonts, scans PCI devices, starts the input drivers and the ELF
+ * loader, then hands the framebuffer to the desktop thread. The thread exits
+ * after starting the desktop, which triggers ThreadExit and reaps this worker
+ * process.
+ *
+ * Context: Runs on the scheduler worker thread created by kernelMain().
+ */
 void BootMain(void* arg) {
     BootMainArgs* bootArgs = (BootMainArgs*)arg;
     if (!bootArgs || !bootArgs->mbinfo) {
@@ -452,10 +503,10 @@ void BootMain(void* arg) {
     // ---- Slow stage 1: ATA probe -----------------------------------------
     AdvancedTechnologyAttachment* ata = nullptr;
     AdvancedTechnologyAttachment* SATAList[] = {
-        new AdvancedTechnologyAttachment(true, 0x1F0),   // Primary Master
-        new AdvancedTechnologyAttachment(false, 0x1F0),  // Primary Slave
-        new AdvancedTechnologyAttachment(true, 0x170),   // Secondary Master
-        new AdvancedTechnologyAttachment(false, 0x170),  // Secondary Slave
+        new AdvancedTechnologyAttachment(true, 0x1F0),   // Primary master
+        new AdvancedTechnologyAttachment(false, 0x1F0),  // Primary slave
+        new AdvancedTechnologyAttachment(true, 0x170),   // Secondary master
+        new AdvancedTechnologyAttachment(false, 0x170),  // Secondary slave
         0};
     for (int i = 0; i < 4; i++) {
         if (!SATAList[i]) {
@@ -467,9 +518,9 @@ void BootMain(void* arg) {
         KDBG3("Checking Drive %d...", i);
         uint32_t ata_size = SATAList[i]->Identify();
 
-        if (ata_size == 0) continue;  // No Drive detected
+        if (ata_size == 0) continue;  // No drive detected.
 
-        // Skip CD-ROMs (ATAPI)
+        // Skip CD-ROMs (ATAPI).
         if (SATAList[i]->isAtapi) {
             KDBG1("Drive %d is ATAPI (CD-ROM), skipping", i);
             continue;
@@ -477,7 +528,7 @@ void BootMain(void* arg) {
 
         ata = SATAList[i];
 
-        // Use the FIRST drive found.
+        // Use the first drive found.
         KDBG1("Using ATA drive %d (Master/Slave)", i);
         break;
     }
@@ -492,7 +543,7 @@ void BootMain(void* arg) {
         HALT("CRITICAL: Failed to allocate MSDOSPartitionTable!\n");
     }
     MSDOS->ReadPartitions();
-    // Get Boot Partition
+    // Get the boot partition.
     g_bootPartition = MSDOS->partitions[0];
     if (!g_bootPartition) {
         KDBG1("No valid partition found — initializing disk (this runs once on first boot)...");
@@ -507,7 +558,7 @@ void BootMain(void* arg) {
     KDBG1("Boot partition mounted. Root listed.");
     KernelSymbolTable::Load(g_bootPartition, PATH_KERNEL_MAP);
 
-    // Boot image
+    // Draw the boot image.
     Bitmap* bootImg = new Bitmap(PATH_BOOT_BMP);
     if (!bootImg) {
         HALT("CRITICAL: Failed to allocate Bitmap for boot image!\n");
@@ -523,7 +574,7 @@ void BootMain(void* arg) {
 
     delete bootImg;
 
-    // Optional frameset (Hashx86/gfx/bootanim/frameNN.bmp)
+    // Optional frameset (Hashx86/gfx/bootanim/frameNN.bmp).
     LoadBootAnimFrames();
 
     // Start the animation before the slow font loading below.
@@ -545,7 +596,10 @@ void BootMain(void* arg) {
                 KDBG1("Font error: %s not found. Run 'make hdd'.", path);
                 while (1) asm volatile("hlt");
             }
-            if (f) { f->Close(); delete f; }
+            if (f) {
+                f->Close();
+                delete f;
+            }
             return;
         }
         g_fManager->LoadFile(f, style, path);
@@ -554,11 +608,13 @@ void BootMain(void* arg) {
         KDBG1("Loaded font style %d from %s", (int)style, path);
     };
 
-    // Load only REGULAR fonts at boot. Bold/Italic variants are loaded on demand.
+    // Load only the REGULAR fonts at boot; bold/italic variants are loaded on
+    // demand.
     loadFontStyle(PATH_SEGOEUI_FONT, REGULAR, true);
     loadFontStyle(PATH_CASCADIA_FONT, REGULAR, false);
 
-    // Load icon font (FontAwesome) — icon codepoints start in Unicode PUA range
+    // Load the icon font (FontAwesome); icon codepoints start in the Unicode
+    // PUA range.
     {
         File* f = g_bootPartition->Open(PATH_ICON_FONT);
         if (f && f->size > 0) {
@@ -567,7 +623,10 @@ void BootMain(void* arg) {
             delete f;
             KDBG1("Loaded icon font from %s", PATH_ICON_FONT);
         } else {
-            if (f) { f->Close(); delete f; }
+            if (f) {
+                f->Close();
+                delete f;
+            }
             KDBG1("Icon font not found: %s", PATH_ICON_FONT);
         }
     }
@@ -581,19 +640,19 @@ void BootMain(void* arg) {
         HALT("CRITICAL: Failed to allocate Desktop!\n");
     }
 
-    // Created after the desktop (as before) so HguiHandler picks it up.
+    // Created after the desktop so HguiHandler picks it up.
     g_sysCalls = new SyscallHandler(0x80, g_interrupts);
     if (!g_sysCalls) {
         HALT("CRITICAL: Failed to allocate SyscallHandler!\n");
     }
-    HguiHandler* guiCalls = new HguiHandler(0x81, g_interrupts);  // Needs desktop initialized
+    HguiHandler* guiCalls = new HguiHandler(0x81, g_interrupts);  // Needs the desktop initialized.
     if (!guiCalls) {
         HALT("CRITICAL: Failed to allocate HguiHandler!\n");
     }
     // ---- Slow stage 5: PCI devices ------------------------------------------
     {
-        // Keep the timer IRQ out of command/ACK polling (an IRQ handler must
-        // never steal an ACK byte mid-init).
+        // Keep the timer IRQ out of the command/ACK polling (an IRQ handler
+        // must never steal an ACK byte mid-init).
         InterruptGuard guard;
         init_pci(g_bootPartition, g_driverManager);
     }
@@ -612,11 +671,10 @@ void BootMain(void* arg) {
     }
     g_driverManager->AddDriver(keyboard);
 
-    if (mbinfo->flags & (1 << 3)) {  // mods flag present
+    if (mbinfo->flags & (1 << 3)) {  // Multiboot "mods" flag present.
         if (mbinfo->mods_count > 0) {
             KDBG1("Found %d Modules", mbinfo->mods_count);
             struct multiboot_module* modules = (struct multiboot_module*)mbinfo->mods_addr;
-            // fManager.LoadFile(modules[0].mod_start, modules[0].mod_end); // load font file
             (void)modules;
         } else {
             KDBG1("No modules found");
@@ -641,8 +699,8 @@ void BootMain(void* arg) {
 
     // ---- Handoff: stop the splash, then start the desktop ----------------------
     g_bootSplashDone = true;
-    // Wait for the animator to fully exit and free its frames before
-    // pDesktop takes over the framebuffer (explicit exit handshake).
+    // Wait for the animator to fully exit and free its frames before pDesktop
+    // takes over the framebuffer (explicit exit handshake).
     while (!g_bootSplashExited) {
         if (Scheduler::activeInstance) {
             Scheduler::activeInstance->Sleep(1);
@@ -671,12 +729,22 @@ void BootMain(void* arg) {
     delete bootArgs;
 }
 
-
+/**
+ * kernelMain() - Kernel entry point, called from the multiboot bootstrap.
+ * @multiboot_structure: Physical address of the multiboot info structure.
+ * @magicnumber: Multiboot magic value, must equal 0x2BADB002.
+ *
+ * Initializes serial output, the GDT, the PMM and kernel heap, the PIT,
+ * paging and the VESA framebuffer, then spawns the BootMain worker thread
+ * that runs the slow boot stages. This function never returns.
+ *
+ * Context: Runs on the boot CPU in the multiboot bootstrap context.
+ */
 extern "C" void kernelMain(void* multiboot_structure, uint32_t magicnumber) {
     initSerial();
     if (magicnumber != 0x2BADB002) {
         KDBG1("Invalid magic number : [%x]", magicnumber);
-        // Halt the CPU — return is undefined in a freestanding kernel
+        // Halt the CPU: return is undefined in a freestanding kernel.
         while (1) {
             asm volatile("hlt");
         }
@@ -687,7 +755,7 @@ extern "C" void kernelMain(void* multiboot_structure, uint32_t magicnumber) {
 
     gdt_init();
 
-    // Initialize PMM and Kheap
+    // Initialize the PMM and kernel heap.
     init_memory(mbinfo);
     InitializePIT(1000);
 
@@ -700,7 +768,7 @@ extern "C" void kernelMain(void* multiboot_structure, uint32_t magicnumber) {
     g_paging->Activate();
     kstack_zone_activate(g_paging->KernelPageDirectory);
 
-    // NOTE: slow stages run in the BootMain worker thread; only
+    // The slow stages run in the BootMain worker thread; only
     // IRQ-independent, filesystem-free setup stays on this path.
 
     if (!(mbinfo->flags & (1 << 12))) {
@@ -716,11 +784,12 @@ extern "C" void kernelMain(void* multiboot_structure, uint32_t magicnumber) {
     // Black base until BootMain draws the boot image.
     {
         InterruptGuard guard;
-        g_GraphicsDriver->Flush();  // present the cleared backbuffer as splash base
+        g_GraphicsDriver->Flush();  // Present the cleared backbuffer as splash base.
     }
 
     // ---- Early multithreading bring-up ------------------------------------
-    // Scheduler + timer IRQ go live before the slow stages (BootMain worker).
+    // The scheduler + timer IRQ go live before the slow stages (BootMain
+    // worker).
     g_scheduler = new Scheduler(g_paging);
     if (!g_scheduler) {
         HALT("CRITICAL: Failed to allocate Scheduler!\n");

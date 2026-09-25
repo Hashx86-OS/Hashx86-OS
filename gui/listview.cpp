@@ -1,9 +1,25 @@
-/**
- * @file        listview.cpp
- * @brief       ListView Component (part of #x86 GUI Framework)
+/*
+ * MIT License
  *
- * @date        22/02/2026
- * @version     1.0.0
+ * Copyright (c) 2025 Malaka Gunawardana
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
  */
 
 #define KDBG_COMPONENT "GUI:LISTVIEW"
@@ -27,7 +43,7 @@ ListView::ListView(Widget* parent, int32_t x, int32_t y, int32_t w, int32_t h)
     }
     headerText[i] = 0;
 
-    // cache is allocated by Widget constructor; do not reallocate here
+    // The cache is allocated by the Widget constructor; do not reallocate here.
 }
 
 ListView::~ListView() {
@@ -99,13 +115,19 @@ void ListView::OnKeyDown(const char* key) {
     if (key[0] == 0) return;
 
     if (key[0] == '\r' || key[0] == '\n' || key[0] == ' ') {
-        // Enter or Space → fire click event
+        // Enter or Space fire a click event.
         if (selectedIndex >= 0) {
             Event* new_event = new Event{this->ID, ON_CLICK};
             if (!new_event) return;
-            if (!Desktop::activeInstance) { delete new_event; return; }
+            if (!Desktop::activeInstance) {
+                delete new_event;
+                return;
+            }
             EventHandler* handler = Desktop::activeInstance->getHandler(this->PID);
-            if (!handler) { delete new_event; return; }
+            if (!handler) {
+                delete new_event;
+                return;
+            }
             handler->eventQueue.Add(new_event);
             if (g_scheduler && handler->thread) {
                 g_scheduler->WakeThread(handler->thread);
@@ -155,26 +177,26 @@ void ListView::RedrawToCache() {
     // Border
     NINA::activeInstance->DrawRoundedRectangle(cache, w, h, 0, 0, w, h, 4, LISTVIEW_BORDER);
 
-    // Header bar
+    // Header bar.
     NINA::activeInstance->FillRectangle(cache, w, h, 1, 1, w - 2, LISTVIEW_HEADER_HEIGHT,
                                         LISTVIEW_HEADER_BG);
     NINA::activeInstance->DrawString(cache, w, h, 28, 4, headerText, font, LISTVIEW_HEADER_TEXT);
 
-    // Size column header
+    // Size column header.
     NINA::activeInstance->DrawString(cache, w, h, w - 80, 4, "Size", font, LISTVIEW_HEADER_TEXT);
 
-    // Separator under header
+    // Separator under the header.
     NINA::activeInstance->DrawHorizontalLine(cache, w, h, 1, LISTVIEW_HEADER_HEIGHT, w - 2,
                                              LISTVIEW_BORDER);
 
-    // Calculate visible range
+    // Calculate the visible range.
     int contentH = h - LISTVIEW_HEADER_HEIGHT - 2;
     int visibleItems = contentH / itemHeight;
     int startItem = scrollOffset;
     int endItem = startItem + visibleItems;
     if (endItem > itemCount) endItem = itemCount;
 
-    // Draw items
+    // Draw the visible items.
     for (int i = startItem; i < endItem; i++) {
         if (!items[i].valid) continue;
 
@@ -189,10 +211,9 @@ void ListView::RedrawToCache() {
         } else {
             bgColor = (i % 2 == 0) ? LISTVIEW_ITEM_BG_EVEN : LISTVIEW_ITEM_BG_ODD;
         }
-        NINA::activeInstance->FillRectangle(cache, w, h, 1, itemY, w - 2, itemHeight,
-                                            bgColor);
+        NINA::activeInstance->FillRectangle(cache, w, h, 1, itemY, w - 2, itemHeight, bgColor);
 
-        // Icon indicator (small colored circle)
+        // Icon indicator (small colored circle).
         uint32_t iconColor;
         switch (items[i].type) {
             case 1:
@@ -205,14 +226,13 @@ void ListView::RedrawToCache() {
                 iconColor = LISTVIEW_ICON_FILE;
                 break;
         }
-        NINA::activeInstance->FillCircle(cache, w, h, 12, itemY + itemHeight / 2, 4,
-                                         iconColor);
+        NINA::activeInstance->FillCircle(cache, w, h, 12, itemY + itemHeight / 2, 4, iconColor);
 
-        // Name text
+        // Name text.
         NINA::activeInstance->DrawString(cache, w, h, 22, itemY + 2, items[i].name, font,
                                          LISTVIEW_ITEM_TEXT);
 
-        // Size text (if not directory)
+        // Size text (if not a directory).
         if (items[i].type != 1) {
             char sizeStr[16];
             uint32_t sz = items[i].size;
@@ -262,7 +282,7 @@ void ListView::RedrawToCache() {
         }
     }
 
-    // Scrollbar (if needed)
+    // Scrollbar, if needed.
     if (itemCount > visibleItems && visibleItems > 0) {
         int sbX = w - LISTVIEW_SCROLLBAR_WIDTH - 1;
         int sbY = LISTVIEW_HEADER_HEIGHT + 1;
@@ -270,7 +290,7 @@ void ListView::RedrawToCache() {
         NINA::activeInstance->FillRectangle(cache, w, h, sbX, sbY, LISTVIEW_SCROLLBAR_WIDTH, sbH,
                                             LISTVIEW_SCROLLBAR_BG);
 
-        // Thumb
+        // Thumb.
         int thumbH = (visibleItems * sbH) / itemCount;
         if (thumbH < 10) thumbH = 10;
         int thumbY = sbY + (scrollOffset * (sbH - thumbH)) / (itemCount - visibleItems);
@@ -279,7 +299,7 @@ void ListView::RedrawToCache() {
                                                    LISTVIEW_SCROLLBAR_THUMB);
     }
 
-    // Empty state
+    // Empty state.
     if (itemCount == 0) {
         Font* msgFont = FontManager::activeInstance->getNewFont();
         if (msgFont) {
@@ -303,8 +323,7 @@ void ListView::OnMouseDown(int32_t mx, int32_t my, uint8_t button) {
 
     if (localY > LISTVIEW_HEADER_HEIGHT && localY < h && localX >= 0 &&
         localX < w - LISTVIEW_SCROLLBAR_WIDTH) {
-        int clickedItem =
-            scrollOffset + (localY - LISTVIEW_HEADER_HEIGHT - 1) / itemHeight;
+        int clickedItem = scrollOffset + (localY - LISTVIEW_HEADER_HEIGHT - 1) / itemHeight;
         if (clickedItem >= 0 && clickedItem < itemCount) {
             selectedIndex = clickedItem;
             MarkDirty();
@@ -332,7 +351,7 @@ void ListView::OnMouseDown(int32_t mx, int32_t my, uint8_t button) {
         }
     }
 
-    // Scrollbar thumb drag
+    // Scrollbar thumb drag.
     if (localX >= w - LISTVIEW_SCROLLBAR_WIDTH - 1 && localX < w &&
         localY > LISTVIEW_HEADER_HEIGHT && localY < h) {
         isDraggingThumb = true;
@@ -374,8 +393,7 @@ void ListView::OnMouseMove(int32_t, int32_t oldy, int32_t mx, int32_t my) {
     int localX = mx - this->x;
     if (localY > LISTVIEW_HEADER_HEIGHT && localY < h) {
         if (localX >= 0 && localX < w - LISTVIEW_SCROLLBAR_WIDTH) {
-            int hovered =
-                scrollOffset + (localY - LISTVIEW_HEADER_HEIGHT - 1) / itemHeight;
+            int hovered = scrollOffset + (localY - LISTVIEW_HEADER_HEIGHT - 1) / itemHeight;
             if (hovered >= 0 && hovered < itemCount && hovered != hoveredIndex) {
                 hoveredIndex = hovered;
                 MarkDirty();

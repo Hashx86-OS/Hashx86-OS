@@ -1,17 +1,25 @@
-/**
- * @file        prog.cpp
- * @brief       3D Game Engine
- *
- * @date        28/01/2026
- * @version     2.0.0
- */
-
 /*
- * 3D Game Engine Module
+ * MIT License
  *
- * NOTE: The 3D rendering logic and math libraries in this file were generated
- * with assistance from Gemini and Claude to demonstrate user-space capabilities.
- * Therefore, full credit goes to the LLMs :)
+ * Copyright (c) 2025 Malaka Gunawardana
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
  */
 
 #include <Bitmap.h>
@@ -21,7 +29,7 @@
 
 HX86_DECLARE_APP(HX86_APP_GUI);
 
-// Scancode defines for WASD
+// Keyboard scancodes for WASD movement.
 #define SC_W 0x11
 #define SC_A 0x1E
 #define SC_S 0x1F
@@ -32,14 +40,23 @@ HX86_DECLARE_APP(HX86_APP_GUI);
 #define SC_Q 0x10
 #define SC_E 0x12
 
-// Internal render resolution
+// Internal render resolution, upscaled to the screen.
 #define RENDER_W 1024
 #define RENDER_H 576
 
-// ============================================================================
-// Sky Sphere Generator
-// ============================================================================
+// --------------------------------------------------------------------------
+// SKY SPHERE GENERATOR
+// --------------------------------------------------------------------------
 
+/**
+ * GenerateSkySphere() - Build an inward-facing sphere used as the sky shell.
+ * @stacks: Number of latitude divisions.
+ * @slices: Number of longitude divisions.
+ *
+ * Normals point inward so the sphere is visible from its center.
+ *
+ * Return: A newly allocated mesh, or null on allocation failure.
+ */
 Mesh* GenerateSkySphere(int stacks, int slices) {
     Mesh* mesh = new Mesh();
     if (!mesh) return nullptr;
@@ -74,7 +91,7 @@ Mesh* GenerateSkySphere(int stacks, int slices) {
             Vec2 uv2(1.0f - (float)(j + 1) / slices, (float)i / stacks);
             Vec2 uv3(1.0f - (float)(j + 1) / slices, (float)(i + 1) / stacks);
 
-            // Triangle 1
+            // Triangle 1.
             Triangle* t1 = &mesh->tris[mesh->triCount++];
             t1->p[0] = p0;
             t1->p[1] = p1;
@@ -86,7 +103,7 @@ Mesh* GenerateSkySphere(int stacks, int slices) {
             t1->n[1] = p1.Normalized() * -1.0f;
             t1->n[2] = p2.Normalized() * -1.0f;
 
-            // Triangle 2
+            // Triangle 2.
             Triangle* t2 = &mesh->tris[mesh->triCount++];
             t2->p[0] = p2;
             t2->p[1] = p1;
@@ -103,12 +120,19 @@ Mesh* GenerateSkySphere(int stacks, int slices) {
     return mesh;
 }
 
-// ============================================================================
-// Helper: Load file from disk via syscall
-// ============================================================================
+// --------------------------------------------------------------------------
+// FILE LOADING HELPERS
+// --------------------------------------------------------------------------
 
+/**
+ * LoadFileData() - Read a whole file from disk through the syscall API.
+ * @filename: Absolute path of the file to load.
+ * @outSize: Receives the number of bytes read.
+ *
+ * Return: A newly allocated buffer with the file contents, or null on error.
+ */
 uint8_t* LoadFileData(const char* filename, uint32_t* outSize) {
-    // Buffer large enough for textures (~2MB BMP files)
+    // Buffer large enough for the textures (~2MB BMP files).
     uint32_t maxSize = 2 * 1024 * 1024 + 4096;
     uint8_t* buffer = new uint8_t[maxSize];
     if (!buffer) {
@@ -137,10 +161,19 @@ uint8_t* LoadFileData(const char* filename, uint32_t* outSize) {
     return buffer;
 }
 
-// ============================================================================
-// Upscale blit: render buffer (RENDER_W x RENDER_H) → screen (screenW x screenH)
-// ============================================================================
+// --------------------------------------------------------------------------
+// UPSCALE BLIT
+// --------------------------------------------------------------------------
 
+/**
+ * BlitUpscale() - Copy the render buffer onto the screen, scaling it up.
+ * @dest: Destination framebuffer.
+ * @destW: Destination width in pixels.
+ * @destH: Destination height in pixels.
+ * @src: Source render buffer.
+ * @srcW: Source width in pixels.
+ * @srcH: Source height in pixels.
+ */
 static void BlitUpscale(uint32_t* dest, int destW, int destH, uint32_t* src, int srcW, int srcH) {
     for (int y = 0; y < destH; y++) {
         int srcY = (y * srcH) / destH;
@@ -153,30 +186,38 @@ static void BlitUpscale(uint32_t* dest, int destW, int destH, uint32_t* src, int
     }
 }
 
-// ============================================================================
+// --------------------------------------------------------------------------
 // MAIN GAME
-// ============================================================================
+// --------------------------------------------------------------------------
 
+/**
+ * _start() - Application entry point for the 3D demo.
+ * @arg: Program arguments passed by the loader.
+ *
+ * Initializes the framebuffer and renderer, loads the sky, stone and mesh
+ * assets, then runs the render loop: poll input, cast shadows, draw the sky,
+ * floor and walls, and upscale the internal buffer to the screen.
+ */
 extern "C" void _start(void* arg) {
     init_sys(arg);
 
     printf("[Game3D] Starting 3D Engine v2.0...\n");
 
-    // 1. Get framebuffer
+    // Get the framebuffer.
     FramebufferInfo fb = syscall_get_framebuffer();
     uint32_t* screenBuffer = (uint32_t*)fb.buffer;
     int screenW = (int)fb.width;
     int screenH = (int)fb.height;
     printf("[Game3D] Framebuffer: %dx%d @ 0x%x\n", screenW, screenH, fb.buffer);
 
-    // Allocate internal render buffer
+    // Allocate the internal render buffer.
     uint32_t* renderBuffer = new uint32_t[RENDER_W * RENDER_H];
     if (!renderBuffer) {
         printf("[Game3D] FATAL: Failed to allocate render buffer!\n");
         syscall_exit(1);
     }
 
-    // Initialize Renderer at internal resolution
+    // Initialize the renderer at internal resolution.
     Renderer3D* renderer = new Renderer3D(RENDER_W, RENDER_H);
     if (!renderer) {
         printf("[Game3D] FATAL: Failed to allocate Renderer3D!\n");
@@ -185,10 +226,10 @@ extern "C" void _start(void* arg) {
 
     printf("[Game3D] Render at %dx%d, upscale to %dx%d\n", RENDER_W, RENDER_H, screenW, screenH);
 
-    // Generate Sky Sphere (low poly: 8x16 = 256 tris, fast enough)
+    // Generate the low-poly sky sphere (8x16 = 256 triangles).
     Mesh* skyMesh = GenerateSkySphere(8, 16);
 
-    // Load Textures from disk
+    // Load the textures from disk.
     Bitmap* skyTexture = nullptr;
     Bitmap* stoneTexture = nullptr;
 
@@ -212,7 +253,7 @@ extern "C" void _start(void* arg) {
         printf("[Game3D] Stone texture loaded\n");
     }
 
-    // Load Meshes from disk
+    // Load the meshes from disk.
     Mesh* wallMesh = nullptr;
     Mesh* floorMesh = nullptr;
 
@@ -230,7 +271,7 @@ extern "C" void _start(void* arg) {
         printf("[Game3D] Floor mesh loaded\n");
     }
 
-    // Setup 3-Point Lighting
+    // Set up three-point lighting.
     Light sceneLights[3];
     int activeLightCount = 3;
 
@@ -238,36 +279,36 @@ extern "C" void _start(void* arg) {
     sceneLights[1] = Light(Vec3(0.5f, -0.5f, 0.5f), 0.3f);
     sceneLights[2] = Light(Vec3(0.2f, 0.3f, 1.0f), 0.4f);
 
-    // Setup Shadow Mapping (from primary light)
-    renderer->SetupShadows(Vec3(-0.3f, -1.0f, -0.2f),  // Same as primary light direction
-                           60.0f,                      // Ortho half-size (covers 120x120 unit area)
-                           1.0f,                       // Near
-                           200.0f                      // Far
+    // Set up shadow mapping from the primary light.
+    renderer->SetupShadows(Vec3(-0.3f, -1.0f, -0.2f),  // Same as the primary light direction.
+                           60.0f,                      // Ortho half-size (covers 120x120 units).
+                           1.0f,                       // Near plane.
+                           200.0f                      // Far plane.
     );
 
-    // Camera State
+    // Camera state.
     float camX = 0.0f, camY = 5.0f, camZ = -10.0f;
     float camYaw = 0.0f, camPitch = 0.0f;
 
-    // Input state
+    // Input state.
     InputState input;
 
     printf("[Game3D] Entering main loop...\n");
 
-    // ========================================================================
+    // ------------------------------------------------------------------------
     // MAIN GAME LOOP
-    // ========================================================================
+    // ------------------------------------------------------------------------
     while (1) {
-        // POLL INPUT
+        // Poll input.
         syscall_get_input(&input);
 
-        // Check ESC to exit
+        // Check for ESC to exit.
         if (input.keyStates[SC_ESC]) {
             printf("[Game3D] ESC pressed, exiting...\n");
             syscall_exit(0);
         }
 
-        // CAMERA MOVEMENT
+        // Camera movement.
         float speed = 0.4f;
         float yaw = -camYaw;
         float forwardX = sin(yaw);
@@ -294,29 +335,29 @@ extern "C" void _start(void* arg) {
         if (input.keyStates[SC_SPACE]) camY += speed;
         if (input.keyStates[SC_LSHIFT]) camY -= speed;
 
-        // MOUSE LOOK
+        // Mouse look.
         float sensitivity = 0.005f;
         camYaw -= (float)input.mouseDX * sensitivity;
         camPitch += (float)input.mouseDY * sensitivity;
         if (camPitch > 1.5f) camPitch = 1.5f;
         if (camPitch < -1.5f) camPitch = -1.5f;
 
-        // ====================================================================
-        // SHADOW PASS - Render depth from light's perspective
-        // Only walls cast shadows (floor self-shadowing causes acne artifacts)
-        // ====================================================================
+        // --------------------------------------------------------------------
+        // SHADOW PASS - Render depth from the light's perspective. Only walls
+        // cast shadows (floor self-shadowing causes acne artifacts).
+        // --------------------------------------------------------------------
         renderer->BeginShadowPass(camX, camY, camZ);
 
         if (wallMesh) renderer->RenderMeshToShadowMap(wallMesh);
 
         renderer->EndShadowPass();
 
-        // ====================================================================
+        // --------------------------------------------------------------------
         // RENDER TO INTERNAL BUFFER
-        // ====================================================================
+        // --------------------------------------------------------------------
         renderer->Clear(renderBuffer, 0xFF87CEEB);
 
-        // Draw sky sphere
+        // Draw the sky sphere.
         if (skyMesh && skyTexture) {
             renderer->SetMaterial(1.0f, 0.0f, 0.0f);
             renderer->BindTexture(skyTexture);
@@ -324,7 +365,7 @@ extern "C" void _start(void* arg) {
                                sceneLights, 0);
         }
 
-        // Draw floor
+        // Draw the floor.
         if (floorMesh) {
             renderer->SetMaterial(0.25f, 0.2f, 16.0f);
             renderer->BindTexture(stoneTexture);
@@ -332,7 +373,7 @@ extern "C" void _start(void* arg) {
                                sceneLights, activeLightCount);
         }
 
-        // Draw walls/teapot
+        // Draw the walls.
         if (wallMesh) {
             renderer->SetMaterial(0.2f, 0.3f, 8.0f);
             renderer->BindTexture(stoneTexture);
@@ -340,7 +381,7 @@ extern "C" void _start(void* arg) {
                                sceneLights, activeLightCount);
         }
 
-        // Draw crosshair
+        // Draw the crosshair.
         int cx = RENDER_W / 2;
         int cy = RENDER_H / 2;
         for (int i = -4; i <= 4; i++) {
@@ -349,10 +390,10 @@ extern "C" void _start(void* arg) {
                 renderBuffer[(cy + i) * RENDER_W + cx] = 0xFFFFFFFF;
         }
 
-        // UPSCALE TO SCREEN
+        // Upscale to the screen.
         BlitUpscale(screenBuffer, screenW, screenH, renderBuffer, RENDER_W, RENDER_H);
 
-        // Frame delay (~60fps target)
+        // Frame delay (about 60 FPS).
         syscall_sleep(16);
     }
 }

@@ -1,3 +1,27 @@
+/*
+ * MIT License
+ *
+ * Copyright (c) 2025 Malaka Gunawardana
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
+ */
+
 #ifndef DRIVER_H
 #define DRIVER_H
 
@@ -9,17 +33,16 @@
 class AudioDriver;
 
 /**
- * @brief Base class for hardware drivers.
+ * class Driver - Base class for hardware drivers.
  *
- * This class provides a generic interface for drivers, including methods
- * for activation, deactivation and resetting. It also holds the name
- * of the driver.
+ * Provides a generic interface for drivers, including methods for
+ * activation, deactivation and resetting, and holds the name of the driver.
  */
 class Driver {
     friend class DriverManager;
 
 public:
-    const char* driverName;
+    const char* driverName;  // Human-readable driver name.
 
     inline Driver() {
         driverName = "Unknown";
@@ -47,33 +70,35 @@ public:
     }
 
 protected:
-    bool is_Active = false;
+    bool is_Active = false;  // Runtime activation state.
 };
 
 class DriverManager {
 private:
-    Driver* drivers[255];  ///< Array to store up to 255 drivers.
-    int numDrivers;        ///< Number of currently added drivers.
+    Driver* drivers[255];  // Array holding up to 255 registered drivers.
+    int numDrivers;        // Number of drivers currently registered.
 
 public:
     /**
-     * @brief Constructs a DriverManager object.
+     * DriverManager() - Construct a driver manager with no registered drivers.
      */
     DriverManager();
 
     /**
-     * @brief Adds a driver to the manager.
-     * @param driver Pointer to the driver to be added.
+     * AddDriver() - Register a driver with the manager.
+     * @driver: Pointer to the driver to be added.
      */
     void AddDriver(Driver* driver);
 
     /**
-     * @brief Activates all registered drivers.
+     * ActivateAll() - Activate all registered drivers.
      */
     void ActivateAll();
 };
 
 // --- DYNAMIC LINKING EXTENSION ---
+
+// GetDriverInstancePtr() - Factory entry point for a dynamically linked driver.
 typedef Driver* (*GetDriverInstancePtr)();
 
 #define DYNAMIC_DRIVER(ClassName)               \

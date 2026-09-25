@@ -1,9 +1,25 @@
-/**
- * @file        prog.cpp
- * @brief       Memory Viewer [BIN]
+/*
+ * MIT License
  *
- * @date        01/02/2026
- * @version     1.0.0
+ * Copyright (c) 2025 Malaka Gunawardana
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
  */
 
 #include <Hx86/Hgui/Hgui.h>
@@ -15,9 +31,16 @@ HX86_DECLARE_APP(HX86_APP_GUI);
 
 Label* l1;
 
+// Window layout offsets.
 #define TOP_PADDING 120
 #define LEFT_PADDING 10
 
+/**
+ * class MemoryViewer - Reads kernel memory through the syscall interface.
+ *
+ * Presents an address input pad (hex digits plus control buttons), a read-size
+ * selector (byte/word/dword) and labels for the address and its value.
+ */
 class MemoryViewer {
 private:
     Window* mainWindow;
@@ -30,7 +53,7 @@ private:
 
     char addressInput[32];
     int inputIndex;
-    int readSize;  // 1=byte, 2=word, 4=dword
+    int readSize;  // 1 = byte, 2 = word, 4 = dword.
 
 public:
     MemoryViewer();
@@ -43,6 +66,12 @@ public:
     void clearInput();
 };
 
+/**
+ * atoi() - Parse a signed decimal string.
+ * @str: Null-terminated string, optionally starting with '-'.
+ *
+ * Return: The parsed integer value.
+ */
 int atoi(const char* str) {
     int res = 0;
     int sign = 1;
@@ -57,7 +86,12 @@ int atoi(const char* str) {
     return res * sign;
 }
 
-// Convert hex string to integer
+/**
+ * hextoi() - Parse a hexadecimal string.
+ * @str: Null-terminated string of hex digits.
+ *
+ * Return: The parsed unsigned value.
+ */
 uint32_t hextoi(const char* str) {
     uint32_t result = 0;
     while (*str) {
@@ -74,6 +108,12 @@ uint32_t hextoi(const char* str) {
     return result;
 }
 
+/**
+ * itohex() - Format a value as zero-padded uppercase hex.
+ * @value: Value to format.
+ * @str: Destination buffer, at least @width + 1 bytes.
+ * @width: Number of hex digits to produce.
+ */
 void itohex(uint32_t value, char* str, int width = 8) {
     const char hexchars[] = "0123456789ABCDEF";
     str[width] = '\0';
@@ -84,6 +124,11 @@ void itohex(uint32_t value, char* str, int width = 8) {
     }
 }
 
+/**
+ * itoa() - Format a signed integer as a decimal string.
+ * @value: Value to format.
+ * @str: Destination buffer.
+ */
 void itoa(int value, char* str) {
     char* p = str;
     bool isNegative = false;
@@ -99,7 +144,7 @@ void itoa(int value, char* str) {
         value = -value;
     }
 
-    // Convert digits in reverse order
+    // Convert the digits in reverse order.
     char* start = p;
     while (value > 0) {
         *p++ = '0' + (value % 10);
@@ -109,7 +154,7 @@ void itoa(int value, char* str) {
     if (isNegative) *p++ = '-';
     *p = '\0';
 
-    // Reverse string
+    // Reverse the digit string.
     char* end = p - 1;
     while (start < end) {
         char tmp = *start;
@@ -118,28 +163,31 @@ void itoa(int value, char* str) {
     }
 }
 
+/**
+ * MemoryViewer() - Build the viewer window and wire up its buttons.
+ */
 MemoryViewer::MemoryViewer() {
     mainWindow = new Window(desktop, 480, 340, 255, 265);
     mainWindow->setWindowTitle("MeM Viewer 1.0.0");
 
-    // Address input screen
+    // Address input screen.
     addressScreen = new Label(mainWindow, 10, 20, 230, 35, "0x00000000");
     addressScreen->setSize(LARGE);
 
-    // Value display screen
+    // Value display screen.
     valueScreen = new Label(mainWindow, 10, 45, 230, 35, "Value: --");
     valueScreen->setSize(LARGE);
 
     inputIndex = 0;
     addressInput[0] = '\0';
-    readSize = 1;  // Default to byte
+    readSize = 1;  // Default to byte.
 
-    // Size selection buttons
+    // Size selection buttons.
     btn_byte = new Button(mainWindow, LEFT_PADDING, 85, 60, 25, "BYTE");
     btn_word = new Button(mainWindow, LEFT_PADDING + 70, 85, 60, 25, "WORD");
     btn_dword = new Button(mainWindow, LEFT_PADDING + 140, 85, 60, 25, "DWORD");
 
-    // Hex digit buttons (0-9, A-F)
+    // Hex digit buttons (0-9, A-F).
     btn_0 = new Button(mainWindow, LEFT_PADDING + 0 * 40, (TOP_PADDING + 3 * 35), 35, 30, "0");
     btn_1 = new Button(mainWindow, LEFT_PADDING + 1 * 40, (TOP_PADDING + 3 * 35), 35, 30, "1");
     btn_2 = new Button(mainWindow, LEFT_PADDING + 2 * 40, (TOP_PADDING + 3 * 35), 35, 30, "2");
@@ -161,11 +209,11 @@ MemoryViewer::MemoryViewer() {
     btn_backspace =
         new Button(mainWindow, LEFT_PADDING + 4 * 40, (TOP_PADDING + 1 * 35), 75, 30, "BACK");
 
-    // Control buttons
+    // Control buttons.
     btn_clear =
         new Button(mainWindow, LEFT_PADDING + 0 * 40, (TOP_PADDING + 0 * 45), 65, 30, "CLEAR");
 
-    // Add all children to window
+    // Add all children to the window.
     mainWindow->AddChild(addressScreen);
     mainWindow->AddChild(valueScreen);
     mainWindow->AddChild(btn_byte);
@@ -190,7 +238,7 @@ MemoryViewer::MemoryViewer() {
     mainWindow->AddChild(btn_clear);
     mainWindow->AddChild(btn_backspace);
 
-    // Set up click handlers for hex digits
+    // Set up the click handlers for the hex digits.
     btn_0->OnClick(this,
                    [](void* instance) { static_cast<MemoryViewer*>(instance)->onPressHex('0'); });
     btn_1->OnClick(this,
@@ -224,13 +272,13 @@ MemoryViewer::MemoryViewer() {
     btn_f->OnClick(this,
                    [](void* instance) { static_cast<MemoryViewer*>(instance)->onPressHex('F'); });
 
-    // Set up control button handlers
+    // Set up the control button handlers.
     btn_clear->OnClick(
         this, [](void* instance) { static_cast<MemoryViewer*>(instance)->onPressClear(); });
     btn_backspace->OnClick(
         this, [](void* instance) { static_cast<MemoryViewer*>(instance)->onPressBackspace(); });
 
-    // Set up size button handlers
+    // Set up the size button handlers.
     btn_byte->OnClick(this,
                       [](void* instance) { static_cast<MemoryViewer*>(instance)->onPressSize(1); });
     btn_word->OnClick(this,
@@ -245,20 +293,27 @@ MemoryViewer::~MemoryViewer() {
     delete mainWindow;
 }
 
+/**
+ * onPressHex() - Append a hex digit to the address input.
+ * @hex: Digit to append, '0'-'9' or 'A'-'F'.
+ *
+ * Truncates at eight digits (a 32-bit address) and re-reads the memory once
+ * at least one digit has been entered.
+ */
 void MemoryViewer::onPressHex(char hex) {
-    if (inputIndex < 8) {  // Max 8 hex digits for 32-bit address
+    if (inputIndex < 8) {  // Max 8 hex digits for a 32-bit address.
         addressInput[inputIndex++] = hex;
         addressInput[inputIndex] = '\0';
 
-        // Build display string with proper formatting
+        // Build the display string with proper formatting.
         char displayAddr[32] = "0x";
 
-        // Pad with leading zeros
+        // Pad with leading zeros.
         for (int i = 0; i < 8 - inputIndex; i++) {
             displayAddr[2 + i] = '0';
         }
 
-        // Add the input digits
+        // Append the entered digits.
         for (int i = 0; i < inputIndex; i++) {
             displayAddr[2 + 8 - inputIndex + i] = addressInput[i];
         }
@@ -266,7 +321,7 @@ void MemoryViewer::onPressHex(char hex) {
 
         addressScreen->setText(displayAddr);
 
-        // Auto-read memory when we have at least 1 digit
+        // Auto-read the memory once at least one digit is present.
         if (inputIndex > 0) {
             onPressRead();
         }
@@ -284,15 +339,15 @@ void MemoryViewer::onPressBackspace() {
         inputIndex--;
         addressInput[inputIndex] = '\0';
 
-        // Build display string
+        // Build the display string.
         char displayAddr[32] = "0x";
 
-        // Pad with leading zeros
+        // Pad with leading zeros.
         for (int i = 0; i < 8 - inputIndex; i++) {
             displayAddr[2 + i] = '0';
         }
 
-        // Add remaining digits
+        // Append the remaining digits.
         for (int i = 0; i < inputIndex; i++) {
             displayAddr[2 + 8 - inputIndex + i] = addressInput[i];
         }
@@ -300,7 +355,7 @@ void MemoryViewer::onPressBackspace() {
 
         addressScreen->setText(displayAddr);
 
-        // Update memory display if we still have digits
+        // Update the memory display while digits remain.
         if (inputIndex > 0) {
             onPressRead();
         } else {
@@ -309,6 +364,12 @@ void MemoryViewer::onPressBackspace() {
     }
 }
 
+/**
+ * onPressRead() - Peek the memory at the entered address through a syscall.
+ *
+ * User mode cannot access arbitrary memory, so the value is read by the kernel
+ * with syscall_peek_memory() and formatted for the current read size.
+ */
 void MemoryViewer::onPressRead() {
     if (inputIndex == 0) {
         valueScreen->setText("Value: --");
@@ -318,11 +379,11 @@ void MemoryViewer::onPressRead() {
     uint32_t address = hextoi(addressInput);
     char valueStr[64];
 
-    // Read memory via kernel syscall (user mode can't access arbitrary addresses)
+    // Read memory via the kernel syscall (user mode cannot access arbitrary addresses).
     uint32_t value = syscall_peek_memory(address, readSize);
 
     switch (readSize) {
-        case 1:  // Byte
+        case 1:  // Byte.
             valueStr[0] = 'B';
             valueStr[1] = 'y';
             valueStr[2] = 't';
@@ -335,7 +396,7 @@ void MemoryViewer::onPressRead() {
             valueStr[10] = '\0';
             break;
 
-        case 2:  // Word
+        case 2:  // Word.
             valueStr[0] = 'W';
             valueStr[1] = 'o';
             valueStr[2] = 'r';
@@ -348,7 +409,7 @@ void MemoryViewer::onPressRead() {
             valueStr[12] = '\0';
             break;
 
-        case 4:  // Dword
+        case 4:  // Dword.
             valueStr[0] = 'D';
             valueStr[1] = 'w';
             valueStr[2] = 'o';
@@ -367,11 +428,15 @@ void MemoryViewer::onPressRead() {
     printf("Read from 0x%x: 0x%x (%d bytes)\n", address, value, readSize);
 }
 
+/**
+ * onPressSize() - Change the read width (1, 2 or 4 bytes).
+ * @size: New read size in bytes.
+ */
 void MemoryViewer::onPressSize(int size) {
     readSize = size;
     printf("Read size set to %d bytes\n", size);
 
-    // Re-read memory with new size if we have an address
+    // Re-read the memory with the new size while an address is set.
     if (inputIndex > 0) {
         onPressRead();
     }
@@ -383,21 +448,45 @@ void MemoryViewer::clearInput() {
     addressScreen->setText("0x00000000");
 }
 
+/**
+ * inb() - Read a byte from an I/O port.
+ * @portNumber: Port to read from.
+ *
+ * Helper used by the serial debug output.
+ *
+ * Return: The byte read from the port.
+ */
 uint8_t inb(uint16_t portNumber) {
     uint8_t result;
     asm volatile("inb %1, %0" : "=a"(result) : "Nd"(portNumber));
     return result;
 }
 
+/**
+ * outb() - Write a byte to an I/O port.
+ * @portNumber: Port to write to.
+ * @value: Byte to write.
+ */
 void outb(uint16_t portNumber, uint8_t value) {
     asm volatile("outb %0, %1" : : "a"(value), "Nd"(portNumber));
 }
 
+/**
+ * writeSerial() - Send a single character over COM1.
+ * @c: Character to transmit.
+ */
 void writeSerial(char c) {
-    while ((inb(0x3F8 + 5) & 0x20) == 0);  // Wait for the transmit buffer to be empty
+    while ((inb(0x3F8 + 5) & 0x20) == 0);  // Wait for the transmit buffer to empty.
     outb(0x3F8, c);
 }
 
+/**
+ * _start() - Application entry point for the memory viewer.
+ * @arg: Program arguments passed by the loader.
+ *
+ * Initializes the system and graphics, then launches the MemoryViewer window
+ * and returns, leaving the GUI event loop to run.
+ */
 extern "C" void _start(void* arg) {
     init_sys(arg);
     init_graphics();

@@ -1,15 +1,36 @@
-/**
- * @file        Bitmap.cpp
- * @brief       User-space BMP Loader
+/*
+ * MIT License
  *
- * @date        28/01/2026
- * @version     1.0.0
+ * Copyright (c) 2025 Malaka Gunawardana
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
  */
 
 #include <Bitmap.h>
 #include <Hx86/debug.h>
 #include <Hx86/memory.h>
 
+/**
+ * Bitmap() - Decode a raw BMP file buffer into a 32-bit bitmap.
+ * @rawData: Raw bytes of the BMP file.
+ * @rawSize: Size of @rawData in bytes.
+ */
 Bitmap::Bitmap(uint8_t* rawData, uint32_t rawSize) {
     valid = false;
     buffer = 0;
@@ -18,6 +39,12 @@ Bitmap::Bitmap(uint8_t* rawData, uint32_t rawSize) {
     LoadFromMemory(rawData, rawSize);
 }
 
+/**
+ * Bitmap() - Create a solid-color bitmap.
+ * @width: Desired width in pixels.
+ * @height: Desired height in pixels.
+ * @color: Fill color packed as 0xAARRGGBB.
+ */
 Bitmap::Bitmap(int width, int height, uint32_t color) {
     valid = false;
     this->width = width;
@@ -42,13 +69,22 @@ Bitmap::~Bitmap() {
     }
 }
 
+/**
+ * LoadFromMemory() - Decode and validate a BMP image from memory.
+ * @rawData: Raw bytes of the BMP file.
+ * @rawSize: Size of @rawData in bytes.
+ *
+ * Validates the file and info headers, enforces the 24/32-bit pixel format,
+ * un-flips bottom-up rows, and converts each pixel to 0xAARRGGBB in the
+ * internal buffer.
+ */
 void Bitmap::LoadFromMemory(uint8_t* rawData, uint32_t rawSize) {
     if (!rawData || rawSize < sizeof(BitmapFileHeader) + sizeof(BitmapInfoHeader)) return;
 
     BitmapFileHeader* fileHeader = (BitmapFileHeader*)rawData;
     BitmapInfoHeader* infoHeader = (BitmapInfoHeader*)(rawData + sizeof(BitmapFileHeader));
 
-    // Validate BMP magic
+    // Validate the BMP magic.
     if (fileHeader->type != 0x4D42) {
         printf("BMP Error: Invalid signature 0x%x\n", fileHeader->type);
         return;

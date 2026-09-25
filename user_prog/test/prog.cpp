@@ -1,9 +1,25 @@
-/**
- * @file        prog.cpp
- * @brief       Calculator [BIN]
+/*
+ * MIT License
  *
- * @date        01/02/2026
- * @version     1.0.0
+ * Copyright (c) 2025 Malaka Gunawardana
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
  */
 
 #include <Hx86/Hgui/Hgui.h>
@@ -36,19 +52,19 @@ double atof(const char* str) {
     double result = 0.0;
     double sign = 1.0;
 
-    // Handle negative numbers
+    // Handle a negative sign.
     if (*str == '-') {
         sign = -1.0;
         str++;
     }
 
-    // Parse integer part
+    // Parse the integer part.
     while (*str >= '0' && *str <= '9') {
         result = result * 10.0 + (*str - '0');
         str++;
     }
 
-    // Parse decimal part
+    // Parse the fractional part.
     if (*str == '.') {
         str++;
         double fraction = 0.1;
@@ -77,7 +93,7 @@ void itoa(int value, char* str) {
         value = -value;
     }
 
-    // Convert digits in reverse order
+    // Convert the digits in reverse order.
     char* start = p;
     while (value > 0) {
         *p++ = '0' + (value % 10);
@@ -87,7 +103,7 @@ void itoa(int value, char* str) {
     if (isNegative) *p++ = '-';
     *p = '\0';
 
-    // Reverse string
+    // Reverse the string.
     char* end = p - 1;
     while (start < end) {
         char tmp = *start;
@@ -97,34 +113,34 @@ void itoa(int value, char* str) {
 }
 
 void ftoa(double value, char* str, int precision = 6) {
-    // Handle negative numbers
+    // Handle a negative sign.
     if (value < 0) {
         *str++ = '-';
         value = -value;
     }
 
-    // Extract integer part
+    // Extract the integer part.
     int intPart = (int)value;
     double fractPart = value - intPart;
 
-    // Convert integer part
+    // Convert the integer part.
     itoa(intPart, str);
 
-    // Find end of string
+    // Find the end of the string.
     while (*str) str++;
 
-    // Check if we need decimal part
+    // Append the fractional part only when it is significant.
     if (fractPart > 0.000001 && precision > 0) {
         *str++ = '.';
 
-        // Convert fractional part
+        // Convert the fractional part.
         for (int i = 0; i < precision; i++) {
             fractPart *= 10;
             int digit = (int)fractPart;
             *str++ = '0' + digit;
             fractPart -= digit;
 
-            // Stop if we've reached the end of significant digits
+            // Stop at the end of the significant digits.
             if (fractPart < 0.000001) break;
         }
     }
@@ -138,7 +154,7 @@ Calculator::Calculator() {
     screen = new Label(mainWindow, 10, 20, 190, 70, "0");
     screen->setSize(LARGE);
 
-    // Add clear button at the top
+    // Add the clear button at the top.
     btn_clear = new Button(mainWindow, LEFT_PADDING + 3 * 50, (TOP_PADDING - 40), 40, 30, "C");
 
     btn_0 = new Button(mainWindow, LEFT_PADDING + 0 * 50, (TOP_PADDING + 3 * 40), 40, 30, "0");
@@ -229,14 +245,13 @@ void Calculator::onPressNum(uint32_t num) {
         input[inputIndex] = '\0';
         screen->setText(input);
     }
-    // printf("Pressed: %d\n", num);
 }
 
 void Calculator::onPressFunc(char func) {
-    // Handle decimal point
+    // Handle the decimal point.
     if (func == '.') {
         if (!hasDecimal && !newInput && inputIndex < sizeof(input) - 2) {
-            // If input is empty, add a leading zero
+            // Add a leading zero if the input is empty.
             if (inputIndex == 0) {
                 input[inputIndex++] = '0';
             }
@@ -249,15 +264,15 @@ void Calculator::onPressFunc(char func) {
         return;
     }
 
-    // If user presses an operator or equals, first need to evaluate any pending operation
+    // Evaluate any pending operation when an operator or equals is pressed.
     if (input[0] != '\0' || func == '=' || hasResult) {
         double inputValue = (input[0] != '\0') ? atof(input) : currentValue;
 
         if (lastOperator == 0) {
-            // First operation, just store the value
+            // First operation: just store the value.
             currentValue = inputValue;
         } else {
-            // Evaluate the pending operation
+            // Evaluate the pending operation.
             switch (lastOperator) {
                 case '+':
                     currentValue += inputValue;
@@ -282,16 +297,16 @@ void Calculator::onPressFunc(char func) {
             }
         }
 
-        // Display the result
+        // Display the result.
         char result[64];
         ftoa(currentValue, result);
         screen->setText(result);
 
-        // Set flag that we have a result now
+        // Mark that a result is now displayed.
         hasResult = true;
     }
 
-    // Set up for next input
+    // Set up for the next input.
     lastOperator = (func == '=') ? 0 : func;
     newInput = true;
 }
@@ -301,7 +316,7 @@ void Calculator::evaluate() {
 }
 
 void Calculator::clearCalculator() {
-    // Reset all calculator state
+    // Reset all calculator state.
     inputIndex = 0;
     input[0] = '\0';
     currentValue = 0;
@@ -310,7 +325,7 @@ void Calculator::clearCalculator() {
     hasDecimal = false;
     hasResult = false;
 
-    // Reset display
+    // Reset the display.
     screen->setText("0");
 
     printf("Calculator cleared\n");
@@ -327,7 +342,7 @@ void outb(uint16_t portNumber, uint8_t value) {
 }
 
 void writeSerial(char c) {
-    while ((inb(0x3F8 + 5) & 0x20) == 0);  // Wait for the transmit buffer to be empty
+    while ((inb(0x3F8 + 5) & 0x20) == 0);  // Wait for the transmit buffer to be empty.
     outb(0x3F8, c);
 }
 
@@ -336,11 +351,6 @@ extern "C" void _start(void* arg) {
     init_graphics();
 
     printf("[Calculator]\n");
-
-    // Test: try to read a hardware port from Ring 3 (should make GP)
-    /*     printf("[Calculator] Attempting inb(0x3F8) from user mode...\n");
-        uint8_t val = inb(0x3F8);
-        printf("[Calculator] inb(0x3F8) = 0x%x\n", (uint32_t)val); */
 
     Calculator* cl = new Calculator();
 }

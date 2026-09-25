@@ -1,16 +1,32 @@
-/**
- * @file        inputbox.cpp
- * @brief       InputBox (part of #x86 GUI Framework)
+/*
+ * MIT License
  *
- * @date        10/01/2026
- * @version     1.0.0
+ * Copyright (c) 2025 Malaka Gunawardana
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
  */
 
 #define KDBG_COMPONENT "GUI:INPUTBOX"
 #include <gui/inputbox.h>
 #include <string.h>
 
-// --- Minimal helpers since standard C library is not available ---
+// Minimal helpers (the standard C library is not available).
 static void memmove_local(char* dst, const char* src, uint32_t n) {
     if (dst < src) {
         for (uint32_t i = 0; i < n; i++) dst[i] = src[i];
@@ -20,9 +36,8 @@ static void memmove_local(char* dst, const char* src, uint32_t n) {
 }
 
 static int isprint_local(char c) {
-    return (c >= 32 && c <= 126);  // printable ASCII
+    return (c >= 32 && c <= 126);  // Printable ASCII.
 }
-// ----------------------------------------------------------------
 
 InputBox::InputBox(Widget* parent, int32_t x, int32_t y, int32_t w, int32_t h, uint32_t capacity)
     : Widget(parent, x, y, w, h), capacity(capacity > 0 ? capacity : 1), length(0), cursorPos(0) {
@@ -31,7 +46,7 @@ InputBox::InputBox(Widget* parent, int32_t x, int32_t y, int32_t w, int32_t h, u
     if (!text) {
         HALT("CRITICAL: Failed to allocate inputbox text buffer!\n");
     }
-    text[0] = '\0';  // start empty
+    text[0] = '\0';  // Start empty.
 }
 
 InputBox::~InputBox() {
@@ -40,7 +55,8 @@ InputBox::~InputBox() {
 
 void InputBox::update() {
     if (!cache) return;
-    for (uint32_t i = 0; i < w * h; i++) cache[i] = 0;  // clear
+    // Clear the cache.
+    for (uint32_t i = 0; i < w * h; i++) cache[i] = 0;
     isDirty = true;
 }
 
@@ -64,22 +80,17 @@ void InputBox::setSize(FontSize size) {
 }
 
 void InputBox::setType(FontType type) {
-    // Future: allow bold/italic variations
-    // this->font->setType(type);
-    // update();
+    // Future: allow bold/italic variations.
+    (void)type;
 }
 
 void InputBox::RedrawToCache() {
-    // KDBG1("Widget %d: Updating", this->ID);
-    NINA::activeInstance->FillRoundedRectangle(
-        cache, w, h, 0, 0, w, h, 3,
-        isFocused ? INPUT_BG_ACTIVE : INPUT_BG_NORMAL);
+    NINA::activeInstance->FillRoundedRectangle(cache, w, h, 0, 0, w, h, 3,
+                                               isFocused ? INPUT_BG_ACTIVE : INPUT_BG_NORMAL);
     NINA::activeInstance->DrawRoundedRectangle(
-        cache, w, h, 0, 0, w, h, 3,
-        isFocused ? INPUT_BORDER_ACTIVE : INPUT_BORDER_NORMAL);
+        cache, w, h, 0, 0, w, h, 3, isFocused ? INPUT_BORDER_ACTIVE : INPUT_BORDER_NORMAL);
     NINA::activeInstance->DrawString(cache, w, h, 2, 2, text, font,
                                      isFocused ? INPUT_TEXT_ACTIVE : INPUT_TEXT_NORMAL);
-
 
     isDirty = false;
 }
@@ -91,7 +102,7 @@ void InputBox::Draw(GraphicsDriver* gc) {
 void InputBox::OnKeyDown(const char* key) {
     if (!key || !*key) return;
 
-    // Backspace
+    // Backspace.
     if (strcmp(key, (char*)"Backspace") == 0) {
         if (cursorPos > 0) {
             memmove_local(&text[cursorPos - 1], &text[cursorPos], length - cursorPos + 1);
@@ -102,7 +113,7 @@ void InputBox::OnKeyDown(const char* key) {
         return;
     }
 
-    // Normal printable characters
+    // Normal printable characters.
     if (length < capacity - 1 && key[1] == '\0' && isprint_local(key[0])) {
         memmove_local(&text[cursorPos + 1], &text[cursorPos], length - cursorPos + 1);
         text[cursorPos] = key[0];
@@ -114,6 +125,6 @@ void InputBox::OnKeyDown(const char* key) {
 }
 
 void InputBox::OnKeyUp(const char* key) {
-    // Usually not needed for text input
+    // Usually not needed for text input.
     (void)key;
 }

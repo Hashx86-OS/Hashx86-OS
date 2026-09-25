@@ -1,9 +1,25 @@
-/**
- * @file        elf.cpp
- * @brief       ELF Binary Loader for #x86
+/*
+ * MIT License
  *
- * @date        29/01/2026
- * @version     1.0.0-beta
+ * Copyright (c) 2025 Malaka Gunawardana
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
  */
 
 #define KDBG_COMPONENT "ELFLOADER"
@@ -11,6 +27,17 @@
 
 namespace {
 
+/**
+ * SectionNameEquals() - Compare a section table entry's name with a target.
+ * @namesTable: Section name string table.
+ * @tableSize: Size of the name table.
+ * @nameOffset: Offset of the entry's name within the table.
+ * @target: NUL-terminated name to compare against.
+ *
+ * Bounds-checks every byte so a corrupt name offset cannot overrun the table.
+ *
+ * Return: True when the names match.
+ */
 bool SectionNameEquals(const char* namesTable, uint32_t tableSize, uint32_t nameOffset,
                        const char* target) {
     if (!namesTable || !target || nameOffset >= tableSize) return false;
@@ -26,6 +53,16 @@ bool SectionNameEquals(const char* namesTable, uint32_t tableSize, uint32_t name
     return false;
 }
 
+/**
+ * DetectELFAppType() - Classify an ELF binary as GUI or CLI.
+ * @elf: The open ELF file, or NULL.
+ * @header: The already-read ELF header.
+ *
+ * Inspects the .hx86meta section for app metadata. Any failure to read or
+ * validate the section tables falls back to APP_BINARY_GUI.
+ *
+ * Return: The detected app type.
+ */
 uint16_t DetectELFAppType(File* elf, const elf_header& header) {
     if (!elf) return APP_BINARY_GUI;
     if (header.sh_offset == 0 || header.sh_entry_count == 0) return APP_BINARY_GUI;
@@ -120,10 +157,21 @@ ELFLoader::~ELFLoader(){
 
 };
 
+/**
+ * ELFLoader::loadELF() - Load an ELF program from a File into a new process.
+ * @elf: The open ELF file.
+ * @args: Arguments passed to the new process.
+ *
+ * Validates the header, maps one page-aligned low-memory region per PT_LOAD
+ * segment, copies the file image in and zeroes the BSS, then lays out the
+ * process heap after the last segment.
+ *
+ * Return: The new process control block, or NULL on failure.
+ */
 ProcessControlBlock* ELFLoader::loadELF(File* elf, void* args) {
     if (!elf) return nullptr;
 
-    // Validate Header
+    // Validate the header.
     struct elf_header header;
     elf->Seek(0);
     if (elf->Read((uint8_t*)&header, sizeof(elf_header)) != sizeof(elf_header)) {
@@ -138,7 +186,7 @@ ProcessControlBlock* ELFLoader::loadELF(File* elf, void* args) {
 
     uint16_t detectedType = DetectELFAppType(elf, header);
 
-    // Create new PCB
+    // Create the new process control block.
     ProcessControlBlock* pELF =
         scheduler->CreateProcess(false, (void (*)(void*))header.entry, args);
 
@@ -155,8 +203,7 @@ ProcessControlBlock* ELFLoader::loadELF(File* elf, void* args) {
         }
     };
 
-    // Read ELF Headers
-    // Validate ph_entry_count before allocation to prevent oversized allocation
+    // Validate ph_entry_count before allocation to prevent oversized allocations.
     if (header.ph_entry_count == 0 || header.ph_entry_count > 65536) {
         KDBG1("Error: Invalid program header count (%d)", header.ph_entry_count);
         cleanup_process();
@@ -174,18 +221,18 @@ ProcessControlBlock* ELFLoader::loadELF(File* elf, void* args) {
     if (elf->Read((uint8_t*)ph_table, ph_size) != ph_size) {
         KDBG1("Error: Could not read Program Headers");
         delete[] ph_table;
-        // Ideally kill the process here too
+        // Ideally kill the process here too.
         cleanup_process();
         return nullptr;
     }
 
     uint32_t max_virt_end = 0;
 
-    // Load ELF Segments
+    // Load the PT_LOAD segments.
     for (int i = 0; i < header.ph_entry_count; i++) {
         elf_program_header* ph = &ph_table[i];
 
-        if (ph->type != 1) continue;  // PT_LOAD only
+        if (ph->type != 1) continue;  // PT_LOAD only.
         KDBG3("Segment: Virt=0x%x MemSize=0x%x FileSize=0x%x", ph->virt_addr, ph->mem_size,
               ph->file_size);
 
@@ -203,15 +250,15 @@ ProcessControlBlock* ELFLoader::loadELF(File* elf, void* args) {
             return nullptr;
         }
 
-        // Calculate alignment
+        // Compute the page-aligned virtual range of the segment.
         uint32_t start = (uint32_t)ph->virt_addr;
         uint32_t end = start + ph->mem_size;
         uint32_t page_start = start & ~(PAGE_SIZE - 1);
         uint32_t page_end = (end + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
 
-        // Allocate Pages
-        // Must be in identity-mapped range (<256MB) because kernel reads ELF data
-        // and zeroes BSS via physical addresses during loading
+        // Allocate pages for the segment. Must be in the identity-mapped range
+        // (<256 MB) because the kernel reads the ELF data and zeroes the BSS
+        // through physical addresses during loading.
         for (uint32_t addr = page_start; addr < page_end; addr += PAGE_SIZE) {
             uint32_t phys_frame = (uint32_t)pmm_alloc_block_low(256 * 1024 * 1024);
             if (!phys_frame) {
@@ -230,11 +277,10 @@ ProcessControlBlock* ELFLoader::loadELF(File* elf, void* args) {
             KDBG3("Mapped Page: Virt=0x%x Phys=0x%x", addr, phys_frame);
         }
 
-        // Load Data into those pages
+        // Copy the segment data from the file into the mapped pages.
         uint32_t bytes_to_read = ph->file_size;
         uint32_t virtual_addr = (uint32_t)ph->virt_addr;
 
-        // Read ph header
         elf->Seek(ph->offset);
 
         while (bytes_to_read > 0) {
@@ -261,7 +307,7 @@ ProcessControlBlock* ELFLoader::loadELF(File* elf, void* args) {
             bytes_to_read -= chunk;
         }
 
-        // Zero out BSS
+        // Zero out the BSS (the part of the segment past file_size).
         uint32_t bytes_to_zero = ph->mem_size - ph->file_size;
         while (bytes_to_zero > 0) {
             uint32_t phys_ptr = pager->GetPhysicalAddress(pELF->page_directory, virtual_addr);
@@ -287,19 +333,19 @@ ProcessControlBlock* ELFLoader::loadELF(File* elf, void* args) {
 
     delete[] ph_table;
 
-    // Set up heap segment — no pages pre-allocated, brk will grow on demand
+    // Lay out the heap - no pages pre-allocated, brk grows it on demand.
     max_virt_end = (max_virt_end + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
 
     pELF->heap.startAddress = max_virt_end;
-    pELF->heap.endAddress = max_virt_end;  // Zero-size initially, grown by brk
-    {  // Prevent overflow when max_virt_end is near top of address space
+    pELF->heap.endAddress = max_virt_end;  // Zero-size initially, grown by brk.
+    {  // Prevent overflow when max_virt_end is near the top of the address space.
         uint64_t maxAddr = (uint64_t)max_virt_end + (1024ULL * 1024ULL * 256ULL);
         if (maxAddr > 0xFFFFFFFFULL) maxAddr = 0xFFFFFFFFULL;
         pELF->heap.maxAddress = (uint32_t)maxAddr;
     }
 
     KDBG1("ELF Loaded. Entry: 0x%x Heap start: 0x%x Type: %s", header.entry, max_virt_end,
-           (pELF->appType == APP_BINARY_CLI) ? "CLI" : "GUI");
+          (pELF->appType == APP_BINARY_CLI) ? "CLI" : "GUI");
 
     return pELF;
 };

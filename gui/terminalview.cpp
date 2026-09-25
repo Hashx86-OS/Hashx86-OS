@@ -1,16 +1,32 @@
-/**
- * @file        terminalview.cpp
- * @brief       TerminalView Component (part of #x86 GUI Framework)
+/*
+ * MIT License
  *
- * @date        06/03/2026
- * @version     1.0.0
+ * Copyright (c) 2025 Malaka Gunawardana
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
  */
 
 #define KDBG_COMPONENT "GUI:TERMINALVIEW"
 #include <gui/desktop.h>
-#include <gui/terminalview.h>
 #include <gui/fonts/font.h>
 #include <gui/renderer/nina.h>
+#include <gui/terminalview.h>
 #include <utils/linkedList.h>
 
 TerminalView::TerminalView(Widget* parent, int32_t x, int32_t y, int32_t w, int32_t h,
@@ -117,7 +133,7 @@ int TerminalView::consumeScrollAction() {
     return action;
 }
 
-// ─── Scrollbar geometry helpers ───
+// Scrollbar geometry helpers.
 
 int TerminalView::ScrollBarW() const {
     return 12;
@@ -172,7 +188,7 @@ int TerminalView::ThumbY() const {
     if (maxOff <= 0) return trackY;
 
     int travel = trackH - thumbH;
-    // Invert: scrollOffset=max → thumb at top, scrollOffset=0 → thumb at bottom
+    // Inverted: scrollOffset=max puts the thumb at the top, scrollOffset=0 at the bottom.
     return trackY + travel - (travel * scrollOffset) / maxOff;
 }
 
@@ -198,7 +214,7 @@ void TerminalView::DrawScrollBar() {
     NINA::activeInstance->FillRectangle(cache, w, h, barX + 1, upY + 1, barW - 2, btnH - 1, bg);
     NINA::activeInstance->FillRectangle(cache, w, h, barX + 1, downY + 1, barW - 2, btnH - 1, bg);
 
-    // Up arrow (▲)
+    // Up arrow.
     int cx = barX + barW / 2;
     int upMid = upY + btnH / 2;
     int dnMid = downY + btnH / 2;
@@ -208,14 +224,14 @@ void TerminalView::DrawScrollBar() {
     PutPixel(cx - 2, upMid - 1, arrow);
     PutPixel(cx + 2, upMid - 1, arrow);
 
-    // Down arrow (▼)
+    // Down arrow.
     PutPixel(cx, dnMid + 3, arrow);
     PutPixel(cx - 1, dnMid + 2, arrow);
     PutPixel(cx + 1, dnMid + 2, arrow);
     PutPixel(cx - 2, dnMid + 1, arrow);
     PutPixel(cx + 2, dnMid + 1, arrow);
 
-    // Thumb
+    // Thumb.
     int thumbY = ThumbY();
     int thumbH = ThumbH();
     NINA::activeInstance->FillRectangle(cache, w, h, barX + 2, thumbY, barW - 4, thumbH, thumb);
@@ -248,7 +264,7 @@ void TerminalView::RedrawToCache() {
     int maxX = w - barReserve - padX;
     int maxY = h - padY;
 
-    // Skip lines according to scrollOffset (count newlines)
+    // Skip lines according to scrollOffset (count newlines).
     int skippedLines = 0;
     int textIdx = 0;
     while (text[textIdx] != '\0' && skippedLines < scrollOffset) {
@@ -266,7 +282,7 @@ void TerminalView::RedrawToCache() {
             continue;
         }
 
-        // Clamp to supported range
+        // Clamp to the supported range.
         int idx = (uint8_t)c - 32;
         if (idx < 0 || idx >= font->glyph_count) {
             c = '?';
@@ -330,7 +346,7 @@ void TerminalView::OnMouseDown(int32_t x, int32_t y, uint8_t button) {
     int barH = ScrollBarH();
     int btnH = ScrollBtnH();
 
-    // Must be inside scrollbar column
+    // Must be inside the scrollbar column.
     if (localX < barX || localX >= barX + barW || localY < barY || localY >= barY + barH) {
         return;
     }
@@ -338,36 +354,36 @@ void TerminalView::OnMouseDown(int32_t x, int32_t y, uint8_t button) {
     int upY = barY;
     int downY = barY + barH - btnH;
 
-    // Up button → scroll up (show older content)
+    // Up button: scroll up (show older content).
     if (localY >= upY && localY < upY + btnH) {
         pendingScrollAction = 1;
         return;
     }
 
-    // Down button → scroll down (show newer content)
+    // Down button: scroll down (show newer content).
     if (localY >= downY && localY < downY + btnH) {
         pendingScrollAction = -1;
         return;
     }
 
-    // Track area — check if click is on the thumb
+    // Track area: check whether the click is on the thumb.
     int thumbY = ThumbY();
     int thumbH = ThumbH();
 
     if (localY >= thumbY && localY < thumbY + thumbH) {
-        // Start dragging the thumb
+        // Start dragging the thumb.
         isDraggingThumb = true;
         dragStartY = localY;
         dragStartOffset = scrollOffset;
         return;
     }
 
-    // Click on track above/below thumb → page scroll
+    // Click on the track above/below the thumb pages the scroll.
     if (localY < thumbY) {
-        // Clicked above thumb → scroll up (increase offset)
+        // Clicked above the thumb: scroll up (increase the offset).
         pendingScrollAction = 5;
     } else {
-        // Clicked below thumb → scroll down (decrease offset)
+        // Clicked below the thumb: scroll down (decrease the offset).
         pendingScrollAction = -5;
     }
 }
@@ -393,8 +409,8 @@ void TerminalView::OnMouseMove(int32_t oldx, int32_t oldy, int32_t newx, int32_t
 
     if (travel <= 0 || maxOff <= 0) return;
 
-    // Thumb is inverted: moving mouse DOWN should DECREASE scrollOffset
-    // (thumb at top = max offset, thumb at bottom = 0 offset)
+    // The thumb is inverted: moving the mouse down decreases scrollOffset
+    // (the thumb at the top is the max offset, at the bottom is zero).
     int deltaOffset = -(dy * maxOff) / travel;
     int newOffset = dragStartOffset + deltaOffset;
 
@@ -403,10 +419,9 @@ void TerminalView::OnMouseMove(int32_t oldx, int32_t oldy, int32_t newx, int32_t
 
     if (newOffset != scrollOffset) {
         scrollOffset = newOffset;
-        pendingScrollAction = 0;  // clear any pending button action
-        // Encode the absolute offset as a special action:
-        // We use a large negative sentinel to signal "set absolute offset"
-        // pendingScrollAction = -(1000000 + newOffset)
+        pendingScrollAction = 0;  // Clear any pending button action.
+        // Encode the absolute offset as a special action: use a large
+        // negative sentinel to signal "set absolute offset".
         pendingScrollAction = -(1000000 + newOffset);
 
         Event* new_event = new Event{this->ID, ON_CLICK};

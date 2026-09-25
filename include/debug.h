@@ -1,3 +1,27 @@
+/*
+ * MIT License
+ *
+ * Copyright (c) 2025 Malaka Gunawardana
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
+ */
+
 #ifndef DEBUG_H
 #define DEBUG_H
 
@@ -7,8 +31,19 @@
 #include <stdlib.h>
 #include <types.h>
 
+/**
+ * initSerial() - Configure the serial port for 115200 baud logging.
+ */
 void initSerial();
+/**
+ * SerialPrint() - Transmit a NUL-terminated string.
+ * @str: String to transmit.
+ */
 void SerialPrint(const char* str);
+/**
+ * writeSerial() - Transmit one character.
+ * @c: Character to transmit.
+ */
 void writeSerial(char c);
 
 #ifndef KDBG_ENABLE
@@ -65,13 +100,27 @@ void writeSerial(char c);
 #define KDBG3(format, ...) ((void)0)
 #endif
 
-// printf Function for serial monitor
+/**
+ * printf() - Format and print a message to the serial port.
+ * @format: printf-style format string.
+ * @...: Arguments referenced by the format string.
+ */
 void printf(const char* format, ...);
 
-// Simple Debug Wrapper Function
+/**
+ * DebugPrintf() - Print a tagged log line terminated by a newline.
+ * @tag: Tag identifying the component.
+ * @format: printf-style format string.
+ * @...: Arguments referenced by the format string.
+ */
 void DebugPrintf(const char* tag, const char* format, ...);
 
-// Simple Printf Wrapper Function
+/**
+ * Printf() - Print a tagged message without a trailing newline.
+ * @tag: Tag identifying the component.
+ * @format: printf-style format string.
+ * @...: Arguments referenced by the format string.
+ */
 void Printf(const char* tag, const char* format, ...);
 
 #define HALT(msg)            \

@@ -1,3 +1,26 @@
+/*
+ * MIT License
+ *
+ * Copyright (c) 2025 Malaka Gunawardana
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
+ */
 
 #ifndef PCI_H
 #define PCI_H
@@ -8,7 +31,7 @@
 #include <debug.h>
 #include <types.h>
 
-// Temporary
+// Temporary device-name lookup table used for identification only.
 struct PCIDevice {
     uint16_t vendorID;
     uint16_t deviceID;
@@ -51,7 +74,12 @@ static const PCIDevice pciDevices[] = {
     {0x1A03, 0x1150, "ASPEED Technology", "Graphics Family"},
 };
 
-// Device Descriptor (Location on Bus)
+/**
+ * class PeripheralComponentInterconnectDeviceDescriptor - A discovered PCI device.
+ *
+ * Records the bus/device/function location of a device together with its ID
+ * registers, class information and interrupt line.
+ */
 class PeripheralComponentInterconnectDeviceDescriptor {
 public:
     uint32_t portBase;
@@ -74,8 +102,20 @@ public:
     ~PeripheralComponentInterconnectDeviceDescriptor();
 };
 
+/**
+ * enum BaseAddressRegisterType - Whether a PCI BAR maps memory or I/O space.
+ * @MemoryMapping: Memory-mapped BAR.
+ * @InputOutput: I/O-space BAR.
+ */
 enum BaseAddressRegisterType { MemoryMapping = 0, InputOutput = 1 };
 
+/**
+ * class BaseAddressRegister - One decoded base address register of a device.
+ * @prefetchable: True when the region is prefetchable.
+ * @address: Base address of the mapped region.
+ * @size: Size of the mapped region.
+ * @type: Whether the register maps memory or I/O space.
+ */
 class BaseAddressRegister {
 public:
     bool prefetchable;
@@ -84,7 +124,14 @@ public:
     BaseAddressRegisterType type;
 };
 
+/**
+ * class PeripheralComponentInterconnectController - Access the PCI configuration space.
+ *
+ * Talks to PCI devices through the standard 0xCF8/0xCFC configuration ports
+ * and exposes configuration reads, writes and device discovery.
+ */
 class PeripheralComponentInterconnectController {
+private:
     Port32Bit dataPort;
     Port32Bit commandPort;
 
@@ -92,21 +139,72 @@ public:
     PeripheralComponentInterconnectController();
     ~PeripheralComponentInterconnectController();
 
+    /**
+     * Read() - Read a 32-bit configuration register of a device.
+     * @bus: Bus number of the device.
+     * @device: Device number on the bus.
+     * @function: Function number within the device.
+     * @registeroffset: Register offset (word or dword aligned).
+     *
+     * Return: The register value shifted so the requested offset is in the
+     *         low byte.
+     */
     uint32_t Read(uint16_t bus, uint16_t device, uint16_t function, uint32_t registeroffset);
+
+    /**
+     * Write() - Write a 32-bit configuration register of a device.
+     * @bus: Bus number of the device.
+     * @device: Device number on the bus.
+     * @function: Function number within the device.
+     * @registeroffset: Register offset (word or dword aligned).
+     * @value: Value to write.
+     */
     void Write(uint16_t bus, uint16_t device, uint16_t function, uint32_t registeroffset,
                uint32_t value);
+
+    /**
+     * DeviceHasFunctions() - Test whether a device is a multifunction device.
+     * @bus: Bus number of the device.
+     * @device: Device number on the bus.
+     *
+     * Return: True when a device exists and its multifunction bit is set.
+     */
     bool DeviceHasFunctions(uint16_t bus, uint16_t device);
 
-    // void SelectDrivers(DriverManager* driverManager, InterruptManager* interrupts); // Commented
-    // out dependencies for now
-
+    /**
+     * GetDeviceDescriptor() - Read the configuration header of a device.
+     * @bus: Bus number of the device.
+     * @device: Device number on the bus.
+     * @function: Function number within the device.
+     *
+     * Return: A new descriptor populated with the device's registers.
+     */
     PeripheralComponentInterconnectDeviceDescriptor* GetDeviceDescriptor(uint16_t bus,
                                                                          uint16_t device,
                                                                          uint16_t function);
+
+    /**
+     * GetBaseAddressRegister() - Decode one base address register of a device.
+     * @bus: Bus number of the device.
+     * @device: Device number on the bus.
+     * @function: Function number within the device.
+     * @bar: Index of the base address register (0-based).
+     *
+     * Return: The decoded base address register.
+     */
     BaseAddressRegister GetBaseAddressRegister(uint16_t bus, uint16_t device, uint16_t function,
                                                uint16_t bar);
 
-    // Scans specifically for one hardware ID
+    /**
+     * FindHardwareDevice() - Scan the bus for a specific vendor/device ID.
+     * @vendorID: Vendor ID to find.
+     * @deviceID: Device ID to find.
+     *
+     * Scans bus 0 first, then probes higher buses.
+     *
+     * Return: A descriptor of the matched device, or an empty descriptor
+     *         (vendor_id == 0) when nothing matches; caller owns the object.
+     */
     PeripheralComponentInterconnectDeviceDescriptor* FindHardwareDevice(uint16_t vendorID,
                                                                         uint16_t deviceID);
 };

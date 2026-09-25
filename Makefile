@@ -515,14 +515,49 @@ prog:
 	@sleep $(RUNQ_DELAY)
 	make runq
 
-.PHONY: clean build build-run hdd hddinit check runq run prog runvb iso build-installer run-installer check-style check-bugs check-headers check-eof fix-style install newapp FORCE user drivers
+.PHONY: clean build build-run hdd hddinit check runq run prog runvb iso build-installer run-installer check-style check-bugs check-headers check-eof fix-style add-license-headers install newapp FORCE user drivers
 
 # -----------------------------------
 # CODE QUALITY TOOLS
+# ------------------------------------------------------------------- #
+# Formatting and header checks operate on FIRST-PARTY code only. These
+# paths must never be formatted, restyled or license-checked:
+#   - build/                          : generated kernel/user artifacts
+#   - tools/                          : host-side installer tooling
+#   - include/stb/                    : stb_truetype (Sean Barrett, public domain)
+#   - core/tlsf/, include/core/tlsf/  : TLSF allocator (Matthew Conte)
+#   - stdlib/math/                    : fdlibm math routines (Sun Microsystems)
+#   - stdlib/string/                  : PDCLib string routines (public domain)
+#   - include/ctype.h, include/string.h, include/stdlib/fdlibm.h :
+#                                     standalone PDCLib / fdlibm headers
+#   - core/filesystem/FatFs/ff.c, ffunicode.c, and
+#     include/core/filesystem/FatFs/ff.h, ffconf.h, diskio.h :
+#                                     upstream ChaN FatFs (kept whole; the
+#                                     project's own diskio.cpp / FatFsWrapper.cpp
+#                                     glue IS formatted & license-checked)
+# Keep FORMAT_EXCLUDE_DIRS / FORMAT_EXCLUDE_FILES in sync with the
+# EXCLUDE_PATHS list in check_headers.sh and tools/license_headers.sh.
+# ------------------------------------------------------------------- #
+FORMAT_EXCLUDE_DIRS := build tools include/stb core/tlsf include/core/tlsf \
+	stdlib/math stdlib/string
+FORMAT_EXCLUDE_FILES := include/ctype.h include/string.h include/stdlib/fdlibm.h \
+	core/filesystem/FatFs/ff.c core/filesystem/FatFs/ffunicode.c \
+	include/core/filesystem/FatFs/ff.h include/core/filesystem/FatFs/ffconf.h \
+	include/core/filesystem/FatFs/diskio.h
+
+# find(1) command yielding exactly the first-party C/C++ sources: prunes the
+# excluded directories (so vendor libraries and build output are never
+# descended into) and skips the excluded standalone header files.
+FIND_FORMAT_FILES = find . -type d \( \
+	$(foreach d,$(FORMAT_EXCLUDE_DIRS),-path ./$(d) -o ) \
+	-path ./.git \) -prune -o -type f \
+	$(foreach f,$(FORMAT_EXCLUDE_FILES),-not -path ./$(f) ) \
+	\( -name "*.c" -o -name "*.cpp" -o -name "*.h" -o -name "*.hpp" \) -print
+
 # Check style (Report Only)
 check-style:
 	@echo "--- Checking Code Formatting ---"
-	@find . -name "*.cpp" -o -name "*.c" -o -name "*.h" | xargs clang-format --dry-run -Werror
+	@$(FIND_FORMAT_FILES) | xargs -r clang-format --dry-run -Werror -style=file
 	@echo "Style check passed."
 
 # Check Logic (Report Only)
@@ -545,10 +580,14 @@ check-eof:
 # Master Check
 check: check-style check-bugs check-eof check-headers
 
+# Apply the project license header to every first-party file (Report Only)
+add-license-headers:
+	@bash tools/license_headers.sh
+
 # Auto-Fix-Style
 fix-style:
-	@echo "--- Applying Auto-Formatting ---"
-	@find . -name "*.cpp" -o -name "*.c" -o -name "*.h" | xargs clang-format -i -style=file
+	@echo "--- Applying Modern Auto-Formatting ---"
+	@$(FIND_FORMAT_FILES) | xargs -r clang-format -i -style=file
 	@echo "Code formatted."
 
 newapp:

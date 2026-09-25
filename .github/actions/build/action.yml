@@ -1,0 +1,77 @@
+name: Build Hashx86-OS
+description: >-
+  Install the cross-build toolchain, run the style/header/EOF checks, and do a
+  clean build of the kernel, user apps, drivers, boot ISO and installer ISO.
+  Optionally stage the installer ISO as a versioned release artifact.
+
+inputs:
+  package:
+    description: >-
+      Stage the installer ISO into release-artifacts/ for a subsequent release
+      step.
+    required: false
+    default: "false"
+  release_version:
+    description: >-
+      Version string used to name the staged installer ISO (typically the git
+      tag). Only used when package is 'true'.
+    required: false
+    default: "dev"
+
+runs:
+  using: composite
+  steps:
+    - name: Install toolchain
+      shell: bash
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y --no-install-recommends \
+          build-essential gcc-multilib g++-multilib nasm \
+          grub-common grub-pc-bin xorriso mtools \
+          clang-format
+
+    - name: Run checks (style, license headers, EOF newlines)
+      shell: bash
+      run: |
+        # check-bugs (cppcheck) is intentionally not run in CI: it reports
+        # known pre-existing findings until they are triaged.
+        make check-style
+        ./check_headers.sh
+        ./check_eof.sh
+
+    - name: Clean build (kernel)
+      shell: bash
+      run: |
+        make clean
+        make
+
+    - name: Build user apps
+      shell: bash
+      run: |
+        make -C user_prog clean
+        make -C user_prog
+
+    - name: Build drivers
+      shell: bash
+      run: |
+        make -C drivers clean
+        make -C drivers
+
+    - name: Build boot ISO
+      shell: bash
+      run: make iso
+
+    - name: Build installer ISO
+      shell: bash
+      run: make build-installer
+
+    - name: Stage installer ISO as release artifact
+      if: inputs.package == 'true'
+      shell: bash
+      env:
+        RELEASE_VERSION: ${{ inputs.release_version }}
+      run: |
+        set -euo pipefail
+        mkdir -p release-artifacts
+        cp build/installer.iso "release-artifacts/Hashx86-OS-installer-${RELEASE_VERSION}.iso"
+        ls -l release-artifacts

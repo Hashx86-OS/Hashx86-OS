@@ -1,9 +1,25 @@
-/**
- * @file        scheduler.cpp
- * @brief       Standard Round-Robin Scheduler with State Queues for #x86
+/*
+ * MIT License
  *
- * @date        11/02/2026
- * @version     1.0.0
+ * Copyright (c) 2025 Malaka Gunawardana
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
  */
 
 #define KDBG_COMPONENT "SCHEDULER"
@@ -13,17 +29,17 @@
 
 extern TaskStateSegment g_tss;
 
-// Virtual address for user-mode stacks (just below the 3GB hardware boundary)
+// Virtual address for user-mode stacks (just below the 3GB hardware boundary).
 #define USER_STACK_VIRT_TOP 0xC0000000
 #define USER_STACK_VIRT_BOTTOM 0x10000000
 
-// Virtual address for the user-mode thread exit trampoline (1GB mark, in user space)
+// Virtual address for the user-mode thread exit trampoline (1GB mark, in user space).
 #define USER_EXIT_TRAMPOLINE_VIRT 0x40000000
 
 // Kernel thread stacks come from the dedicated guarded kernel-stack zone
 // (see core/kstack.h).  KERNEL_STACK_SIZE is defined there.
 
-// Number of pages per User-Mode stack
+// Number of pages per user-mode stack.
 #define USER_STACK_PAGES 128
 
 // Free-list of reclaimed user-stack offsets so exited threads recycle virtual slots
@@ -40,7 +56,7 @@ void FlushSerial();
 
 void IdleTask(void* arg) {
     while (1) {
-        // Clear the log buffer to the screen
+        // Clear the log buffer to the screen.
         FlushSerial();
 
         asm volatile("sti");
@@ -48,7 +64,7 @@ void IdleTask(void* arg) {
     }
 }
 
-// This function acts as the "return address" for all kernel threads.
+// Acts as the "return address" for all kernel threads.
 void ThreadExit() {
     if (Scheduler::activeInstance) {
         Scheduler::activeInstance->ExitCurrentThread();
@@ -66,15 +82,15 @@ Scheduler::Scheduler(Paging* pager) {
     currentThread = nullptr;
     activeInstance = this;
 
-    // Allocate and write a user-mode exit trampoline
-    // Must be in identity-mapped range (<256MB)
+    // Allocate and write a user-mode exit trampoline.
+    // Must be in identity-mapped range (<256MB).
     _trampolinePhys = (uint32_t)pmm_alloc_block_low(256 * 1024 * 1024);
     if (!_trampolinePhys) {
         HALT("CRITICAL: Failed to allocate trampoline page!");
     }
     memset((void*)_trampolinePhys, 0, 4096);
 
-    // Position-Independent Code
+    // Position-independent code:
     /*
     0xB8 0x01 0x00 0x00 0x00   →   mov eax, 1
     0xCD 0x80                  →   int 0x80
@@ -82,16 +98,16 @@ Scheduler::Scheduler(Paging* pager) {
     */
     uint8_t* code = (uint8_t*)_trampolinePhys;
 
-    // mov eax, 1  (sys_exit)
+    // mov eax, 1  (sys_exit).
     code[0] = 0xB8;
     code[1] = 0x01;
     code[2] = 0x00;
     code[3] = 0x00;
     code[4] = 0x00;
-    // int 0x80
+    // int 0x80.
     code[5] = 0xCD;
     code[6] = 0x80;
-    // jmp $  (safe infinite loop — hlt is privileged and would #GP in Ring 3)
+    // jmp $  (safe infinite loop; hlt is privileged and would #GP in Ring 3).
     code[7] = 0xEB;
     code[8] = 0xFE;
 
@@ -125,14 +141,14 @@ ProcessControlBlock* Scheduler::CreateProcess(bool isKernel, void (*entrypoint)(
         pcb->fdTable[fd] = nullptr;
     }
 
-    // MEMORY SPACE SETUP
+    // Memory space setup.
     if (isKernel) {
         pcb->page_directory = _pager->KernelPageDirectory;
     } else {
         pcb->page_directory = _pager->CreateProcessDirectory();
     }
 
-    // Map the user-mode exit trampoline into this process's address space
+    // Map the user-mode exit trampoline into the process address space.
     if (!isKernel) {
         if (!_pager->MapPage(pcb->page_directory, USER_EXIT_TRAMPOLINE_VIRT, _trampolinePhys,
                              PAGE_PRESENT | PAGE_USER)) {
@@ -145,10 +161,10 @@ ProcessControlBlock* Scheduler::CreateProcess(bool isKernel, void (*entrypoint)(
         }
     }
 
-    // Register PCB before CreateThread so the child is discoverable if scheduled
+    // Register the PCB before CreateThread so the child is discoverable if scheduled.
     globalProcessList.PushBack(pcb);
 
-    // Create the main thread (Stack setup)
+    // Create the main thread (stack setup).
     ThreadControlBlock* mainThread = CreateThread(pcb, entrypoint, arg);
     if (!mainThread) {
         KDBG1("CreateProcess PID=%d Kernel=%d FAILED: CreateThread returned null", pcb->pid,
@@ -199,11 +215,18 @@ ProcessControlBlock* Scheduler::FindProcess(uint32_t pid) {
 }
 
 /**
- * Allocate a user-stack slot and map USER_STACK_PAGES of physical pages.
- * Page 0 of the slot is left UNMAPPED as a guard page, so a user-mode stack
+ * AllocUserStack() - Allocate a user-stack slot and map its pages.
+ * @tcb: Thread to attach the slot to.
+ * @pager: Paging instance to map pages through.
+ * @page_directory: Page directory the virtual range belongs to.
+ * @who: Caller tag used in debug messages.
+ * @out_user_stack_base: Receives the base of the stack slot.
+ * @out_top_page_phys: Receives the physical address of the top (guard) page.
+ *
+ * Page 0 of the slot is left unmapped as a guard page, so a user-mode stack
  * overflow faults instead of silently corrupting the heap/code below it.
- * On failure, cleans up tcb (frees kernel stack, deletes tcb, recycles slot)
- * and returns false.
+ * On failure, cleans up tcb (frees the kernel stack, deletes tcb, recycles
+ * the slot) and returns false.
  */
 static bool AllocUserStack(ThreadControlBlock* tcb, Paging* pager, uint32_t* page_directory,
                            const char* who, uint32_t* out_user_stack_base,
@@ -213,18 +236,17 @@ static bool AllocUserStack(ThreadControlBlock* tcb, Paging* pager, uint32_t* pag
     // Prefer recycling a pool slot: scan the pool's current size once,
     // requeue mapped candidates, and pick the first unmapped one. A slot
     // whose virtual range is already mapped in the destination page directory
-    // was inherited from an older address space and reusing it via MapPage
-    // would overwrite the inherited PTEs and leak their frames. Only after all
-    // recycled candidates have been checked does a fresh slot past the current
-    // top get allocated.
+    // was inherited from an older address space, and reusing it via MapPage
+    // would overwrite the inherited PTEs and leak their frames. Only after
+    // all recycled candidates have been checked does a fresh slot past the
+    // current top get allocated.
     uint32_t slotIdx = UINT32_MAX;
     if (!g_freeStackOffsets.IsEmpty()) {
         int poolSize = g_freeStackOffsets.GetSize();
         for (int i = 0; i < poolSize && slotIdx == UINT32_MAX; i++) {
             uint32_t candidate = g_freeStackOffsets.PopFront();
-            uint32_t candidateBase = USER_STACK_VIRT_TOP -
-                                     (uint32_t)(((uint64_t)candidate + 1) *
-                                                (uint64_t)user_stack_size);
+            uint32_t candidateBase = USER_STACK_VIRT_TOP - (uint32_t)(((uint64_t)candidate + 1) *
+                                                                      (uint64_t)user_stack_size);
             bool candidateMapped = false;
             for (uint32_t p = 0; p < USER_STACK_PAGES; p++) {
                 if (pager->GetPhysicalAddress(page_directory, candidateBase + p * PAGE_SIZE) !=
@@ -335,8 +357,8 @@ static bool AllocUserStack(ThreadControlBlock* tcb, Paging* pager, uint32_t* pag
 // re-mapped into an address space that still carries inherited PTEs.
 static void FreeUserStackSlot(uint32_t* page_directory, uint32_t slotIdx) {
     uint32_t user_stack_size = USER_STACK_PAGES * PAGE_SIZE;
-    uint32_t base = USER_STACK_VIRT_TOP -
-                    (uint32_t)(((uint64_t)slotIdx + 1) * (uint64_t)user_stack_size);
+    uint32_t base =
+        USER_STACK_VIRT_TOP - (uint32_t)(((uint64_t)slotIdx + 1) * (uint64_t)user_stack_size);
     if (base < USER_STACK_VIRT_BOTTOM) return;
     for (uint32_t p = 1; p < USER_STACK_PAGES; p++) {
         uint32_t va = base + p * PAGE_SIZE;
@@ -363,7 +385,7 @@ ThreadControlBlock* Scheduler::CreateThread(ProcessControlBlock* parent, void (*
     tcb->pid = parent ? parent->pid : 0;
     tcb->stackSlotIdx = UINT32_MAX;
 
-    // Allocate 64KB kernel stack from the dedicated guarded stack zone
+    // Allocate 64KB kernel stack from the dedicated guarded stack zone.
     tcb->stack = (uint8_t*)kstack_alloc();
     if (!tcb->stack) {
         KDBG1("CreateThread: failed to allocate kernel stack for TID=%d", tcb->tid);
@@ -371,45 +393,46 @@ ThreadControlBlock* Scheduler::CreateThread(ProcessControlBlock* parent, void (*
         return nullptr;
     }
 
-    // Calculate the TOP of the stack
+    // Calculate the top of the stack.
     uint32_t* stackTop = (uint32_t*)(tcb->stack + KERNEL_STACK_SIZE);
 
-    // Map the context struct to the top of the kernel stack
+    // Map the context struct to the top of the kernel stack.
     tcb->context = (CPUState*)((uint8_t*)stackTop - sizeof(CPUState));
     memset(tcb->context, 0, sizeof(CPUState));
 
-    // Determine if this is a Kernel or User thread
+    // Determine whether this is a kernel or user thread.
     bool isKernel = (parent == nullptr || parent->isKernelProcess);
 
-    // COMMON SETUP
+    // Common setup.
     tcb->context->eax = 0;
     tcb->context->ebx = 0;
     tcb->context->eip = (uint32_t)entrypoint;
-    tcb->context->eflags = 0x202;  // Interrupts Enabled
+    tcb->context->eflags = 0x202;  // Interrupts enabled.
 
     if (isKernel) {
-        // KERNEL THREAD (Ring 0)
+        // Kernel thread (Ring 0).
         tcb->context->cs = 0x08;
         tcb->context->ds = 0x10;
         tcb->context->es = 0x10;
         tcb->context->fs = 0x10;
         tcb->context->gs = 0x10;
 
-        // Kernel thread ABI shim:
-        // After interrupt restore + iret (same CPL), ESP points to CPUState::esp field,
-        // so CPUState::esp behaves as return address and CPUState::ss as first argument.
-        tcb->context->esp = (uint32_t)ThreadExit;  // fake return address
-        tcb->context->ss = (uint32_t)arg;          // first function argument
+        // Kernel thread ABI shim: after interrupt restore + iret (same CPL),
+        // ESP points to CPUState::esp, so esp behaves as return address and
+        // ss as the first argument.
+        tcb->context->esp = (uint32_t)ThreadExit;  // Fake return address.
+        tcb->context->ss = (uint32_t)arg;          // First function argument.
     } else {
-        // USER THREAD (Ring 3)
-        tcb->context->cs = 0x1B;  // User Code (0x18 | 3)
-        tcb->context->ds = 0x23;  // User Data (0x20 | 3)
+        // User thread (Ring 3).
+        tcb->context->cs = 0x1B;  // User code (0x18 | 3).
+        tcb->context->ds = 0x23;  // User data (0x20 | 3).
         tcb->context->es = 0x23;
         tcb->context->fs = 0x23;
         tcb->context->gs = 0x23;
 
-        // Allocate USER-MODE stack (USER_STACK_PAGES pages)
-        // Must be in identity-mapped range (<256MB) because kernel writes arg/retaddr to it
+        // Allocate the user-mode stack (USER_STACK_PAGES).
+        // Must be in identity-mapped range (<256MB) because the kernel writes
+        // arg/retaddr to it.
         uint32_t user_stack_base;
         uint32_t top_page_phys;
         if (!AllocUserStack(tcb, _pager, parent->page_directory, "CreateThread", &user_stack_base,
@@ -417,7 +440,8 @@ ThreadControlBlock* Scheduler::CreateThread(ProcessControlBlock* parent, void (*
             return nullptr;
         }
 
-        // Write arg and return address to the TOP of the stack (highest page, last 8 bytes)
+        // Write arg and return address to the top of the stack (highest page,
+        // last 8 bytes).
         uint32_t* user_stack_top_phys = (uint32_t*)(top_page_phys + PAGE_SIZE);
         {
             uint32_t pd_idx = top_page_phys >> 22;
@@ -429,10 +453,10 @@ ThreadControlBlock* Scheduler::CreateThread(ProcessControlBlock* parent, void (*
                 top_page_phys, pd_idx, parent->page_directory[pd_idx], pd_idx,
                 _pager->KernelPageDirectory[pd_idx], pt_idx, pt[pt_idx], top_page_phys);
         }
-        user_stack_top_phys[-1] = (uint32_t)arg;              // Argument
-        user_stack_top_phys[-2] = USER_EXIT_TRAMPOLINE_VIRT;  // Return to exit trampoline
+        user_stack_top_phys[-1] = (uint32_t)arg;              // Argument.
+        user_stack_top_phys[-2] = USER_EXIT_TRAMPOLINE_VIRT;  // Return to exit trampoline.
 
-        // IRET will pop SS:ESP for Ring 0 -> Ring 3 transition
+        // iret will pop SS:ESP for the Ring 0 -> Ring 3 transition.
         tcb->context->esp = user_stack_base + USER_STACK_PAGES * PAGE_SIZE - 8;
         tcb->context->ss = 0x23;
     }
@@ -494,9 +518,10 @@ ThreadControlBlock* Scheduler::CloneCurrentThread(CPUState* parentContext, uint3
                             &user_stack_base, &top_page_phys)) {
             return nullptr;
         }
-        // Set esp to top of the allocated stack
+        // Set esp to the top of the allocated stack.
         tcb->context->esp = user_stack_base + USER_STACK_PAGES * PAGE_SIZE - 8;
-        // Write arg and return address to the TOP of the stack (last page, last 8 bytes)
+        // Write arg and return address to the top of the stack (last page,
+        // last 8 bytes).
         uint32_t* user_stack_top_phys = (uint32_t*)(top_page_phys + PAGE_SIZE);
         user_stack_top_phys[-2] = USER_EXIT_TRAMPOLINE_VIRT;
         user_stack_top_phys[-1] = 0;
@@ -508,16 +533,16 @@ ThreadControlBlock* Scheduler::CloneCurrentThread(CPUState* parentContext, uint3
     constexpr uint32_t USER_LOWER_BOUND = 0x10000000;
     constexpr uint32_t KERNEL_BASE = 0xC0000000;
 
-    // Validate that the full 4-byte range is mapped, in user space, and does not cross a page
-    // boundary
+    // Validate that the full 4-byte range is mapped, in user space, and does
+    // not cross a page boundary.
     auto safeWriteTid = [&](void* addr, uint32_t tid_val, uint32_t* page_dir) -> bool {
         uint32_t uaddr = (uint32_t)addr;
         if (uaddr < USER_LOWER_BOUND) return false;
         uint32_t end = uaddr + sizeof(uint32_t) - 1;
         if (end < uaddr || end >= KERNEL_BASE) return false;
-        // Check that write stays within a single page
+        // Ensure the write stays within a single page.
         if ((uaddr & (PAGE_SIZE - 1)) > PAGE_SIZE - sizeof(uint32_t)) return false;
-        // Verify both start and end pages are mapped
+        // Verify both start and end pages are mapped.
         for (uint32_t page = uaddr & ~(PAGE_SIZE - 1); page <= end; page += PAGE_SIZE) {
             if (_pager->GetPhysicalAddress(page_dir, page) == 0xFFFFFFFF) return false;
         }
@@ -743,55 +768,54 @@ bool Scheduler::KillProcess(uint32_t pid) {
     }
     if (!target) return false;
 
-    // RESOURCE CLEANUP START
+    // Resource cleanup start.
     uint32_t currentCR3;
     asm volatile("mov %%cr3, %0" : "=r"(currentCR3));
     if ((uint32_t)target->page_directory == currentCR3) {
-        // Switch to Kernel Page Directory to safely free resources
+        // Switch to the kernel page directory to safely free resources.
         _pager->SwitchDirectory(_pager->KernelPageDirectory);
     }
 
-    // All stack slot indices have already been collected in the process's
     // All user-stack slots were already reclaimed by TerminateThread at each
     // thread exit; this array is kept for completeness and stays empty.
     int slotCount = target->deferredSlotCount;
 
-    // Terminate all threads (removes from scheduler queues, frees kernel stacks)
+    // Terminate all threads (removes from scheduler queues, frees kernel stacks).
     int tCount = target->threads.GetSize();
     for (int i = 0; i < tCount; i++) {
         ThreadControlBlock* t = target->threads.PopFront();
         TerminateThread(t);
     }
 
-    // Free Page Tables and Page Directory (if not Kernel)
-    // This also reclaims all user-space page frames (stacks, heap, etc.)
-    // via the PTE sweep below — no need to free them separately.
+    // Free page tables and page directory (if not kernel).  This also reclaims
+    // all user-space page frames (stacks, heap, etc.) via the PTE sweep below.
     if (!target->isKernelProcess) {
-        // Free User Page Tables (Indices 64 to 768)
-        // Kernel tables (0-63) and High Mem (768-1023) are shared, CANNOT FREE
+        // Free user page tables (indices 64 to 768).  Kernel tables (0-63) and
+        // high memory (768-1023) are shared and cannot be freed.
         for (int i = 64; i < 768; i++) {
             if (!(target->page_directory[i] & PAGE_PRESENT)) continue;
 
-            // First, free every individual page frame pointed to by this table's PTEs
+            // First free every page frame pointed to by this table's PTEs.
             uint32_t* pt = (uint32_t*)(target->page_directory[i] & 0xFFFFF000);
             for (uint32_t j = 0; j < 1024; j++) {
                 if (!(pt[j] & PAGE_PRESENT)) continue;
                 uint32_t phys = pt[j] & 0xFFFFF000;
-                // Don't free the shared exit trampoline page
+                // Skip the shared exit trampoline page.
                 if (phys && phys != _trampolinePhys) {
                     pmm_free_block((void*)phys);
                 }
                 pt[j] = 0;
             }
-            // Then free the page table itself
+            // Then free the page table itself.
             pmm_free_block((void*)(target->page_directory[i] & 0xFFFFF000));
             target->page_directory[i] = 0;
         }
 
-        // Free privately-copied kernel-range page tables (indices 0-63 and 768-1023).
-        // These were created (e.g., by Hsys_getFramebuffer) as per-process copies of
-        // shared kernel PDEs.  Their PTEs still point to shared kernel frames, so we
-        // free only the page table frame, not the individual frames.
+        // Free privately-copied kernel-range page tables (indices 0-63 and
+        // 768-1023).  These were created (e.g., by Hsys_getFramebuffer) as
+        // per-process copies of shared kernel PDEs.  Their PTEs still point to
+        // shared kernel frames, so free only the page table frame, not the
+        // individual frames.
         for (int i = 0; i < 64; i++) {
             if (!(target->page_directory[i] & PAGE_PRESENT)) continue;
             if (target->page_directory[i] == _pager->KernelPageDirectory[i]) continue;
@@ -805,7 +829,7 @@ bool Scheduler::KillProcess(uint32_t pid) {
             target->page_directory[i] = 0;
         }
 
-        // Free the Directory itself
+        // Free the directory itself.
         pmm_free_block(target->page_directory);
     }
 
@@ -816,13 +840,13 @@ bool Scheduler::KillProcess(uint32_t pid) {
     }
     target->deferredSlotCount = 0;
 
-    // RESOURCE CLEANUP END
+    // Resource cleanup end.
 
-    // Free program arguments (kmalloc'd strings + struct)
+    // Free program arguments (kmalloc'd strings and struct).
     FreeProgramArguments(target->programArgs);
     target->programArgs = nullptr;
 
-    // Remove from Global List
+    // Remove from the global process list.
     globalProcessList.Remove([target](ProcessControlBlock* p) { return p == target; });
 
     delete target;
@@ -888,12 +912,12 @@ bool Scheduler::ExitCurrentThread() {
     ProcessControlBlock* parent = currentThread->parent;
 
     if (!parent) {
-        // Kernel thread without parent process
+        // Kernel thread without a parent process.
         TerminateThread(currentThread);
         return false;
     }
 
-    // Count non-terminated threads in the parent process
+    // Count non-terminated threads in the parent process.
     int activeThreadCount = 0;
     int totalThreads = parent->threads.GetSize();
     for (int i = 0; i < totalThreads; i++) {
@@ -904,7 +928,7 @@ bool Scheduler::ExitCurrentThread() {
         parent->threads.PushBack(thread);
     }
 
-    // Last thread standing -> kill the entire process
+    // Last thread standing - kill the entire process.
     if (activeThreadCount <= 1) {
         KDBG1("Thread TID %d is last in process PID %d - terminating process", currentThread->tid,
               parent->pid);
@@ -923,7 +947,6 @@ void Scheduler::Sleep(uint32_t milliseconds) {
     if (!currentThread) return;
     currentThread->wakeTime = timerTicks + milliseconds;
     currentThread->state = THREAD_STATE_BLOCKED;
-    // KDBG3("Sleep TID=%d ms=%d", currentThread->tid, milliseconds);
 }
 
 void Scheduler::WakeThread(ThreadControlBlock* thread) {
@@ -934,7 +957,6 @@ void Scheduler::WakeThread(ThreadControlBlock* thread) {
     thread->wakeTime = 0;
     blockedQueue.Remove([thread](ThreadControlBlock* t) { return t == thread; });
     readyQueue.PushBack(thread);
-    // KDBG3("WakeThread TID=%d", thread->tid);
 }
 
 CPUState* Scheduler::Schedule(CPUState* context) {
@@ -965,7 +987,7 @@ CPUState* Scheduler::Schedule(CPUState* context) {
     }
 
     if (readyQueue.GetSize() == 0) {
-        // No real work to do, Run the Idle Thread.
+        // No real work to do - run the idle thread.
         currentThread = idleThread;
         currentThread->state = THREAD_STATE_RUNNING;
         g_tss.esp0 = (uint32_t)(idleThread->stack + KERNEL_STACK_SIZE);
@@ -974,13 +996,10 @@ CPUState* Scheduler::Schedule(CPUState* context) {
         return currentThread->context;
 
     } else {
-        // Normal Round Robin
+        // Normal round robin.
         currentThread = readyQueue.PopFront();
     }
     currentThread->state = THREAD_STATE_RUNNING;
-
-    // KDBG3("Switching to TID=%d, PID=%d, EIP=0x%x, ESP=0x%x", currentThread->tid,
-    //        currentThread->pid, currentThread->context->eip, currentThread->context->esp);
 
     g_tss.esp0 = (uint32_t)(currentThread->stack + KERNEL_STACK_SIZE);
 
@@ -990,7 +1009,7 @@ CPUState* Scheduler::Schedule(CPUState* context) {
         _pager->SwitchDirectory((_pager->KernelPageDirectory));
     }
 
-    // Now running on the new thread's stack — safe to reclaim deferred threads.
+    // Now running on the new thread's stack - safe to reclaim deferred threads.
     DrainPendingReclaims();
 
     return currentThread->context;

@@ -1,19 +1,42 @@
-/**
- * @file        AudioMixer.cpp
- * @brief       Audio Mixer for #x86
+/*
+ * MIT License
  *
- * @date        29/01/2026
- * @version     1.0.0-beta
+ * Copyright (c) 2025 Malaka Gunawardana
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
  */
 
 #include <core/drivers/AudioMixer.h>
 
+/**
+ * AudioMixer::AudioMixer() - Bind the mixer to an audio driver.
+ * @drv: Backing AudioDriver, or NULL.
+ *
+ * Clears the stream and deferred-free tables and allocates the mix scratch
+ * buffer from the driver's buffer size.
+ */
 AudioMixer::AudioMixer(AudioDriver* drv) : driver(drv), mixBuffer(nullptr), bufferSize(0) {
     memset(streams, 0, sizeof(streams));
     memset(pendingFreeBuffers, 0, sizeof(pendingFreeBuffers));
     memset(pendingFreeLengths, 0, sizeof(pendingFreeLengths));
 
-    // Ensure ownsData is cleared for safety on older binaries
+    // Ensure ownsData is cleared for older binaries.
     for (int i = 0; i < 8; i++) streams[i].ownsData = false;
 
     if (!driver) return;
@@ -29,6 +52,15 @@ void AudioMixer::SetOutputSampleRate(uint32_t rate) {
     if (driver) driver->SetSampleRate(rate);
 }
 
+/**
+ * AudioMixer::PlayBuffer() - Queue PCM data for playback on one channel.
+ *
+ * Copies the samples into an owned per-channel buffer (the caller's pointer
+ * is never retained) and assigns them to the first inactive slot. If the
+ * hardware was idle it is prefilled from all active streams and started.
+ *
+ * Context: Serialized by the internal IRQ lock.
+ */
 void AudioMixer::PlayBuffer(uint8_t* data, uint32_t length, bool loop) {
     if (!data || length == 0 || (length % 2 != 0) || !driver) return;
 
@@ -36,12 +68,12 @@ void AudioMixer::PlayBuffer(uint8_t* data, uint32_t length, bool loop) {
 
     for (int i = 0; i < 8; i++) {
         if (!streams[i].active) {
-            // Make an owned copy of the data to avoid lifetime issues
+            // Make an owned copy to avoid lifetime issues.
             uint8_t* copy = (uint8_t*)kmalloc(length);
             if (!copy) {
                 unlock(flags);
                 return;
-            }  // Out of memory; fail gracefully
+            }  // Out of memory; fail gracefully.
             memcpy(copy, data, length);
             streams[i].data = copy;
             streams[i].ownsData = true;
@@ -57,9 +89,9 @@ void AudioMixer::PlayBuffer(uint8_t* data, uint32_t length, bool loop) {
     unlock(flags);
 
     if (!wasPlaying) {
-        // Fill ALL available hardware buffers before starting.
-        // Only enter the prefill loop if mixBuffer was allocated;
-        // otherwise ProcessAudio is a no-op and would spin forever.
+        // Fill ALL available hardware buffers before starting. Only enter the
+        // prefill loop if mixBuffer was allocated; otherwise ProcessAudio is a
+        // no-op and would spin forever.
         if (mixBuffer) {
             while (driver->IsReadyForData()) {
                 ProcessAudio();
@@ -69,10 +101,18 @@ void AudioMixer::PlayBuffer(uint8_t* data, uint32_t length, bool loop) {
     }
 }
 
+/**
+ * AudioMixer::Update() - Feed new mixed data to the hardware.
+ *
+ * Runs the deferred kfree() queue (built in IRQ context) and keeps writing
+ * mixed buffers while the hardware accepts data.
+ *
+ * Context: Task context; serialized by the internal IRQ lock.
+ */
 void AudioMixer::Update() {
     if (!driver || !mixBuffer) return;
 
-    // Perform deferred frees from IRQ context (ProcessAudio) under lock
+    // Perform deferred frees queued from IRQ context by ProcessAudio().
     uint32_t flags = lock();
     for (int i = 0; i < 8; i++) {
         if (pendingFreeBuffers[i]) {
@@ -83,12 +123,22 @@ void AudioMixer::Update() {
     }
     unlock(flags);
 
-    // Keep filling as long as hardware has space
+    // Keep filling as long as the hardware has space.
     while (driver->IsReadyForData()) {
         ProcessAudio();
     }
 }
 
+/**
+ * AudioMixer::ProcessAudio() - Mix all active streams into one hardware frame.
+ *
+ * Zeroes the scratch buffer, sums every active stream (clipping at 16-bit
+ * bounds), and writes the result to the hardware. Streams that reach their
+ * end: looping ones restart, others are deactivated and their owned buffers
+ * are queued for a deferred free because this runs in IRQ context.
+ *
+ * Context: IRQ context; serialized by the internal IRQ lock.
+ */
 void AudioMixer::ProcessAudio() {
     if (!driver || !mixBuffer) return;
 
@@ -119,7 +169,7 @@ void AudioMixer::ProcessAudio() {
             int16_t sample = ((int16_t*)st.data)[sampleIndex];
             int32_t mixed = out[i] + sample;
 
-            // Hard Clipping prevention
+            // Clamp the sum to the int16 range.
             if (mixed > 32767) mixed = 32767;
             if (mixed < -32768) mixed = -32768;
 
@@ -127,8 +177,8 @@ void AudioMixer::ProcessAudio() {
             st.position += sizeof(int16_t);
         }
 
-        // If the stream was deactivated and we own the buffer, defer the free
-        // to task context (Update) since we are in IRQ context here
+        // A just-finished owned buffer cannot be freed here (IRQ context), so
+        // defer it to task context (Update).
         if (!st.active && st.ownsData && st.data) {
             pendingFreeBuffers[s] = st.data;
             pendingFreeLengths[s] = st.length;
