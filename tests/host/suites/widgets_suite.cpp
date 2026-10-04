@@ -28,13 +28,16 @@
 #include <cstring>
 
 #include <gui/checkbox.h>
+#include <gui/combobox.h>
 #include <gui/contextmenu.h>
 #include <gui/imageview.h>
 #include <gui/layout.h>
 #include <gui/radiobutton.h>
 #include <gui/scrollbar.h>
+#include <gui/scrollcontainer.h>
 #include <gui/slider.h>
 #include <gui/spinbox.h>
+#include <gui/table.h>
 #include <gui/tabs.h>
 #include <gui/textbox.h>
 #include <gui/toggle.h>
@@ -346,4 +349,70 @@ TEST(textbox_edits_and_clamps) {
     tb->SetReadOnly(false);
     tb->SetText("0123456789");
     CHECK(tb->GetLength() <= 7u);
+}
+
+TEST(combobox_opens_selects_and_closes) {
+    CompositeWidget root(nullptr, 0, 0, 300, 300);
+    ComboBox* cb = new ComboBox(&root, 0, 0, 120, 24);
+    root.AddChild(cb);
+    cb->SetID(1000);
+    cb->SetPID(9);
+
+    CHECK(cb->AddItem("Alpha"));
+    CHECK(cb->AddItem("Beta"));
+    CHECK_EQ(cb->GetItemCount(), 2);
+    CHECK_EQ(cb->GetSelected(), 0);
+    CHECK_EQ(strcmp(cb->GetItem(1), "Beta"), 0);
+    CHECK(!cb->IsOpen());
+
+    cb->OnMouseUp(10, 10, 1);
+    CHECK(cb->IsOpen());
+    CHECK_EQ(cb->h, 24 + 2 * 22);
+
+    HostEventReset();
+    cb->OnMouseUp(10, 24 + 22 + 5, 1);  // second entry
+    CHECK(!cb->IsOpen());
+    CHECK_EQ(cb->GetSelected(), 1);
+    CHECK_EQ(HostEventCount(), 1);
+    if (HostEventCount() == 1) CHECK_EQ(HostEventAt(0).param1, 1u);
+}
+
+TEST(table_selects_rows) {
+    CompositeWidget root(nullptr, 0, 0, 300, 300);
+    Table* table = new Table(&root, 0, 0, 200, 100, 2);
+    root.AddChild(table);
+    table->SetID(1001);
+    table->SetPID(9);
+    table->SetHeader(0, "Name");
+    table->SetHeader(1, "Size");
+
+    const char* row0[] = {"a.txt", "10"};
+    const char* row1[] = {"b.txt", "20"};
+    CHECK(table->AddRow(row0));
+    CHECK(table->AddRow(row1));
+    CHECK_EQ(table->GetRowCount(), 2);
+    CHECK_EQ(table->GetSelected(), -1);
+
+    HostEventReset();
+    table->OnMouseUp(10, 24 + 20 + 5, 1);  // second row
+    CHECK_EQ(table->GetSelected(), 1);
+    CHECK_EQ(HostEventCount(), 1);
+    if (HostEventCount() == 1) CHECK_EQ(HostEventAt(0).param1, 1u);
+}
+
+TEST(scrollcontainer_scrolls_and_clamps) {
+    CompositeWidget root(nullptr, 0, 0, 300, 300);
+    ScrollContainer* sc = new ScrollContainer(&root, 0, 0, 200, 200);
+    root.AddChild(sc);
+    CHECK(sc->GetContent() != nullptr);
+
+    sc->SetContentSize(400, 400);
+    CHECK_EQ(sc->GetScrollY(), 0);
+
+    sc->OnMouseWheel(-1000);  // scroll down as far as possible
+    CHECK(sc->GetScrollY() > 0);
+    CHECK(sc->GetScrollY() <= 400);
+
+    sc->OnMouseWheel(1000);  // scroll back to the top
+    CHECK_EQ(sc->GetScrollY(), 0);
 }

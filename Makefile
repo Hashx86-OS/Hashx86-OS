@@ -52,6 +52,7 @@ objects = \
 	$(BUILD_DIR)/obj/gui/bootanim.o \
 	$(BUILD_DIR)/obj/gui/button.o \
 	$(BUILD_DIR)/obj/gui/checkbox.o \
+	$(BUILD_DIR)/obj/gui/combobox.o \
 	$(BUILD_DIR)/obj/gui/contextmenu.o \
 	$(BUILD_DIR)/obj/gui/iconbutton.o \
 	$(BUILD_DIR)/obj/gui/imageview.o \
@@ -59,8 +60,10 @@ objects = \
 	$(BUILD_DIR)/obj/gui/layout.o \
 	$(BUILD_DIR)/obj/gui/radiobutton.o \
 	$(BUILD_DIR)/obj/gui/scrollbar.o \
+	$(BUILD_DIR)/obj/gui/scrollcontainer.o \
 	$(BUILD_DIR)/obj/gui/slider.o \
 	$(BUILD_DIR)/obj/gui/spinbox.o \
+	$(BUILD_DIR)/obj/gui/table.o \
 	$(BUILD_DIR)/obj/gui/tabs.o \
 	$(BUILD_DIR)/obj/gui/textbox.o \
 	$(BUILD_DIR)/obj/gui/toggle.o \

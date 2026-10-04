@@ -30,9 +30,12 @@ SRCS := main.cpp \
         $(ROOT)/gui/inputbox.cpp \
         $(ROOT)/gui/progressbar.cpp \
         $(ROOT)/gui/checkbox.cpp \
+        $(ROOT)/gui/combobox.cpp \
         $(ROOT)/gui/contextmenu.cpp \
         $(ROOT)/gui/imageview.cpp \
         $(ROOT)/gui/textbox.cpp \
+        $(ROOT)/gui/table.cpp \
+        $(ROOT)/gui/scrollcontainer.cpp \
         $(ROOT)/gui/tabs.cpp \
         $(ROOT)/gui/tooltip.cpp \
         $(ROOT)/gui/toggle.cpp \
