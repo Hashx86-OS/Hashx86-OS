@@ -189,6 +189,11 @@ public:
         return isFocused;
     }
 
+    /** IsFocussable() - Report whether this widget may take focus. */
+    bool IsFocussable() const {
+        return isFocussable;
+    }
+
     // -- Hierarchy Management --
 
     /**

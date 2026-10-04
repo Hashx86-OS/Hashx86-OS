@@ -27,6 +27,7 @@
 
 #include <gui/button.h>
 #include <gui/checkbox.h>
+#include <gui/contextmenu.h>
 #include <gui/desktop.h>
 #include <gui/iconbutton.h>
 #include <gui/icons.h>
@@ -39,9 +40,11 @@
 #include <gui/scrollbar.h>
 #include <gui/slider.h>
 #include <gui/spinbox.h>
+#include <gui/tabs.h>
 #include <gui/taskbar.h>
 #include <gui/terminalview.h>
 #include <gui/toggle.h>
+#include <gui/tooltip.h>
 #include <gui/widget.h>
 #include <gui/window.h>
 

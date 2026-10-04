@@ -26,12 +26,15 @@
 #include "../harness.h"
 
 #include <gui/checkbox.h>
+#include <gui/contextmenu.h>
 #include <gui/layout.h>
 #include <gui/radiobutton.h>
 #include <gui/scrollbar.h>
 #include <gui/slider.h>
 #include <gui/spinbox.h>
+#include <gui/tabs.h>
 #include <gui/toggle.h>
+#include <gui/tooltip.h>
 
 TEST(checkbox_toggles_and_emits) {
     CompositeWidget root(nullptr, 0, 0, 200, 200);
@@ -235,4 +238,61 @@ TEST(spinbox_steps_and_clamps) {
 
     sp->OnMouseWheel(5);
     CHECK(sp->GetValue() <= 10);
+}
+
+TEST(tooltip_show_hide) {
+    CompositeWidget root(nullptr, 0, 0, 200, 200);
+    Tooltip* tip = new Tooltip(&root, 5, 5, 80, 20, "hint");
+    root.AddChild(tip);
+    CHECK(!tip->isVisible);
+    CHECK(!tip->IsFocussable());
+    tip->Show();
+    CHECK(tip->isVisible);
+    tip->SetText("other");
+    tip->Hide();
+    CHECK(!tip->isVisible);
+}
+
+TEST(tabs_select_and_emit) {
+    CompositeWidget root(nullptr, 0, 0, 300, 200);
+    Tabs* tabs = new Tabs(&root, 0, 0, 300, 200);
+    root.AddChild(tabs);
+    tabs->SetID(800);
+    tabs->SetPID(7);
+    CHECK(tabs->AddTab("One"));
+    CHECK(tabs->AddTab("Two"));
+    CHECK_EQ(tabs->GetTabCount(), 2);
+    CHECK_EQ(tabs->GetActive(), 0);
+    CHECK(tabs->GetContentArea() != nullptr);
+
+    HostEventReset();
+    tabs->OnMouseUp(90, 10, 1);  // second header (80..160)
+    CHECK_EQ(tabs->GetActive(), 1);
+    CHECK_EQ(HostEventCount(), 1);
+    if (HostEventCount() == 1) CHECK_EQ(HostEventAt(0).param1, 1u);
+
+    tabs->SetActive(0);
+    CHECK_EQ(tabs->GetActive(), 0);
+}
+
+TEST(contextmenu_selects_and_hides) {
+    CompositeWidget root(nullptr, 0, 0, 300, 300);
+    ContextMenu* menu = new ContextMenu(&root);
+    root.AddChild(menu);
+    menu->SetID(900);
+    menu->SetPID(8);
+    CHECK(menu->AddItem("Cut"));
+    CHECK(menu->AddItem("Copy"));
+    CHECK_EQ(menu->GetItemCount(), 2);
+
+    CHECK(!menu->isVisible);
+    menu->ShowAt(40, 40);
+    CHECK(menu->isVisible);
+    CHECK_EQ(menu->h, 48);
+
+    HostEventReset();
+    menu->OnMouseUp(45, 40 + 24 + 5, 1);  // second item
+    CHECK_EQ(HostEventCount(), 1);
+    if (HostEventCount() == 1) CHECK_EQ(HostEventAt(0).param1, 1u);
+    CHECK(!menu->isVisible);
 }
