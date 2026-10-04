@@ -184,6 +184,11 @@ public:
      */
     virtual void RequestTopmostFocus();
 
+    /** IsFocused() - Report whether this widget currently holds focus. */
+    bool IsFocused() const {
+        return isFocused;
+    }
+
     // -- Hierarchy Management --
 
     /**

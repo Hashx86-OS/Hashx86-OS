@@ -27,6 +27,7 @@
 #include "framework.h"
 
 // Suites self-register when included. Add new suites here.
+#include "suites/core_suite.cpp"
 #include "suites/widget_base_suite.cpp"
 
 int main(int argc, char** argv) {
@@ -55,5 +56,11 @@ int main(int argc, char** argv) {
     std::printf("# TOTAL_TESTS=%d FAILED_TESTS=%d FAILED_CHECKS=%d\n", guitest::g_testCount,
                 failedTests, guitest::g_failed);
 
-    return failedTests ? 1 : 0;
+    if (failedTests) return 1;
+    if (guitest::g_checks < 10000) {
+        std::printf("# ERROR: only %d checks ran; the suite must produce at least 10000.\n",
+                    guitest::g_checks);
+        return 2;
+    }
+    return 0;
 }
