@@ -28,6 +28,7 @@
 
 // Suites self-register when included. Add new suites here.
 #include "suites/core_suite.cpp"
+#include "suites/event_suite.cpp"
 #include "suites/widget_base_suite.cpp"
 
 int main(int argc, char** argv) {

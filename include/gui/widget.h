@@ -270,6 +270,32 @@ public:
     virtual void OnKeyUp(const char* key);
     virtual void OnSpecialKeyUp(uint8_t key);
 
+    // -- Extended input events (default: no-op) --
+
+    /** OnMouseWheel() - Scroll by @delta notches at the current cursor. */
+    virtual void OnMouseWheel(int32_t delta);
+
+    /** OnDoubleClick() - A second press landed within the double-click window. */
+    virtual void OnDoubleClick(int32_t x, int32_t y, uint8_t button);
+
+    /** OnDragStart() - A press moved past the drag threshold. */
+    virtual void OnDragStart(int32_t x, int32_t y, uint8_t button);
+
+    /** OnDragMove() - The pointer moved while dragging (delta in pixels). */
+    virtual void OnDragMove(int32_t dx, int32_t dy);
+
+    /** OnDragEnd() - The drag was released. */
+    virtual void OnDragEnd(int32_t x, int32_t y, uint8_t button);
+
+    /** OnKeyRepeat() - A held key repeated; @count is the repeat index. */
+    virtual void OnKeyRepeat(const char* key, uint32_t count);
+
+    /** OnKeyDownMod() - Key press with the current modifier mask. */
+    virtual void OnKeyDownMod(const char* key, uint8_t modifiers);
+
+    /** OnTabFocus() - Tab traversal; @backwards selects the previous widget. */
+    virtual void OnTabFocus(bool backwards);
+
     virtual bool IsComposite() const;
     virtual bool IsMouseCaptured() const;
     virtual bool IsPressed() const;
@@ -321,6 +347,10 @@ public:
 class CompositeWidget : public Widget {
 private:
     Widget* focusedChild = nullptr;
+    // Last pointer position in this composite's local coordinates, used to
+    // route wheel events, which carry no position of their own.
+    int32_t lastMouseX = 0;
+    int32_t lastMouseY = 0;
 
 public:
     /**
@@ -370,6 +400,12 @@ public:
     virtual void OnSpecialKeyDown(uint8_t key) override;
     virtual void OnKeyUp(const char* key) override;
     virtual void OnSpecialKeyUp(uint8_t key) override;
+
+    virtual void OnMouseWheel(int32_t delta) override;
+    virtual void OnDoubleClick(int32_t x, int32_t y, uint8_t button) override;
+    virtual void OnKeyRepeat(const char* key, uint32_t count) override;
+    virtual void OnKeyDownMod(const char* key, uint8_t modifiers) override;
+    virtual void OnTabFocus(bool backwards) override;
 };
 
 #endif  // WIDGET_H

@@ -1,0 +1,130 @@
+/*
+ * MIT License
+ *
+ * Copyright (c) 2025 Malaka Gunawardana
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
+ */
+
+#include "../framework.h"
+
+#include <gui/inputEvent.h>
+#include <gui/widget.h>
+
+namespace {
+
+/** Probe - A leaf widget that counts each extended input event it receives. */
+struct Probe : public Widget {
+    int wheel = 0;
+    int dbl = 0;
+    int repeat = 0;
+    int mod = 0;
+
+    Probe(Widget* parent, int32_t x, int32_t y, int32_t w, int32_t h)
+        : Widget(parent, x, y, w, h) {}
+
+    void OnMouseWheel(int32_t) override {
+        wheel++;
+    }
+    void OnDoubleClick(int32_t, int32_t, uint8_t) override {
+        dbl++;
+    }
+    void OnKeyRepeat(const char*, uint32_t) override {
+        repeat++;
+    }
+    void OnKeyDownMod(const char*, uint8_t) override {
+        mod++;
+    }
+};
+
+}  // namespace
+
+TEST(wheel_routes_to_child_under_last_position) {
+    CompositeWidget root(nullptr, 0, 0, 100, 100);
+    Probe* a = new Probe(&root, 0, 0, 50, 50);
+    Probe* b = new Probe(&root, 50, 50, 50, 50);
+    root.AddChild(a);
+    root.AddChild(b);
+
+    root.OnMouseMove(0, 0, 10, 10);  // cursor over a
+    root.OnMouseWheel(1);
+    CHECK_EQ(a->wheel, 1);
+    CHECK_EQ(b->wheel, 0);
+
+    root.OnMouseMove(10, 10, 60, 60);  // cursor over b
+    root.OnMouseWheel(-1);
+    CHECK_EQ(a->wheel, 1);
+    CHECK_EQ(b->wheel, 1);
+    // root destructor deletes a and b.
+}
+
+TEST(double_click_routes_to_hit_child) {
+    CompositeWidget root(nullptr, 0, 0, 100, 100);
+    Probe* a = new Probe(&root, 0, 0, 50, 50);
+    Probe* b = new Probe(&root, 50, 50, 50, 50);
+    root.AddChild(a);
+    root.AddChild(b);
+
+    root.OnDoubleClick(20, 20, 1);
+    CHECK_EQ(a->dbl, 1);
+    CHECK_EQ(b->dbl, 0);
+
+    root.OnDoubleClick(70, 70, 1);
+    CHECK_EQ(a->dbl, 1);
+    CHECK_EQ(b->dbl, 1);
+}
+
+TEST(tab_traversal_skips_non_focussable) {
+    CompositeWidget root(nullptr, 0, 0, 300, 40);
+    Probe* a = new Probe(&root, 0, 0, 50, 40);
+    Probe* mid = new Probe(&root, 60, 0, 50, 40);
+    Probe* b = new Probe(&root, 120, 0, 50, 40);
+    mid->SetFocussable(false);
+    root.AddChild(a);
+    root.AddChild(mid);
+    root.AddChild(b);
+
+    root.GetFocus(a);
+    CHECK(a->IsFocused());
+
+    root.OnTabFocus(false);
+    CHECK(b->IsFocused());
+    CHECK(!a->IsFocused());
+    CHECK(!mid->IsFocused());
+
+    root.OnTabFocus(true);
+    CHECK(a->IsFocused());
+    CHECK(!b->IsFocused());
+}
+
+TEST(key_repeat_and_modifiers_reach_focused_child) {
+    CompositeWidget root(nullptr, 0, 0, 100, 100);
+    Probe* a = new Probe(&root, 0, 0, 50, 50);
+    Probe* b = new Probe(&root, 50, 50, 50, 50);
+    root.AddChild(a);
+    root.AddChild(b);
+
+    root.GetFocus(b);
+    root.OnKeyRepeat("x", 3);
+    root.OnKeyDownMod("y", MOD_SHIFT | MOD_CTRL);
+    CHECK_EQ(a->repeat, 0);
+    CHECK_EQ(a->mod, 0);
+    CHECK_EQ(b->repeat, 1);
+    CHECK_EQ(b->mod, 1);
+}

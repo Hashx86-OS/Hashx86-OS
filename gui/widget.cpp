@@ -258,6 +258,17 @@ void Widget::OnSpecialKeyDown(uint8_t) {}
 void Widget::OnKeyUp(const char*) {}
 void Widget::OnSpecialKeyUp(uint8_t) {}
 
+void Widget::OnMouseWheel(int32_t) {}
+void Widget::OnDoubleClick(int32_t, int32_t, uint8_t) {}
+void Widget::OnDragStart(int32_t, int32_t, uint8_t) {}
+void Widget::OnDragMove(int32_t, int32_t) {}
+void Widget::OnDragEnd(int32_t, int32_t, uint8_t) {}
+void Widget::OnKeyRepeat(const char*, uint32_t) {}
+void Widget::OnKeyDownMod(const char* key, uint8_t) {
+    OnKeyDown(key);
+}
+void Widget::OnTabFocus(bool) {}
+
 bool Widget::IsComposite() const {
     return false;
 }
@@ -393,6 +404,9 @@ void CompositeWidget::OnMouseMove(int32_t oldx, int32_t oldy, int32_t newx, int3
     int32_t localNewX = newx - this->x;
     int32_t localNewY = newy - this->y;
 
+    this->lastMouseX = localNewX;
+    this->lastMouseY = localNewY;
+
     childrenList.ForEach([&](Widget* child) {
         // Notify if the mouse is inside, entering/exiting, or the child has capture.
         bool inOld = child->ContainsCoordinate(localOldX, localOldY);
@@ -424,4 +438,61 @@ void CompositeWidget::OnSpecialKeyDown(uint8_t key) {
 
 void CompositeWidget::OnSpecialKeyUp(uint8_t key) {
     if (focusedChild) focusedChild->OnSpecialKeyUp(key);
+}
+
+void CompositeWidget::OnMouseWheel(int32_t delta) {
+    // Wheel events carry no position; route to the child under the last
+    // pointer position, front to back.
+    Widget* target = nullptr;
+    childrenList.ReverseForEach([&](Widget* child) {
+        if (!target && child->ContainsCoordinate(lastMouseX, lastMouseY)) {
+            target = child;
+        }
+    });
+    if (target) target->OnMouseWheel(delta);
+}
+
+void CompositeWidget::OnDoubleClick(int32_t x, int32_t y, uint8_t button) {
+    int32_t localX = x - this->x;
+    int32_t localY = y - this->y;
+
+    Widget* target = nullptr;
+    childrenList.ReverseForEach([&](Widget* child) {
+        if (!target && child->ContainsCoordinate(localX, localY)) {
+            child->OnDoubleClick(localX, localY, button);
+            target = child;
+        }
+    });
+}
+
+void CompositeWidget::OnKeyRepeat(const char* key, uint32_t count) {
+    if (focusedChild) focusedChild->OnKeyRepeat(key, count);
+}
+
+void CompositeWidget::OnKeyDownMod(const char* key, uint8_t modifiers) {
+    if (focusedChild) focusedChild->OnKeyDownMod(key, modifiers);
+}
+
+void CompositeWidget::OnTabFocus(bool backwards) {
+    Widget* focusable[64];
+    int count = 0;
+    childrenList.ForEach([&](Widget* child) {
+        if (count < 64 && child->isFocussable && child->isVisible) {
+            focusable[count++] = child;
+        }
+    });
+    if (count == 0) return;
+
+    int current = -1;
+    for (int i = 0; i < count; i++) {
+        if (focusable[i] == focusedChild) current = i;
+    }
+
+    int next;
+    if (backwards) {
+        next = (current <= 0) ? count - 1 : current - 1;
+    } else {
+        next = (current + 1) % count;
+    }
+    GetFocus(focusable[next]);
 }
