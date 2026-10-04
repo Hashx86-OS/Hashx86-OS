@@ -25,14 +25,18 @@
 #include "../framework.h"
 #include "../harness.h"
 
+#include <cstring>
+
 #include <gui/checkbox.h>
 #include <gui/contextmenu.h>
+#include <gui/imageview.h>
 #include <gui/layout.h>
 #include <gui/radiobutton.h>
 #include <gui/scrollbar.h>
 #include <gui/slider.h>
 #include <gui/spinbox.h>
 #include <gui/tabs.h>
+#include <gui/textbox.h>
 #include <gui/toggle.h>
 #include <gui/tooltip.h>
 
@@ -295,4 +299,51 @@ TEST(contextmenu_selects_and_hides) {
     CHECK_EQ(HostEventCount(), 1);
     if (HostEventCount() == 1) CHECK_EQ(HostEventAt(0).param1, 1u);
     CHECK(!menu->isVisible);
+}
+
+TEST(imageview_copies_and_scales) {
+    CompositeWidget root(nullptr, 0, 0, 100, 100);
+    const uint32_t src[4] = {0xFFFF0000u, 0xFF00FF00u, 0xFF0000FFu, 0xFFFFFFFFu};
+    ImageView* iv = new ImageView(&root, 0, 0, 2, 2, src, 2, 2);
+    root.AddChild(iv);
+    CHECK(!iv->IsFocussable());
+    iv->RedrawToCache();
+    CHECK(iv->cache != nullptr);
+    if (iv->cache) {
+        CHECK_EQ(iv->cache[0], 0xFFFF0000u);
+        CHECK_EQ(iv->cache[3], 0xFFFFFFFFu);
+    }
+
+    // Replacing the image must copy, not alias.
+    uint32_t other[4] = {0, 0, 0, 0};
+    iv->SetImage(other, 2, 2);
+    other[0] = 0xDEADBEEFu;
+    iv->RedrawToCache();
+    if (iv->cache) CHECK_EQ(iv->cache[0], 0u);
+}
+
+TEST(textbox_edits_and_clamps) {
+    CompositeWidget root(nullptr, 0, 0, 200, 100);
+    TextBox* tb = new TextBox(&root, 0, 0, 150, 60, 8);
+    root.AddChild(tb);
+
+    tb->SetText("hello");
+    CHECK_EQ(tb->GetLength(), 5u);
+    CHECK_EQ(strcmp(tb->GetText(), "hello"), 0);
+
+    tb->OnKeyDown("X");
+    CHECK_EQ(tb->GetLength(), 6u);
+    CHECK_EQ(strcmp(tb->GetText(), "helloX"), 0);
+
+    tb->OnSpecialKeyDown(0x0E);  // Backspace
+    CHECK_EQ(strcmp(tb->GetText(), "hello"), 0);
+
+    tb->SetReadOnly(true);
+    tb->OnKeyDown("Z");
+    CHECK_EQ(strcmp(tb->GetText(), "hello"), 0);
+
+    // Capacity clamp: 8 bytes total, so at most 7 characters.
+    tb->SetReadOnly(false);
+    tb->SetText("0123456789");
+    CHECK(tb->GetLength() <= 7u);
 }

@@ -31,6 +31,7 @@
 #include <gui/desktop.h>
 #include <gui/iconbutton.h>
 #include <gui/icons.h>
+#include <gui/imageview.h>
 #include <gui/infodialog.h>
 #include <gui/inputbox.h>
 #include <gui/label.h>
@@ -43,6 +44,7 @@
 #include <gui/tabs.h>
 #include <gui/taskbar.h>
 #include <gui/terminalview.h>
+#include <gui/textbox.h>
 #include <gui/toggle.h>
 #include <gui/tooltip.h>
 #include <gui/widget.h>
