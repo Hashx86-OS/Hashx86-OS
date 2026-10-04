@@ -27,6 +27,10 @@
 #include <core/globals.h>
 #include <gui/Hgui.h>
 #include <gui/desktop.h>
+#include <gui/widgetHost.h>
+
+// Install the kernel implementation of the portable widget host interface.
+extern void InstallKernelWidgetHost();
 
 namespace {
 constexpr uint32_t USER_LOWER_BOUND = 0x10000000;
@@ -126,6 +130,11 @@ HguiHandler* HguiHandler::activeInstance = nullptr;
 HguiHandler::HguiHandler(uint8_t InterruptNumber, InterruptManager* interruptManager)
     : InterruptHandler(InterruptNumber + 0x20, interruptManager) {
     this->activeInstance = this;
+
+    // Keep the widget layer decoupled from the syscall handler: it reaches the
+    // kernel only through these two hooks.
+    Widget::destructorNotify = &HguiHandler::RemoveWidget;
+    InstallKernelWidgetHost();
 
     if (Desktop::activeInstance) {
         HguiWidgets.Add(Desktop::activeInstance);

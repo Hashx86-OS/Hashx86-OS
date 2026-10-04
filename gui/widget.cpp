@@ -23,11 +23,12 @@
  */
 
 #define KDBG_COMPONENT "GUI:WIDGET"
-#include <core/Iguard.h>
-#include <gui/Hgui.h>
+#include <gui/guiplat.h>
 #include <gui/widget.h>
 
 // Widget base class.
+
+void (*Widget::destructorNotify)(Widget*) = nullptr;
 
 Widget::Widget(Widget* parent, int32_t x, int32_t y, int32_t w, int32_t h) {
     this->parent = parent;
@@ -40,11 +41,11 @@ Widget::Widget(Widget* parent, int32_t x, int32_t y, int32_t w, int32_t h) {
     if (w > 0 && h > 0) {
         size_t count = (size_t)w * (size_t)h;
         if (count / (size_t)w != (size_t)h || count > (0xFFFFFFFFu / sizeof(uint32_t))) {
-            HALT("CRITICAL: Widget dimensions overflow!\n");
+            guiplat::Abort("CRITICAL: Widget dimensions overflow!\n");
         }
         cache = new uint32_t[count]();
         if (!cache) {
-            HALT("CRITICAL: Failed to allocate widget cache!\n");
+            guiplat::Abort("CRITICAL: Failed to allocate widget cache!\n");
         }
     }
 }
@@ -54,7 +55,7 @@ Widget::~Widget() {
     // living parent's childrenList, otherwise a later CompositeWidget redraw
     // dereferences freed memory.  Detach from the parent before freeing.
     if (parent) parent->RemoveChild(this);
-    HguiHandler::RemoveWidget(this);
+    if (destructorNotify) destructorNotify(this);
     if (cache) delete[] cache;
 }
 
@@ -120,7 +121,7 @@ void Widget::RedrawToCache() {
     if (cache) memset(cache, 0, sizeof(uint32_t) * w * h);
 }
 
-void Widget::Draw(GraphicsDriver* gc) {
+void Widget::Draw(RasterSurface* gc) {
     // Refresh the cache if dirty.
     if (isDirty) {
         if (isVisible) {
@@ -174,6 +175,15 @@ void Widget::SetFocussable(bool focussable) {
             parent->GetFocus(nullptr);
         }
     }
+}
+
+void Widget::RequestTopmostFocus() {
+    // Raise this widget to the top of its parent's Z-order. Mirrors what
+    // Desktop::Focus() does for top-level windows, but works for any container.
+    if (!parent) return;
+    parent->childrenList.Remove([&](Widget* c) { return c == this; });
+    parent->childrenList.PushBack(this);
+    parent->MarkDirty();
 }
 
 // Child management.
@@ -321,10 +331,10 @@ bool CompositeWidget::RemoveChild(Widget* child) {
     return Widget::RemoveChild(child);
 }
 
-void CompositeWidget::Draw(GraphicsDriver* gc) {
+void CompositeWidget::Draw(RasterSurface* gc) {
     // Serialize against concurrent tree mutation (process-exit teardown and
     // widget syscalls run on other threads and can free children mid-iteration).
-    InterruptGuard guard;
+    GuiCriticalGuard guard;
 
     // Draw the widget itself.
     Widget::Draw(gc);

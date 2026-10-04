@@ -29,6 +29,7 @@
 #include <core/settings.h>
 #include <gui/bootanim.h>
 #include <gui/desktop.h>
+#include <gui/fonts/fontKernel.h>
 #include <kernel.h>
 
 #define DEBUG_ENABLED TRUE;
@@ -619,6 +620,7 @@ void BootMain(void* arg) {
     if (!g_fManager) {
         HALT("CRITICAL: Failed to allocate FontManager!\n");
     }
+    FontManager::variantLoader = &KernelLoadFontFile;
 
     auto loadFontStyle = [&](const char* path, FontType style, bool critical) {
         File* f = g_bootPartition->Open(path);
@@ -633,7 +635,7 @@ void BootMain(void* arg) {
             }
             return;
         }
-        g_fManager->LoadFile(f, style, path);
+        LoadFontFromFile(g_fManager, f, style, path);
         f->Close();
         delete f;
         KDBG1("Loaded font style %d from %s", (int)style, path);
@@ -649,7 +651,7 @@ void BootMain(void* arg) {
     {
         File* f = g_bootPartition->Open(PATH_ICON_FONT);
         if (f && f->size > 0) {
-            g_fManager->LoadFile(f, REGULAR, PATH_ICON_FONT, 0xF000, 128);
+            LoadFontFromFile(g_fManager, f, REGULAR, PATH_ICON_FONT, 0xF000, 128);
             f->Close();
             delete f;
             KDBG1("Loaded icon font from %s", PATH_ICON_FONT);

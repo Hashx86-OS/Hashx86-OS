@@ -29,27 +29,6 @@
 #include <Hx86/stdint.h>
 #include <Hx86/utils/linkedList.h>
 
-/** struct WidgetData - Payload buffer passed to HguiAPI() for widget operations.
- * @param0: Device-side widget ID or target widget ID.
- * @param1: Optional signed parameter (geometry, font size, etc.).
- * @param2: Optional signed parameter (geometry, alignment, etc.).
- * @param3: Optional unsigned parameter.
- * @param4: Optional unsigned parameter.
- * @param5: Optional string parameter (text, label, icon name).
- * @param6: Optional string output buffer.
- * @param7: Optional string output buffer.
- */
-struct WidgetData {
-    uint32_t param0;
-    int32_t param1;
-    int32_t param2;
-    uint32_t param3;
-    uint32_t param4;
-    const char* param5;
-    char* param6;
-    char* param7;
-};
-
 // Font style used to render widget text.
 typedef enum {
     REGULAR = 0x0,

@@ -25,10 +25,10 @@
 #ifndef WINDOW_H
 #define WINDOW_H
 
-#include <core/scheduler.h>
-#include <gui/desktop.h>
 #include <gui/elements/window_action_button_round.h>
+#include <gui/event.h>
 #include <gui/widget.h>
+#include <gui/widgetHost.h>
 
 /**
  * class Window - A draggable container window with a title bar and close button.
@@ -90,7 +90,7 @@ public:
     // Drawing.
 
     /** Draw() - Raise the window in the Z-order and paint it with children. */
-    void Draw(GraphicsDriver* gc) override;
+    void Draw(RasterSurface* gc) override;
 
     /** RedrawToCache() - Paint the window frame, title bar, and close button. */
     void RedrawToCache() override;

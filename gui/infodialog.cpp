@@ -105,7 +105,7 @@ void InfoDialog::HideDialog() {
     MarkDirty();
 }
 
-void InfoDialog::Draw(GraphicsDriver* gc) {
+void InfoDialog::Draw(RasterSurface* gc) {
     if (!isVisible) return;
 
     Window::Draw(gc);

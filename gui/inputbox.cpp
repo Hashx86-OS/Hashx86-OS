@@ -44,7 +44,7 @@ InputBox::InputBox(Widget* parent, int32_t x, int32_t y, int32_t w, int32_t h, u
     this->font = FontManager::activeInstance->getNewFont();
     text = new char[this->capacity];
     if (!text) {
-        HALT("CRITICAL: Failed to allocate inputbox text buffer!\n");
+        guiplat::Abort("CRITICAL: Failed to allocate inputbox text buffer!\n");
     }
     text[0] = '\0';  // Start empty.
 }
@@ -95,7 +95,7 @@ void InputBox::RedrawToCache() {
     isDirty = false;
 }
 
-void InputBox::Draw(GraphicsDriver* gc) {
+void InputBox::Draw(RasterSurface* gc) {
     Widget::Draw(gc);
 }
 

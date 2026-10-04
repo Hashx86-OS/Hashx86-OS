@@ -25,14 +25,12 @@
 #ifndef WIDGET_H
 #define WIDGET_H
 
-#include <core/drivers/keyboard.h>
-#include <core/memory.h>
-#include <debug.h>
 #include <gui/config/config.h>
-#include <gui/eventHandler.h>
+#include <gui/event.h>
 #include <gui/fonts/font.h>
+#include <gui/guiplat.h>
 #include <gui/icons.h>
-#include <gui/renderer/nina.h>
+#include <gui/render/raster.h>
 #include <string.h>
 #include <types.h>
 #include <utils/linkedList.h>
@@ -101,6 +99,14 @@ public:
      */
     virtual ~Widget();
 
+    /**
+     * destructorNotify() - Environment hook invoked as each widget is destroyed.
+     *
+     * The kernel GUI installs this to keep its global widget registry in sync;
+     * host tests leave it null. Set once by the environment, never by widgets.
+     */
+    static void (*destructorNotify)(Widget* w);
+
     // -- Drawing & Updates --
 
     /**
@@ -134,9 +140,9 @@ public:
 
     /**
      * Draw() - Blit the cache to the screen if the widget is dirty.
-     * @gc: Target graphics driver.
+     * @gc: Target raster surface.
      */
-    virtual void Draw(GraphicsDriver* gc);
+    virtual void Draw(RasterSurface* gc);
 
     /**
      * Recalc() - Recompute dimensions from the size mode.
@@ -168,6 +174,15 @@ public:
      * @focussable: True to allow focus.
      */
     virtual void SetFocussable(bool focussable);
+
+    /**
+     * RequestTopmostFocus() - Ask the environment to focus and raise this widget.
+     *
+     * Used when a window is dragged by its title bar. The default does nothing;
+     * a CompositeWidget raises and focuses the widget in its container, and the
+     * kernel desktop adds real keyboard focus on top.
+     */
+    virtual void RequestTopmostFocus();
 
     // -- Hierarchy Management --
 
@@ -337,9 +352,9 @@ public:
 
     /**
      * Draw() - Raise the focused child and redraw all children back-to-front.
-     * @gc: Target graphics driver.
+     * @gc: Target raster surface.
      */
-    virtual void Draw(GraphicsDriver* gc) override;
+    virtual void Draw(RasterSurface* gc) override;
 
     // Event routing.
     virtual void OnMouseDown(int32_t x, int32_t y, uint8_t button) override;

@@ -30,14 +30,14 @@ Window::Window(CompositeWidget* parent, int32_t x, int32_t y, int32_t w, int32_t
     this->isDragging = false;
     this->windowTitle = new char[10];
     if (!this->windowTitle) {
-        HALT("CRITICAL: Failed to allocate window title!\n");
+        guiplat::Abort("CRITICAL: Failed to allocate window title!\n");
     }
     strcpy(this->windowTitle, "Untitled");
     this->font = FontManager::activeInstance->getNewFont();
 
     closeButton = new ACRButton(this, w - 22, 4, "x");
     if (!closeButton) {
-        HALT("CRITICAL: Failed to allocate window close button!\n");
+        guiplat::Abort("CRITICAL: Failed to allocate window close button!\n");
     }
     closeButton->OnClick(this, [](void* instance) { static_cast<Window*>(instance)->OnClose(); });
 
@@ -54,30 +54,18 @@ Window::~Window() {
 void Window::OnClose() {
     if (this->parent) this->parent->MarkDirty();
 
-    // Kernel/system windows may not have a GUI event handler; hide directly
-    // instead of dereferencing a null handler.
-    if (!Desktop::activeInstance) {
-        this->setVisible(false);
-        if (this->parent) this->parent->RemoveChild(this);
-        return;
+    // Route the close through the widget host so the owning process decides
+    // what to do. When there is no host, no owner, or no handler for the owner,
+    // fall back to hiding directly, which is what kernel/system windows rely on.
+    if (g_widgetHost && this->PID != 0) {
+        if (g_widgetHost->PostEvent(this->PID, this->ID, ON_WINDOW_CLOSE)) {
+            g_widgetHost->WakeProcess(this->PID);
+            return;
+        }
     }
 
-    EventHandler* handler = Desktop::activeInstance->getHandler(this->PID);
-    if (!handler) {
-        this->setVisible(false);
-        if (this->parent) this->parent->RemoveChild(this);
-        return;
-    }
-
-    Event* new_event = new Event{this->ID, ON_WINDOW_CLOSE};
-    if (!new_event) {
-        HALT("CRITICAL: Failed to allocate window close event!\n");
-    }
-
-    handler->eventQueue.Add(new_event);
-    if (g_scheduler && handler->thread) {
-        g_scheduler->WakeThread(handler->thread);
-    }
+    this->setVisible(false);
+    if (this->parent) this->parent->RemoveChild(this);
 }
 
 void Window::SetTitleFontSize(int32_t px) {
@@ -96,7 +84,7 @@ void Window::setWindowTitle(const char* title) {
     if (windowTitle) delete[] windowTitle;
     windowTitle = new char[strlen(title) + 1];
     if (!windowTitle) {
-        HALT("CRITICAL: Failed to allocate window title!\n");
+        guiplat::Abort("CRITICAL: Failed to allocate window title!\n");
     }
     strcpy(windowTitle, title);
     MarkDirty();
@@ -108,7 +96,7 @@ void Window::setVisible(bool val) {
     MarkDirty();
 }
 
-void Window::Draw(GraphicsDriver* gc) {
+void Window::Draw(RasterSurface* gc) {
     int X = 0, Y = 0;
     ModelToScreen(X, Y);
 
@@ -158,12 +146,8 @@ void Window::OnMouseDown(int32_t x, int32_t y, uint8_t button) {
     // Check the header area (top 25 pixels).
     if (localX >= 0 && localX <= w - 26 && localY >= 0 && localY <= 25) {
         isDragging = (button == 1);
-        if (isDragging && parent) {
-            Desktop* desktop =
-                (parent == Desktop::activeInstance) ? static_cast<Desktop*>(parent) : nullptr;
-            if (desktop) {
-                desktop->Focus(this);
-            }
+        if (isDragging) {
+            this->RequestTopmostFocus();
         }
     }
 

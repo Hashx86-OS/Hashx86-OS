@@ -35,6 +35,9 @@
 #define GUI_SCREEN_HEIGHT 768
 #define GUI_SCREEN_BPP 32
 
+// Icon font path, used by IconButton to resolve symbolic icon names.
+#define GUI_ICON_FONT_PATH "Hashx86/fonts/fa-solid-900.ttf"
+
 // All color constants below are packed as 0xAARRGGBB.
 #define DESKTOP_TASKBAR_BG 0xFF151515
 

@@ -25,9 +25,8 @@
 #ifndef BUTTON_H
 #define BUTTON_H
 
-#include <core/scheduler.h>
-#include <gui/desktop.h>
 #include <gui/widget.h>
+#include <gui/widgetHost.h>
 
 /**
  * class Button - A clickable button widget with label text.

@@ -23,9 +23,8 @@
  */
 
 #define KDBG_COMPONENT "GUI:LISTVIEW"
-#include <core/scheduler.h>
-#include <gui/desktop.h>
 #include <gui/listview.h>
+#include <gui/widgetHost.h>
 
 ListView::ListView(Widget* parent, int32_t x, int32_t y, int32_t w, int32_t h)
     : Widget(parent, x, y, w, h),
@@ -116,22 +115,9 @@ void ListView::OnKeyDown(const char* key) {
 
     if (key[0] == '\r' || key[0] == '\n' || key[0] == ' ') {
         // Enter or Space fire a click event.
-        if (selectedIndex >= 0) {
-            Event* new_event = new Event{this->ID, ON_CLICK};
-            if (!new_event) return;
-            if (!Desktop::activeInstance) {
-                delete new_event;
-                return;
-            }
-            EventHandler* handler = Desktop::activeInstance->getHandler(this->PID);
-            if (!handler) {
-                delete new_event;
-                return;
-            }
-            handler->eventQueue.Add(new_event);
-            if (g_scheduler && handler->thread) {
-                g_scheduler->WakeThread(handler->thread);
-            }
+        if (selectedIndex >= 0 && g_widgetHost) {
+            g_widgetHost->PostEvent(this->PID, this->ID, ON_CLICK);
+            g_widgetHost->WakeProcess(this->PID);
         }
     }
 }
@@ -356,25 +342,9 @@ void ListView::OnMouseDown(int32_t mx, int32_t my, uint8_t button) {
             selectedIndex = clickedItem;
             MarkDirty();
 
-            Event* new_event = new Event{this->ID, ON_CLICK};
-            if (!new_event) {
-                HALT("CRITICAL: Failed to allocate ListView click event!\n");
-            }
-
-            if (!Desktop::activeInstance) {
-                delete new_event;
-                return;
-            }
-
-            EventHandler* handler = Desktop::activeInstance->getHandler(this->PID);
-            if (!handler) {
-                delete new_event;
-                return;
-            }
-
-            handler->eventQueue.Add(new_event);
-            if (g_scheduler && handler->thread) {
-                g_scheduler->WakeThread(handler->thread);
+            if (g_widgetHost) {
+                g_widgetHost->PostEvent(this->PID, this->ID, ON_CLICK);
+                g_widgetHost->WakeProcess(this->PID);
             }
         }
     }

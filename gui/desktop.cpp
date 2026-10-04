@@ -201,7 +201,7 @@ EventHandler* Desktop::getHandler(uint32_t pid) {
     return _eventHandler;
 }
 
-void Desktop::Draw(GraphicsDriver* gc) {
+void Desktop::Draw(RasterSurface* gc) {
     // Serialize against concurrent tree mutation.
     InterruptGuard guard;
 

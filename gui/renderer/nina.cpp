@@ -24,6 +24,7 @@
 
 #define KDBG_COMPONENT "GUI:NINA"
 #include <gui/renderer/nina.h>
+#include <string.h>
 
 NINA* NINA::activeInstance = nullptr;
 

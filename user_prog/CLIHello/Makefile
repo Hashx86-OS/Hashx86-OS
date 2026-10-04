@@ -5,7 +5,7 @@ LD = ld
 BUILD_DIR ?= ../../build/user
 LIBHX86_BUILD_DIR ?= ../../build/libhx86
 
-INCLUDES = -Iinclude -I../libhx86/include
+INCLUDES = -Iinclude -I../libhx86/include -I../../include
 
 CPPFLAGS = -m32 -O2 -g -ffreestanding -fno-use-cxa-atexit -nostdlib -fno-builtin -fno-rtti -fno-exceptions -fno-common $(INCLUDES)
 

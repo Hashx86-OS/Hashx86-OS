@@ -404,7 +404,7 @@ void StartMenu::resizeToFitItems() {
     }
 }
 
-void StartMenu::Draw(GraphicsDriver* gc) {
+void StartMenu::Draw(RasterSurface* gc) {
     if (!isVisible) return;
 
     // Check whether any child is dirty.
@@ -902,7 +902,7 @@ void Taskbar::UpdateClock() {
     clockLabel->setText(timeStr);
 }
 
-void Taskbar::Draw(GraphicsDriver* gc) {
+void Taskbar::Draw(RasterSurface* gc) {
     // Clock update.
     uint32_t currentTick = (uint32_t)timerTicks;
     if (currentTick - lastUpdateTick >= 1000) {

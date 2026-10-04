@@ -29,6 +29,7 @@
 #include <core/drivers/keyboard.h>
 #include <core/drivers/mouse.h>
 #include <gui/bmp.h>
+#include <gui/eventHandler.h>
 #include <gui/taskbar.h>
 #include <gui/widget.h>
 
@@ -129,7 +130,7 @@ public:
      * Draw() - Master draw: restore the cursor, paint widgets and wallpaper.
      * @gc: Target graphics driver.
      */
-    void Draw(GraphicsDriver* gc) override;
+    void Draw(RasterSurface* gc) override;
 
     /**
      * getNewID() - Allocate a unique widget instance ID.

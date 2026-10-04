@@ -88,7 +88,7 @@ public:
     void RedrawToCache() override;
 
     /** Draw() - Blit the input field to the screen. */
-    void Draw(GraphicsDriver* gc) override;
+    void Draw(RasterSurface* gc) override;
 
     /** OnKeyDown() - Insert the typed character and move the cursor. */
     void OnKeyDown(const char* key) override;

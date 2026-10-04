@@ -25,9 +25,6 @@
 #ifndef FONT_H
 #define FONT_H
 
-#include <core/filesystem/File.h>
-#include <core/memory.h>
-#include <debug.h>
 #include <types.h>
 #include <utils/linkedList.h>
 
@@ -201,10 +198,22 @@ private:
 };
 
 /**
+ * FontFileLoader - Environment hook that reads a font file into memory.
+ * @path: Font file path to load.
+ * @outData: Receives a heap buffer of @outLen bytes; caller frees with delete[].
+ * @outLen: Receives the number of bytes read.
+ *
+ * Return: True on success. The kernel installs a loader backed by the boot
+ * partition; host tests may install one backed by the host filesystem, or leave
+ * it null to disable lazy style loading.
+ */
+typedef bool (*FontFileLoader)(const char* path, uint8_t** outData, size_t* outLen);
+
+/**
  * class FontManager - Owner of every loaded font and the font-file registry.
  *
- * Loads font files from disk or memory, lazily materializes style variants,
- * and hands out Font wrappers on request.
+ * Loads font files from memory, lazily materializes style variants, and hands
+ * out Font wrappers on request.
  */
 class FontManager {
 public:
@@ -221,6 +230,14 @@ public:
     static FontManager* activeInstance;
 
     /**
+     * variantLoader - Reader used to lazy-load bold/italic style variants.
+     *
+     * Null disables lazy loading, which is the safe default for environments
+     * with no filesystem (host tests that did not install a loader).
+     */
+    static FontFileLoader variantLoader;
+
+    /**
      * LoadFile() - Load a font file embedded in a multiboot module.
      * @mod_start: Start address of the font module.
      * @mod_end: End address of the font module.
@@ -228,15 +245,16 @@ public:
     void LoadFile(uint32_t mod_start, uint32_t mod_end);
 
     /**
-     * LoadFile() - Load a font file from a File object.
-     * @file: Open file positioned at the font payload.
-     * @style: Style to register the default variant as.
+     * LoadMemory() - Load a TTF font from an in-memory byte buffer.
+     * @data: TTF file bytes.
+     * @len: Byte length of @data.
+     * @style: Style to register the loaded variants as.
      * @ttfPath: Source TTF path (empty if loaded from an archive).
      * @firstChar: Starting codepoint of the glyph range.
      * @numChars: Number of glyphs to load.
      */
-    void LoadFile(File* file, FontType style, const char* ttfPath = nullptr, int firstChar = 32,
-                  int numChars = 95);
+    void LoadMemory(const uint8_t* data, size_t len, FontType style, const char* ttfPath = nullptr,
+                    int firstChar = 32, int numChars = 95);
 
     /**
      * getNewFont() - Return a font wrapper for the requested size and style.

@@ -342,7 +342,7 @@ public:
     void AddPowerButton(StartMenuAction action, const char* iconName);
 
     /** Draw() - Paint the menu with its entries. */
-    void Draw(GraphicsDriver* gc) override;
+    void Draw(RasterSurface* gc) override;
 
     /** RedrawToCache() - Paint the menu background and border. */
     void RedrawToCache() override;
@@ -507,7 +507,7 @@ public:
     }
 
     /** Draw() - Paint the taskbar and raise the open start menu. */
-    void Draw(GraphicsDriver* gc) override;
+    void Draw(RasterSurface* gc) override;
 
     /** RedrawToCache() - Paint the background, segments, and separators. */
     void RedrawToCache() override;
