@@ -432,7 +432,42 @@ void Desktop::RunPostPresentAction() {
     if (action) action(instance);
 }
 
+bool Desktop::HitChildAt(int32_t x, int32_t y, Widget** out) {
+    bool found = false;
+    childrenList.ReverseForEach([&](Widget* child) {
+        if (!found && child->isVisible && child->ContainsCoordinate(x, y)) {
+            *out = child;
+            found = true;
+        }
+    });
+    return found;
+}
+
 void Desktop::OnMouseDown(uint8_t button) {
+    // Track the press and detect a double-click (same button, within 400 ms and
+    // 4 px of the previous click).
+    uint64_t now = guiplat::MonotonicMillis();
+    int32_t dx = (int32_t)MouseX - lastClickX;
+    int32_t dy = (int32_t)MouseY - lastClickY;
+    if (dx < 0) dx = -dx;
+    if (dy < 0) dy = -dy;
+    bool doubleClick =
+        (button == lastClickButton) && (now - lastClickTime <= 400) && dx <= 4 && dy <= 4;
+
+    lastClickTime = now;
+    lastClickX = (int32_t)MouseX;
+    lastClickY = (int32_t)MouseY;
+    lastClickButton = button;
+    pointerDown = true;
+    pressX = (int32_t)MouseX;
+    pressY = (int32_t)MouseY;
+    pressButton = button;
+
+    if (doubleClick && !(modalWidget && modalWidget->isVisible) &&
+        !(taskbar && taskbar->ContainsCoordinate(MouseX, MouseY))) {
+        CompositeWidget::OnDoubleClick((int32_t)MouseX, (int32_t)MouseY, button);
+    }
+
     // A modal dialog owns the pointer until it is dismissed.
     if (modalWidget && modalWidget->isVisible) {
         modalWidget->OnMouseDown((int32_t)MouseX, (int32_t)MouseY, button);
@@ -459,6 +494,13 @@ void Desktop::OnMouseDown(uint8_t button) {
 }
 
 void Desktop::OnMouseUp(uint8_t button) {
+    if (pointerDragging && dragTarget) {
+        dragTarget->OnDragEnd((int32_t)MouseX, (int32_t)MouseY, button);
+    }
+    pointerDown = false;
+    pointerDragging = false;
+    dragTarget = nullptr;
+
     // Route the release to the modal dialog that took the press.
     if (modalWidget && modalWidget->isVisible) {
         modalWidget->OnMouseUp((int32_t)MouseX, (int32_t)MouseY, button);
@@ -496,6 +538,24 @@ void Desktop::OnMouseMove(int32_t dx, int32_t dy) {
 
     MouseX = (uint32_t)newX;
     MouseY = (uint32_t)newY;
+
+    // Dispatch drag events once the pointer has moved past the threshold.
+    if (pointerDown) {
+        int32_t adx = (int32_t)MouseX - pressX;
+        int32_t ady = (int32_t)MouseY - pressY;
+        if (adx < 0) adx = -adx;
+        if (ady < 0) ady = -ady;
+        if (!pointerDragging && (adx + ady) > 4) {
+            Widget* target = nullptr;
+            if (HitChildAt(pressX, pressY, &target)) {
+                pointerDragging = true;
+                dragTarget = target;
+                target->OnDragStart(pressX, pressY, pressButton);
+            }
+        } else if (pointerDragging && dragTarget) {
+            dragTarget->OnDragMove(dx, dy);
+        }
+    }
 
     // A modal dialog consumes motion too, so hover states elsewhere do not
     // update behind it.

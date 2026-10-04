@@ -90,6 +90,21 @@ protected:
     void (*postPresentAction)(void*) = nullptr;
     void* postPresentInstance = nullptr;
 
+    // Pointer gesture tracking: double-click detection and drag dispatch.
+    uint64_t lastClickTime = 0;
+    int32_t lastClickX = 0;
+    int32_t lastClickY = 0;
+    uint8_t lastClickButton = 0;
+    bool pointerDown = false;
+    bool pointerDragging = false;
+    int32_t pressX = 0;
+    int32_t pressY = 0;
+    uint8_t pressButton = 0;
+    Widget* dragTarget = nullptr;
+
+    /** HitChildAt() - Find the topmost visible child containing a point. */
+    bool HitChildAt(int32_t x, int32_t y, Widget** out);
+
 public:
     static Desktop* activeInstance;
 
