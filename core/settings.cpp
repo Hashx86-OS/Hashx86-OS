@@ -77,10 +77,12 @@ static bool readSettingsFile(const char* path, uint32_t* outLen) {
     // Reject an oversized file rather than truncating it: a half-parsed JSON
     // document is not a useful thing to reason about, and a legitimate
     // settings file is orders of magnitude below the limit.
-    if (f->size == 0 || f->size > SETTINGS_MAX_BYTES) {
+    // Keep the size locally: f is gone by the time this is reported.
+    uint32_t size = f->size;
+    if (size == 0 || size > SETTINGS_MAX_BYTES) {
         f->Close();
         delete f;
-        KDBG1("settings.json: implausible size %u, ignoring", (unsigned)f->size);
+        KDBG1("settings.json: implausible size %u, ignoring", (unsigned)size);
         return false;
     }
 

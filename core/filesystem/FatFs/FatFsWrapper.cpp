@@ -434,15 +434,20 @@ uint32_t FatFsWrapper::WriteStream(File* file, uint8_t* buffer, uint32_t length)
 
     FSIZE_t target = (file->openFlags & O_APPEND) ? f_size(&slot->u.fil) : (FSIZE_t)file->position;
 
-    // f_lseek() leaves fp->clust untouched when seeking to offset 0, and f_open()
-    // never sets it either, so an empty file would carry whatever the caller
-    // stack happened to hold. f_write() follows that chain when it extends the
-    // file, so seed it from the object's start cluster (0 when unallocated).
-    slot->u.fil.clust = slot->u.fil.obj.sclust;
+    // f_lseek() computes fp->clust as the cluster the seek target lands in, and
+    // f_write() walks the chain forward from whatever fp->clust holds - it
+    // never re-derives the cluster from fp->fptr. So the cursor must survive
+    // the seek: resetting it to the start of the chain after f_lseek() would
+    // make a write at a nonzero offset land in cluster 0 and overwrite the
+    // front of the file. Seed it only for the case f_lseek() does not cover:
+    // a target of 0 skips its normal-seek branch entirely, leaving fp->clust
+    // as f_open() set it (0, i.e. no cluster chain to follow).
+    if (target == 0) {
+        slot->u.fil.clust = slot->u.fil.obj.sclust;
+    }
 
     FRESULT res = f_lseek(&slot->u.fil, target);
     if (res != FR_OK) return 0;
-    slot->u.fil.clust = slot->u.fil.obj.sclust;
 
     UINT bw = 0;
     res = f_write(&slot->u.fil, buffer, length, &bw);

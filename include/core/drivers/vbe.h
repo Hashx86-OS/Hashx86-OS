@@ -59,8 +59,11 @@ typedef struct {
  * @out: Receives the registers returned by the BIOS.
  *
  * Implemented in asm/realmode.asm and linked straight into the kernel. Disables
- * interrupts and only clears CR0.PE, so it is also safe once paging is running:
- * everything the shim touches lives below 1 MiB, which Paging identity-maps.
+ * interrupts for the whole call and snapshots the caller's EFLAGS and CR0, so
+ * both are restored on the way back. It clears CR0.PG along with CR0.PE to
+ * reach real mode - paging cannot stay on with PE clear - which is why it is
+ * safe to call once paging is running: everything the shim touches lives below
+ * 1 MiB, which Paging identity-maps, and the saved CR0 puts paging back.
  */
 extern "C" void bios_int10(BIOSRegisters* in, BIOSRegisters* out);
 

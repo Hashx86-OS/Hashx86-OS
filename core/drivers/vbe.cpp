@@ -118,8 +118,20 @@ int vbe_mode_is_lfb_32bpp(uint16_t* w, uint16_t* h) {
     if (bpp == 0 || *w == 0 || *h == 0) {
         return 0;
     }
+    if (bpp != 32) {
+        return 0;
+    }
 
-    return (bpp == 32) ? 1 : 0;
+    // The driver addresses the back buffer as packed uint32_t pixels, so it
+    // needs the scanline pitch to be exactly width * 4. A 32-bpp mode with a
+    // wider pitch has padding the render path does not know about, and one with
+    // a narrower pitch is not 4 bytes per pixel at all. Reject both rather than
+    // shear the image.
+    if ((uint32_t)(*w) * 4u != (uint32_t)vbe_read_u16(VBE_MODE_BUFFER, 0x10)) {
+        return 0;
+    }
+
+    return 1;
 }
 
 /**

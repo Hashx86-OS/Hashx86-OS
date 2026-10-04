@@ -530,8 +530,7 @@ prog:
 #   - core/tlsf/, include/core/tlsf/  : TLSF allocator (Matthew Conte)
 #   - stdlib/math/                    : fdlibm math routines (Sun Microsystems)
 #   - stdlib/string/                  : PDCLib string routines (public domain)
-#   - third_party/jsmn/               : jsmn JSON parser (Moisés Vázquez,
-#                                     public domain)
+#   - third_party/jsmn/               : jsmn JSON parser (Serge A. Zaitsev, MIT)
 #   - include/ctype.h, include/string.h, include/stdlib/fdlibm.h :
 #                                     standalone PDCLib / fdlibm headers
 #   - core/filesystem/FatFs/ff.c, ffunicode.c, and

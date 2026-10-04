@@ -34,11 +34,11 @@
 ;                                                                              ;
 ;  Flow of one call:                                                           ;
 ;    bios_int10 -> jmp far 0x30:STUB_BASE+rm16_entry   (16-bit pmode)          ;
-;              -> clear CR0.PE -> jmp 0x0000:rm_real   (true real mode)        ;
+;              -> clear CR0.PG+PE -> jmp 0x0000:rm_real (true real mode)       ;
 ;              -> load regs from io -> int 0x10 -> store regs                  ;
-;              -> set CR0.PE -> jmp far dword [io.ret] (back to 32-bit pmode)  ;
-;              -> tail: restore segments/esp/eflags/callee-saved regs          ;
-;              -> jmp back to the caller's saved return address                ;
+;              -> restore CR0 -> jmp far dword [io.ret] (back to 32-bit pmode) ;
+;              -> tail: copy output out, restore segments/esp/eflags/          ;
+;                 callee-saved regs, then ret                                  ;
 ;                                                                              ;
 ;  The GDT already contains 16-bit descriptors at 0x30 (code) and 0x38         ;
 ;  (data) - see core/gdt.cpp.                                                  ;
@@ -75,10 +75,10 @@ IOM_FLAGS   equ 0x4A   ; Saved EFLAGS.
 IOM_OUT_PTR equ 0x4E   ; Caller's output BIOSRegisters pointer.
 IOM_IDT_RM  equ 0x52   ; 6 bytes: real-mode IVT pointer (base 0, limit 0x3FF).
 IOM_IDT_SV  equ 0x58   ; 6 bytes: saved kernel IDT descriptor.
-IOM_ORIG_RET equ 0x60  ; Caller's original return address (bios_int10[esp]).
-IOM_SAVE_EBX equ 0x64  ; Callee-saved EBX parked for the real-mode trip.
-IOM_SAVE_ESI equ 0x68  ; Callee-saved ESI parked for the real-mode trip.
-IOM_SAVE_EDI equ 0x6C  ; Callee-saved EDI parked for the real-mode trip.
+IOM_SAVE_EBX equ 0x60  ; Callee-saved EBX parked for the real-mode trip.
+IOM_SAVE_ESI equ 0x64  ; Callee-saved ESI parked for the real-mode trip.
+IOM_SAVE_EDI equ 0x68  ; Callee-saved EDI parked for the real-mode trip.
+IOM_SAVE_CR0 equ 0x6C  ; Caller's CR0 (PE+PG), restored across the mode switch.
 IOM_SIZE    equ 0x70
 
 section .text16 progbits alloc exec nowrite
@@ -97,11 +97,15 @@ rm16_entry:
     mov ax, 0x38                     ; 16-bit data selector (see gdt_init)
     mov ds, ax
     mov es, ax
+    ; Drop paging as well as protection. PG is only meaningful with PE set, so
+    ; leaving it on would fault on the first real-mode instruction fetch. The
+    ; wrapper snapshots the caller's CR0 and restores it verbatim on the way
+    ; back, so a caller that was paging gets it again after int 0x10.
     mov eax, cr0
-    and al, 0xFE                     ; Clear CR0.PE, leave everything else.
+    and eax, 0x7FFFFFFE               ; Clear CR0.PG and CR0.PE.
     mov cr0, eax
-    ; The mandatory serializing far jump immediately after clearing PE. This is
-    ; a real-mode absolute jump to the same physical bytes we are executing.
+    ; The mandatory serializing far jump immediately after clearing PE/PG. This
+    ; is a real-mode absolute jump to the same physical bytes we are executing.
     jmp 0x0000:(STUB_BASE + (rm_real - realmode_stub_start))
 
 ; True real mode: flat-ish 16-bit addressing, segment bases used directly.
@@ -138,10 +142,11 @@ rm_real:
     mov [STUB_BASE + (io + IOM_OUT_ESI - realmode_stub_start)], esi
     mov [STUB_BASE + (io + IOM_OUT_ES  - realmode_stub_start)], es
 
-    ; Re-enter protected mode.
+    ; Re-enter protected mode with the caller's exact CR0, so both PE and PG come
+    ; back the way they were. The stub lives below 1 MiB, which Paging
+    ; identity-maps, so the far jump below is still fetchable with paging on.
     cli
-    mov eax, cr0
-    or al, 1                         ; Set CR0.PE.
+    mov eax, [STUB_BASE + (io + IOM_SAVE_CR0 - realmode_stub_start)]
     mov cr0, eax
     ; Serializing far indirect jump (m16:32): reads EIP from io.ret_eip and CS
     ; from io.ret_cs, i.e. into the 32-bit tail below.
@@ -153,6 +158,15 @@ rm_real:
 ; the flat kernel segment state and ESP/EFLAGS and returns to the caller.
 [bits 32]
 tail:
+    ; Copy the 32-byte output block back to the caller's BIOSRegisters first:
+    ; the loop below consumes ESI/EDI, so the caller's callee-saved values have
+    ; to be restored after it runs, not before.
+    mov esi, STUB_BASE + (io + IOM_OUT_EAX - realmode_stub_start)
+    mov edi, [STUB_BASE + (io + IOM_OUT_PTR - realmode_stub_start)]
+    mov ecx, 8
+    cld
+    rep movsd
+
     mov eax, 0x10                    ; Kernel data selector.
     mov ds, eax
     mov es, eax
@@ -164,24 +178,21 @@ tail:
     ; Bring the kernel's own IDT back (see the swap in bios_int10).
     lidt [STUB_BASE + (io + IOM_IDT_SV - realmode_stub_start)]
 
-    ; Restore callee-saved registers parked in the wrapper (before the copy
-    ; loop below uses ESI/EDI again).
+    ; Restore the callee-saved registers the wrapper parked (cdecl). This has
+    ; to come after the copy loop above, which overwrites ESI and EDI.
     mov ebx, [STUB_BASE + (io + IOM_SAVE_EBX - realmode_stub_start)]
     mov esi, [STUB_BASE + (io + IOM_SAVE_ESI - realmode_stub_start)]
     mov edi, [STUB_BASE + (io + IOM_SAVE_EDI - realmode_stub_start)]
 
-    ; Copy the 32-byte output block back to the caller's BIOSRegisters.
-    mov esi, STUB_BASE + (io + IOM_OUT_EAX - realmode_stub_start)
-    mov edi, [STUB_BASE + (io + IOM_OUT_PTR - realmode_stub_start)]
-    mov ecx, 8
-    cld
-    rep movsd
-
+    ; Restore the caller's IF, sampled before bios_int10's cli.
     mov eax, [STUB_BASE + (io + IOM_FLAGS - realmode_stub_start)]
     push eax
     popfd
-    mov eax, [STUB_BASE + (io + IOM_ORIG_RET - realmode_stub_start)]
-    jmp eax
+
+    ; Return normally. ESP is back to its entry value, so the return address is
+    ; on top of the stack and 'ret' pops it, leaving the caller's stack
+    ; balanced. Jumping to it instead would leave ESP four bytes short.
+    ret
 
 global realmode_stub_end
 realmode_stub_end:
@@ -198,6 +209,17 @@ global bios_int10
 ; Disables interrupts for the whole call, copies the shim into low memory,
 ; drops to real mode, runs int 0x10, then resumes and returns.
 bios_int10:
+    ; Snapshot the caller's EFLAGS and CR0 *before* cli. The flags are restored
+    ; by the tail, so sampling them here is what puts the caller's IF back; a
+    ; snapshot taken after cli would bake IF=0 into the restore and leave the
+    ; caller with interrupts off. CR0 has to be kept too, because the shim
+    ; clears CR0.PG to reach real mode and has to put the caller's PG back.
+    ; Both are parked on the stack until after the stub copy below, which
+    ; re-initialises the io block and so forbids any io write before it.
+    pushfd
+    mov eax, cr0
+    push eax
+
     cli
 
     mov eax, 0x10                    ; Flat kernel data for the copies.
@@ -212,12 +234,15 @@ bios_int10:
     cld
     rep movsb
 
-    ; Capture the caller's return address - the tail resumes with an explicit
-    ; jump to it, not a ret, so no stack discipline is assumed after the trip.
-    mov eax, [esp]
-    mov [STUB_BASE + (io + IOM_ORIG_RET - realmode_stub_start)], eax
+    ; Hand the pre-cli snapshots over to the io block.
+    pop eax
+    mov [STUB_BASE + (io + IOM_SAVE_CR0 - realmode_stub_start)], eax
+    pop eax
+    mov [STUB_BASE + (io + IOM_FLAGS - realmode_stub_start)], eax
 
-    ; Copy the caller's 32-byte register block into io.in_*.
+    ; Copy the caller's 32-byte register block into io.in_*. The two pops above
+    ; restored ESP to its entry value, so the arguments sit at their usual
+    ; offsets: [esp+4] is 'in', [esp+8] is 'out'.
     mov esi, [esp + 4]               ; BIOSRegisters* in
     mov edi, STUB_BASE + (io + IOM_IN_EAX - realmode_stub_start)
     mov ecx, 8
@@ -225,9 +250,6 @@ bios_int10:
 
     ; Park the resumption state in the io block.
     mov [STUB_BASE + (io + IOM_ESP - realmode_stub_start)], esp
-    pushfd
-    pop eax
-    mov [STUB_BASE + (io + IOM_FLAGS - realmode_stub_start)], eax
     mov eax, [esp + 8]               ; BIOSRegisters* out
     mov [STUB_BASE + (io + IOM_OUT_PTR - realmode_stub_start)], eax
 

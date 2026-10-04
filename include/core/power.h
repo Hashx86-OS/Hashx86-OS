@@ -40,7 +40,7 @@
  * and real PC since the AT honours, then falls back to a deliberate triple
  * fault if the controller never resets the CPU. Does not return.
  */
-void PowerRestart();
+[[noreturn]] void PowerRestart();
 
 /**
  * PowerShutdown() - Stop the machine.
@@ -50,4 +50,4 @@ void PowerRestart();
  * unmapped, so the CPU is simply halted with interrupts disabled and the
  * machine has to be reset from outside. Does not return.
  */
-void PowerShutdown();
+[[noreturn]] void PowerShutdown();

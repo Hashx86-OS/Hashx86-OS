@@ -157,6 +157,21 @@ uint32_t AdvancedTechnologyAttachment::Identify() {
 }
 
 /**
+ * ata_poll_delay() - Short delay between status-register polls.
+ *
+ * A tight loop of port reads retires a million iterations in a few
+ * microseconds, which is far quicker than the device can answer. Without this
+ * pause a slow-but-valid completion - FLUSH CACHE in particular, since it must
+ * commit the drive's write cache - is misreported as a timeout. The delay is
+ * small enough to keep the fast paths (READ/WRITE SECTOR) snappy.
+ */
+static inline void ata_poll_delay(void) {
+    for (int i = 0; i < 256; i++) {
+        __asm__ volatile("nop");
+    }
+}
+
+/**
  * AdvancedTechnologyAttachment::Read28() - Read one sector via PIO LBA28.
  * @sectorNum: 28-bit LBA sector number.
  * @data: Destination buffer, at least @count bytes.
@@ -190,6 +205,7 @@ void AdvancedTechnologyAttachment::Read28(uint32_t sectorNum, uint8_t* data, int
             KDBG1("READ ERROR: BSY timeout");
             return;
         }
+        ata_poll_delay();
         status = commandPort.Read();
     }
     if ((status & 0x01) == 0x01) {
@@ -210,6 +226,7 @@ void AdvancedTechnologyAttachment::Read28(uint32_t sectorNum, uint8_t* data, int
             KDBG1("READ ERROR: DRQ timeout");
             return;
         }
+        ata_poll_delay();
         status = commandPort.Read();
     }
 
@@ -229,21 +246,6 @@ void AdvancedTechnologyAttachment::Read28(uint32_t sectorNum, uint8_t* data, int
         for (int i = 0; i < safeCount; i++) {
             data[i] = sectorBuffer[i];
         }
-    }
-}
-
-/**
- * ata_poll_delay() - Short delay between status-register polls.
- *
- * A tight loop of port reads retires a million iterations in a few
- * microseconds, which is far quicker than the device can answer. Without this
- * pause a slow-but-valid completion - FLUSH CACHE in particular, since it must
- * commit the drive's write cache - is misreported as a timeout. The delay is
- * small enough to keep the fast paths (READ/WRITE SECTOR) snappy.
- */
-static inline void ata_poll_delay(void) {
-    for (int i = 0; i < 256; i++) {
-        __asm__ volatile("nop");
     }
 }
 

@@ -49,15 +49,26 @@ namespace {
  * the firmware restarts it.
  */
 [[noreturn]] void tripleFaultReset() {
+    // A genuinely empty IDT: zero limit and zero base. 'lidt' has to read six
+    // bytes from memory, so the descriptor cannot be the constant 0 - that
+    // would load the real-mode IVT at address 0 and leave a usable (if
+    // accidental) IDT in place, so the int3 below would be dispatched instead of
+    // faulting into a triple fault.
+    struct __attribute__((packed)) {
+        uint16_t limit;
+        uint32_t base;
+    } nullIdt = {0, 0};
+
     asm volatile(
         "lidt (%0)\n\t"
-        "int3\n\t" ::"r"(0));
+        "int3\n\t" ::"r"(&nullIdt)
+        : "memory");
     haltForever();
 }
 
 }  // namespace
 
-void PowerRestart() {
+[[noreturn]] void PowerRestart() {
     KDBG1("PowerRestart: pulsing the keyboard controller reset line\n");
 
     Port8Bit keyboardCommand(0x64);
@@ -78,7 +89,7 @@ void PowerRestart() {
     tripleFaultReset();
 }
 
-void PowerShutdown() {
+[[noreturn]] void PowerShutdown() {
     KDBG1("PowerShutdown: requesting emulator power off\n");
 
     // Emulators expose a debug-exit port that terminates the VM on any write.
