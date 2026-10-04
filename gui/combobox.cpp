@@ -40,6 +40,7 @@ bool ComboBox::AddItem(const char* label) {
     items[count][len] = '\0';
     count++;
     if (selected < 0) selected = 0;
+    if (open) Resize(w, closedHeight + count * ITEM_HEIGHT);
     MarkDirty();
     return true;
 }
@@ -76,7 +77,7 @@ const char* ComboBox::GetItem(int index) const {
 void ComboBox::SetOpen(bool value) {
     if (open == value) return;
     open = value;
-    h = value ? closedHeight + count * ITEM_HEIGHT : closedHeight;
+    Resize(w, value ? closedHeight + count * ITEM_HEIGHT : closedHeight);
     MarkDirty();
 }
 

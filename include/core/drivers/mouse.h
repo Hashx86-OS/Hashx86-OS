@@ -76,9 +76,10 @@ class MouseDriver : public InterruptHandler, public Driver {
     Port8Bit dataPort;                // Port for reading mouse data.
     Port8Bit commandPort;             // Port for sending commands to the mouse.
     MouseEventHandler* eventHandler;  // Handler for mouse events.
-    uint8_t buffer[3];                // Buffer for storing mouse packet data.
+    uint8_t buffer[4];                // Buffer for storing mouse packet data.
     uint8_t offset;                   // Current offset in the buffer.
     uint8_t buttons;                  // Current state of the mouse buttons.
+    bool hasWheel;                    // True when the device reports a 4th (Z) byte.
     int8_t x = 40, y = 12;            // Cursor position.
     int32_t accumDX;                  // Accumulated mouse X delta for polling.
     int32_t accumDY;                  // Accumulated mouse Y delta for polling.

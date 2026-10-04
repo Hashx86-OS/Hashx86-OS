@@ -40,7 +40,7 @@ bool ContextMenu::AddItem(const char* label) {
     memcpy(items[count], label, len);
     items[count][len] = '\0';
     count++;
-    if (isVisible) h = count * ITEM_HEIGHT;
+    if (isVisible) Resize(w, count * ITEM_HEIGHT);
     MarkDirty();
     return true;
 }
@@ -48,7 +48,7 @@ bool ContextMenu::AddItem(const char* label) {
 void ContextMenu::ShowAt(int32_t px, int32_t py) {
     this->x = px;
     this->y = py;
-    this->h = count * ITEM_HEIGHT;
+    Resize(w, count * ITEM_HEIGHT);
     this->isVisible = true;
     RequestTopmostFocus();
     MarkDirty();
