@@ -68,6 +68,7 @@ objects = \
 	$(BUILD_DIR)/obj/gui/textbox.o \
 	$(BUILD_DIR)/obj/gui/toggle.o \
 	$(BUILD_DIR)/obj/gui/tooltip.o \
+	$(BUILD_DIR)/obj/gui/widgetgallery.o \
 	$(BUILD_DIR)/obj/gui/elements/window_action_button.o \
 	$(BUILD_DIR)/obj/gui/elements/window_action_button_round.o \
 	$(BUILD_DIR)/obj/gui/fonts/font.o \
@@ -77,6 +78,7 @@ objects = \
 	$(BUILD_DIR)/obj/gui/widgetHostKernel.o \
 	$(BUILD_DIR)/obj/gui/Hgui.o \
 	$(BUILD_DIR)/obj/gui/infodialog.o \
+	$(BUILD_DIR)/obj/gui/inputbox.o \
 	$(BUILD_DIR)/obj/gui/label.o \
 	$(BUILD_DIR)/obj/gui/listview.o \
 	$(BUILD_DIR)/obj/gui/messagebox.o \

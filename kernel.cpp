@@ -30,6 +30,7 @@
 #include <gui/bootanim.h>
 #include <gui/desktop.h>
 #include <gui/fonts/fontKernel.h>
+#include <gui/widgetgallery.h>
 #include <kernel.h>
 
 #define DEBUG_ENABLED TRUE;
@@ -705,6 +706,9 @@ void BootMain(void* arg) {
     if (!guiCalls) {
         HALT("CRITICAL: Failed to allocate HguiHandler!\n");
     }
+
+    // Open the widget gallery at boot so the full widget set can be inspected.
+    OpenWidgetGallery(desktop);
     // ---- Slow stage 5: PCI devices ------------------------------------------
     {
         // Keep the timer IRQ out of the command/ACK polling (an IRQ handler

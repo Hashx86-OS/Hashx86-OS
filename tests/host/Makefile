@@ -17,8 +17,7 @@ CXXFLAGS := -m64 -std=c++20 -g -O1 -fno-exceptions -fno-rtti -fno-omit-frame-poi
 
 LDFLAGS  := -fsanitize=address,undefined -lm
 
-SRCS := main.cpp \
-        shim/kmem_host.cpp \
+COMMON_SRCS := shim/kmem_host.cpp \
         shim/guiplat_host.cpp \
         shim/widgetHostTest.cpp \
         $(ROOT)/gui/widget.cpp \
@@ -52,14 +51,23 @@ SRCS := main.cpp \
         $(ROOT)/gui/fonts/font.cpp \
         $(ROOT)/core/fonts/ttf_render.cpp
 
-TARGET := gui-test
+SRCS := main.cpp $(COMMON_SRCS)
+PREVIEW_SRCS := preview_gallery.cpp $(COMMON_SRCS)
 
-.PHONY: all clean
+TARGET := gui-test
+PREVIEW := gallery-preview
+
+.PHONY: all clean preview
 
 all: $(TARGET)
 
 $(TARGET): $(SRCS)
 	$(CXX) $(CXXFLAGS) -o $@ $(SRCS) $(LDFLAGS)
 
+preview: $(PREVIEW)
+
+$(PREVIEW): $(PREVIEW_SRCS)
+	$(CXX) $(CXXFLAGS) -o $@ $(PREVIEW_SRCS) $(LDFLAGS)
+
 clean:
-	rm -f $(TARGET)
+	rm -f $(TARGET) $(PREVIEW)
