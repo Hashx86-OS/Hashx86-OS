@@ -117,7 +117,19 @@ void MessageBox::OnConfirmClicked() {
 
     HideDialog();
 
-    if (action) action(instance);
+    // This runs on the IRQ 12 path, so the action cannot be called here: it must
+    // not execute in interrupt context, and the machine would otherwise halt or
+    // reset with the dialog still on screen, since it never returns and the
+    // frame that would erase it is only drawn on the next desktop-task pass.
+    // Queue it behind that repaint instead. HideDialog() already marked the
+    // desktop dirty, so a frame is guaranteed to be drawn.
+    Desktop* desktop = Desktop::activeInstance;
+    if (desktop) {
+        desktop->PostAfterPresent(action, instance);
+    } else {
+        // No desktop to sequence against (headless); preserve the old behaviour.
+        if (action) action(instance);
+    }
 }
 
 void MessageBox::OnCancelClicked() {
@@ -151,9 +163,17 @@ void MessageBox::ShowConfirm(const char* title, const char* message, const char*
     }
 
     showDialog();
-    // Route all further mouse input here so the windows behind cannot be
-    // clicked through the prompt.
-    if (desktop) desktop->SetModalWidget(this);
+    // Take focus so the prompt is raised to the top of the Z-order. This dialog
+    // is created once and reused, so the first prompt lands on top only by
+    // virtue of being added last; any window focused since then was pushed in
+    // front of it and would otherwise be drawn over the prompt.
+    if (desktop) {
+        desktop->GetFocus(this);
+        holdsFocus = true;
+        // Route all further mouse input here so the windows behind cannot be
+        // clicked through the prompt.
+        desktop->SetModalWidget(this);
+    }
     MarkDirty();
 }
 
@@ -178,6 +198,15 @@ void MessageBox::HideDialog() {
     Desktop* desktop = Desktop::activeInstance;
     if (desktop && desktop->GetModalWidget() == this) {
         desktop->SetModalWidget(nullptr);
+    }
+
+    // Hand back the focus taken by ShowConfirm(). A hidden widget left as the
+    // desktop's focused child would swallow keystrokes, and CompositeWidget's
+    // focus path treats "already focused" as a no-op, so the next ShowConfirm()
+    // would skip the raise that puts this dialog back on top.
+    if (desktop && holdsFocus) {
+        desktop->GetFocus(nullptr);
+        holdsFocus = false;
     }
 
     onConfirmAction = nullptr;

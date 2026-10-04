@@ -83,6 +83,12 @@ protected:
     // dialog cannot be clicked through. NULL when no dialog is up.
     Widget* modalWidget = nullptr;
 
+    // Action to run once the next frame is on screen, plus its argument. Used to
+    // sequence an irreversible action behind the repaint that removes whatever
+    // asked for it, so the machine never halts still showing that UI.
+    void (*postPresentAction)(void*) = nullptr;
+    void* postPresentInstance = nullptr;
+
 public:
     static Desktop* activeInstance;
 
@@ -157,6 +163,32 @@ public:
     Widget* GetModalWidget() const {
         return modalWidget;
     }
+
+    /**
+     * PostAfterPresent() - Queue an action to run after the next presented frame.
+     * @action: Callback taking @instance. May not return.
+     * @instance: Opaque argument passed to @action.
+     *
+     * Mouse input arrives on the IRQ 12 path, so a callback queued from a click
+     * handler would otherwise run in interrupt context. Posting it here moves it
+     * onto the desktop task, after a frame that no longer shows the widget the
+     * user clicked. Only one action is queued; a second post replaces the first,
+     * since anything still pending is a stale response to UI that is gone.
+     */
+    void PostAfterPresent(void (*action)(void*), void* instance);
+
+    /** HasPostPresentAction() - Report whether an action is waiting for a frame. */
+    bool HasPostPresentAction() const {
+        return postPresentAction != nullptr;
+    }
+
+    /**
+     * RunPostPresentAction() - Run the queued action, if any.
+     *
+     * Called by the desktop task once the frame is on the hardware. Clears the
+     * slot before invoking so an action that does not return cannot be run twice.
+     */
+    void RunPostPresentAction();
 
     /** GetTaskbar() - Return the taskbar attached to the desktop. */
     Taskbar* GetTaskbar() {

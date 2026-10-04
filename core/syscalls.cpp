@@ -91,6 +91,41 @@ void ClearProcessStdin(ProcessControlBlock* process) {
     process->stdinTail = 0;
 }
 
+// Page-directory indices that Hsys_getFramebuffer replaced with per-process
+// copies carrying PAGE_USER. Only one process can hold the framebuffer at a
+// time (g_gui_owner_pid), so a single record suffices; Hsys_initCli uses it to
+// undo the grant when the owner gives the screen up.
+uint32_t g_fb_private_start_pd = 0;
+uint32_t g_fb_private_end_pd = 0;
+bool g_fb_private_valid = false;
+
+/**
+ * RevokeFramebufferMapping() - Undo the user mapping Hsys_getFramebuffer made.
+ * @directory: Page directory of the former framebuffer owner.
+ *
+ * Restores the shared kernel page-directory entries for the recorded
+ * framebuffer range, frees the per-process page-table copies, and flushes the
+ * TLB. Without this the process keeps PAGE_USER access to the kernel back
+ * buffer after it gives the screen up, and that mapping dangles once a later
+ * mode switch frees the old buffer. Process teardown performs the same reclaim
+ * for a process that exits while still owning the screen.
+ */
+void RevokeFramebufferMapping(uint32_t* directory) {
+    if (!g_fb_private_valid || !directory || !g_paging) return;
+
+    for (uint32_t i = g_fb_private_start_pd; i <= g_fb_private_end_pd; i++) {
+        if (!(directory[i] & PAGE_PRESENT)) continue;
+        if (directory[i] == g_paging->KernelPageDirectory[i]) continue;
+        pmm_free_block((void*)(directory[i] & 0xFFFFF000));
+        directory[i] = g_paging->KernelPageDirectory[i];
+    }
+    g_fb_private_valid = false;
+
+    // Stale TLB entries would keep the revoked permissions alive until the
+    // next natural CR3 reload.
+    asm volatile("mov %%cr3, %%eax; mov %%eax, %%cr3" ::: "eax");
+}
+
 /**
  * CleanupExitedProcessGui() - Release GUI resources held by a terminated process.
  * @pid: PID of the exited process.
@@ -1158,6 +1193,11 @@ int32_t SyscallHandlers::Handle_sys_Hcall(uint32_t hcall_id, uint32_t arg1, uint
                 }
             }
 
+            // Record the range so Hsys_initCli can revoke it when ownership ends.
+            g_fb_private_start_pd = startPDIdx;
+            g_fb_private_end_pd = endPDIdx;
+            g_fb_private_valid = true;
+
             // Second pass: grant user access to the specific PTEs and their PDEs.
             for (uint32_t addr = startPage; addr < endPage; addr += PAGE_SIZE) {
                 uint32_t pd_idx = addr >> 22;
@@ -1192,8 +1232,10 @@ int32_t SyscallHandlers::Handle_sys_Hcall(uint32_t hcall_id, uint32_t arg1, uint
         }
 
         // If this process previously acquired fullscreen framebuffer ownership,
-        // release it when switching to CLI mode.
+        // release it when switching to CLI mode: drop the user mapping too, so
+        // the process loses access the moment it stops owning the screen.
         if (g_stop_gui_rendering && g_gui_owner_pid == (int)current_process->pid) {
+            RevokeFramebufferMapping(current_process->page_directory);
             g_stop_gui_rendering = false;
             g_gui_owner_pid = -1;
 

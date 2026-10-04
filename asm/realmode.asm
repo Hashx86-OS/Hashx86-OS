@@ -216,9 +216,15 @@ bios_int10:
     ; clears CR0.PG to reach real mode and has to put the caller's PG back.
     ; Both are parked on the stack until after the stub copy below, which
     ; re-initialises the io block and so forbids any io write before it.
+    ; EBX/ESI/EDI ride the same stack: the copies below clobber ESI and EDI
+    ; twice, so they have to be captured before the first one to still be the
+    ; caller's values when the tail restores them.
     pushfd
     mov eax, cr0
     push eax
+    push ebx
+    push esi
+    push edi
 
     cli
 
@@ -234,13 +240,20 @@ bios_int10:
     cld
     rep movsb
 
-    ; Hand the pre-cli snapshots over to the io block.
+    ; Hand the pre-cli snapshots over to the io block. Pushed as flags, cr0,
+    ; ebx, esi, edi, so they come back off in the reverse order.
+    pop eax
+    mov [STUB_BASE + (io + IOM_SAVE_EDI - realmode_stub_start)], eax
+    pop eax
+    mov [STUB_BASE + (io + IOM_SAVE_ESI - realmode_stub_start)], eax
+    pop eax
+    mov [STUB_BASE + (io + IOM_SAVE_EBX - realmode_stub_start)], eax
     pop eax
     mov [STUB_BASE + (io + IOM_SAVE_CR0 - realmode_stub_start)], eax
     pop eax
     mov [STUB_BASE + (io + IOM_FLAGS - realmode_stub_start)], eax
 
-    ; Copy the caller's 32-byte register block into io.in_*. The two pops above
+    ; Copy the caller's 32-byte register block into io.in_*. The six pops above
     ; restored ESP to its entry value, so the arguments sit at their usual
     ; offsets: [esp+4] is 'in', [esp+8] is 'out'.
     mov esi, [esp + 4]               ; BIOSRegisters* in
@@ -252,12 +265,6 @@ bios_int10:
     mov [STUB_BASE + (io + IOM_ESP - realmode_stub_start)], esp
     mov eax, [esp + 8]               ; BIOSRegisters* out
     mov [STUB_BASE + (io + IOM_OUT_PTR - realmode_stub_start)], eax
-
-    ; Park the callee-saved registers so the resumed 32-bit code sees them
-    ; exactly as they were. cdecl requires them preserved across bios_int10.
-    mov [STUB_BASE + (io + IOM_SAVE_EBX - realmode_stub_start)], ebx
-    mov [STUB_BASE + (io + IOM_SAVE_ESI - realmode_stub_start)], esi
-    mov [STUB_BASE + (io + IOM_SAVE_EDI - realmode_stub_start)], edi
 
     ; Program the far-jump target back into 32-bit kernel code (tail).
     mov dword [STUB_BASE + (io + IOM_RET_EIP - realmode_stub_start)], \

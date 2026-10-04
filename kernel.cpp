@@ -490,7 +490,10 @@ void pDesktop(void* arg) {
             desktop->MarkDirty();
         }
 
-        if (desktop->isDirty || desktop->MouseMoved()) {
+        // A queued post-present action forces a draw: it exists so that an
+        // irreversible action is sequenced behind the frame that removes the
+        // widget requesting it, so that frame has to happen.
+        if (desktop->isDirty || desktop->MouseMoved() || desktop->HasPostPresentAction()) {
             desktop->Draw(screen);
             uint32_t end = timerTicks;
             uint32_t diff = (uint32_t)(end - start);
@@ -500,6 +503,9 @@ void pDesktop(void* arg) {
             screen->DrawString(10, 10, buf, VBE_font, 0xFFFFFFFF);
             screen->DrawString(25, 10, "ms", VBE_font, 0xFFFFFFFF);
             screen->Flush();
+
+            // Only now is the frame actually visible, so a queued action can run.
+            desktop->RunPostPresentAction();
         } else {
             Scheduler::activeInstance->Sleep(16);
         }

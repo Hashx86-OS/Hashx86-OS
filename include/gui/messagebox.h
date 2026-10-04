@@ -55,6 +55,9 @@ private:
     ACButton* cancelButton;
     MsgBoxAction onConfirmAction;
     void* confirmInstance;
+    // Whether this dialog currently holds the desktop's input focus, so that
+    // HideDialog() can hand it back instead of stranding it on a hidden widget.
+    bool holdsFocus = false;
 
 public:
     /**

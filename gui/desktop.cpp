@@ -384,6 +384,35 @@ void Desktop::SetModalWidget(Widget* widget) {
     this->isDirty = true;
 }
 
+void Desktop::PostAfterPresent(void (*action)(void*), void* instance) {
+    // Posted from the IRQ 12 path, so this races the desktop task draining the
+    // slot. InterruptGuard nests safely, so take it here and keep the two-field
+    // store indivisible.
+    InterruptGuard guard;
+    postPresentAction = action;
+    postPresentInstance = instance;
+}
+
+void Desktop::RunPostPresentAction() {
+    void (*action)(void*);
+    void* instance;
+
+    {
+        // Copy out and clear atomically, so a post arriving from the IRQ path
+        // can neither be dropped nor have its instance torn from under it.
+        InterruptGuard guard;
+        action = postPresentAction;
+        instance = postPresentInstance;
+        postPresentAction = nullptr;
+        postPresentInstance = nullptr;
+    }
+
+    // Clear first: the action may never return, and a later frame must not be
+    // able to run it a second time. The guard is released before the call
+    // because the action drives power and may halt or reset.
+    if (action) action(instance);
+}
+
 void Desktop::OnMouseDown(uint8_t button) {
     // A modal dialog owns the pointer until it is dismissed.
     if (modalWidget && modalWidget->isVisible) {
