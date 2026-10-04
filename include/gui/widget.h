@@ -320,6 +320,9 @@ public:
     virtual bool IsIconButton() const {
         return false;
     }
+    virtual bool IsRadioButton() const {
+        return false;
+    }
 
     uint32_t GetColor() const {
         return argbColor;

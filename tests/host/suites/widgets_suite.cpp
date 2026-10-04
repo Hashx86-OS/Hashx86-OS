@@ -27,8 +27,10 @@
 
 #include <gui/checkbox.h>
 #include <gui/layout.h>
+#include <gui/radiobutton.h>
 #include <gui/scrollbar.h>
 #include <gui/slider.h>
+#include <gui/spinbox.h>
 #include <gui/toggle.h>
 
 TEST(checkbox_toggles_and_emits) {
@@ -184,4 +186,53 @@ TEST(vbox_layout_stretch_fills_free_space) {
     CHECK_EQ(fixed->h, 20);
     CHECK_EQ(flex->h, 80);
     CHECK_EQ(flex->y, 20);
+}
+
+TEST(radiobutton_is_mutually_exclusive_in_group) {
+    CompositeWidget root(nullptr, 0, 0, 200, 200);
+    RadioButton* a = new RadioButton(&root, 0, 0, 120, 20, "A", 1);
+    RadioButton* b = new RadioButton(&root, 0, 30, 120, 20, "B", 1);
+    RadioButton* other = new RadioButton(&root, 0, 60, 120, 20, "C", 2);
+    root.AddChild(a);
+    root.AddChild(b);
+    root.AddChild(other);
+    a->SetID(600);
+    a->SetPID(5);
+    other->SetChecked(true);
+
+    HostEventReset();
+    a->OnMouseUp(10, 10, 1);
+    CHECK(a->GetChecked());
+    CHECK(!b->GetChecked());
+    CHECK(other->GetChecked());  // different group untouched
+    CHECK_EQ(HostEventCount(), 1);
+
+    b->SetID(601);
+    b->SetPID(5);
+    b->OnMouseUp(10, 40, 1);
+    CHECK(b->GetChecked());
+    CHECK(!a->GetChecked());
+}
+
+TEST(spinbox_steps_and_clamps) {
+    CompositeWidget root(nullptr, 0, 0, 200, 200);
+    SpinBox* sp = new SpinBox(&root, 0, 0, 80, 24);
+    root.AddChild(sp);
+    sp->SetID(700);
+    sp->SetPID(6);
+    sp->SetRange(0, 10, 2);
+
+    CHECK_EQ(sp->GetValue(), 0);
+    HostEventReset();
+    sp->OnMouseUp(10, 4, 1);  // upper half: +2
+    CHECK_EQ(sp->GetValue(), 2);
+    CHECK_EQ(HostEventCount(), 1);
+
+    for (int i = 0; i < 20; i++) {
+        sp->OnMouseUp(10, 20, 1);  // lower half: -2
+    }
+    CHECK_EQ(sp->GetValue(), 0);
+
+    sp->OnMouseWheel(5);
+    CHECK(sp->GetValue() <= 10);
 }

@@ -33,6 +33,8 @@ SRCS := main.cpp \
         $(ROOT)/gui/toggle.cpp \
         $(ROOT)/gui/slider.cpp \
         $(ROOT)/gui/scrollbar.cpp \
+        $(ROOT)/gui/radiobutton.cpp \
+        $(ROOT)/gui/spinbox.cpp \
         $(ROOT)/gui/layout.cpp \
         $(ROOT)/gui/elements/window_action_button.cpp \
         $(ROOT)/gui/elements/window_action_button_round.cpp \

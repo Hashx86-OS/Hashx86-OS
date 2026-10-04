@@ -35,8 +35,10 @@
 #include <gui/label.h>
 #include <gui/layout.h>
 #include <gui/progressbar.h>
+#include <gui/radiobutton.h>
 #include <gui/scrollbar.h>
 #include <gui/slider.h>
+#include <gui/spinbox.h>
 #include <gui/taskbar.h>
 #include <gui/terminalview.h>
 #include <gui/toggle.h>

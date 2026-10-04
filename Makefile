@@ -55,8 +55,10 @@ objects = \
 	$(BUILD_DIR)/obj/gui/iconbutton.o \
 	$(BUILD_DIR)/obj/gui/desktop.o \
 	$(BUILD_DIR)/obj/gui/layout.o \
+	$(BUILD_DIR)/obj/gui/radiobutton.o \
 	$(BUILD_DIR)/obj/gui/scrollbar.o \
 	$(BUILD_DIR)/obj/gui/slider.o \
+	$(BUILD_DIR)/obj/gui/spinbox.o \
 	$(BUILD_DIR)/obj/gui/toggle.o \
 	$(BUILD_DIR)/obj/gui/elements/window_action_button.o \
 	$(BUILD_DIR)/obj/gui/elements/window_action_button_round.o \
