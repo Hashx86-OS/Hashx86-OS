@@ -29,6 +29,11 @@ SRCS := main.cpp \
         $(ROOT)/gui/listview.cpp \
         $(ROOT)/gui/inputbox.cpp \
         $(ROOT)/gui/progressbar.cpp \
+        $(ROOT)/gui/checkbox.cpp \
+        $(ROOT)/gui/toggle.cpp \
+        $(ROOT)/gui/slider.cpp \
+        $(ROOT)/gui/scrollbar.cpp \
+        $(ROOT)/gui/layout.cpp \
         $(ROOT)/gui/elements/window_action_button.cpp \
         $(ROOT)/gui/elements/window_action_button_round.cpp \
         $(ROOT)/gui/render/raster.cpp \

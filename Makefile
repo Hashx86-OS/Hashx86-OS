@@ -51,8 +51,13 @@ objects = \
 	$(BUILD_DIR)/obj/gui/bmp.o \
 	$(BUILD_DIR)/obj/gui/bootanim.o \
 	$(BUILD_DIR)/obj/gui/button.o \
+	$(BUILD_DIR)/obj/gui/checkbox.o \
 	$(BUILD_DIR)/obj/gui/iconbutton.o \
 	$(BUILD_DIR)/obj/gui/desktop.o \
+	$(BUILD_DIR)/obj/gui/layout.o \
+	$(BUILD_DIR)/obj/gui/scrollbar.o \
+	$(BUILD_DIR)/obj/gui/slider.o \
+	$(BUILD_DIR)/obj/gui/toggle.o \
 	$(BUILD_DIR)/obj/gui/elements/window_action_button.o \
 	$(BUILD_DIR)/obj/gui/elements/window_action_button_round.o \
 	$(BUILD_DIR)/obj/gui/fonts/font.o \

@@ -30,6 +30,7 @@
 #include "suites/core_suite.cpp"
 #include "suites/event_suite.cpp"
 #include "suites/widget_base_suite.cpp"
+#include "suites/widgets_suite.cpp"
 
 int main(int argc, char** argv) {
     bool countOnly = (argc > 1 && std::strcmp(argv[1], "--count") == 0);
