@@ -522,12 +522,36 @@ int32_t SyscallHandlers::Handle_sys_write(uint32_t fd, const char* buf, uint32_t
     }
 
     // stdin and unknown/output-only FDs are not writable yet.
-    return -1;
+    if (fd == 0) return -1;
+
+    ProcessControlBlock* process = Scheduler::activeInstance->GetCurrentProcess();
+    File* file = GetFileByFd(process, fd);
+    if (!file) return -1;
+
+    // The handle must have been opened for writing; O_RDONLY handles are
+    // rejected here as well as in File::Write so a partial write cannot occur.
+    if (!file->IsWritable()) return -1;
+
+    uint8_t* kernelBuf = (uint8_t*)kmalloc(count);
+    if (!kernelBuf) return -1;
+    if (!CopyFromUser(process, kernelBuf, buf, count)) {
+        kfree(kernelBuf);
+        return -1;
+    }
+
+    int written = file->Write(kernelBuf, count);
+    kfree(kernelBuf);
+    if (written < 0) return -1;
+    return (int32_t)written;
 }
 
 int32_t SyscallHandlers::Handle_sys_open(const char* path, int32_t flags) {
-    (void)flags;
     if (!path) return -1;
+    if (flags < 0) return -1;
+
+    uint32_t openFlags = (uint32_t)flags;
+    uint32_t acc = openFlags & O_ACCMODE;
+    if (acc != O_RDONLY && acc != O_WRONLY && acc != O_RDWR) return -1;
 
     ProcessControlBlock* process = Scheduler::activeInstance->GetCurrentProcess();
     char kpath[256];
@@ -537,7 +561,7 @@ int32_t SyscallHandlers::Handle_sys_open(const char* path, int32_t flags) {
     if (MSDOSPartitionTable::activeInstance && MSDOSPartitionTable::activeInstance->partitions[0]) {
         FileSystem* fs = MSDOSPartitionTable::activeInstance->partitions[0];
 
-        File* f = fs->Open(kpath);
+        File* f = fs->OpenWithFlags(kpath, openFlags);
         if (!f) return -1;
 
         int32_t fd = AllocateFd(process, f);

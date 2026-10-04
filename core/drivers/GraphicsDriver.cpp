@@ -23,6 +23,7 @@
  */
 
 #include <core/drivers/GraphicsDriver.h>
+#include <debug.h>
 
 /**
  * GraphicsDriver::GraphicsDriver() - Set up a framebuffer-backed driver core.
@@ -35,18 +36,40 @@
  * blending table. The back buffer is filled directly instead of going through
  * FillRectangle(), which needs the NINA renderer to exist.
  */
-GraphicsDriver::GraphicsDriver(uint32_t w, uint32_t h, uint32_t b, uint32_t* vram) {
+/**
+ * GraphicsDriver() - Deferred-initialization constructor.
+ *
+ * Leaves every field unset; InitialiseFramebuffer() completes setup.
+ */
+GraphicsDriver::GraphicsDriver() {
+    this->width = 0;
+    this->height = 0;
+    this->bpp = 0;
+    this->videoMemory = nullptr;
+    this->backBuffer = nullptr;
+}
+
+/**
+ * GraphicsDriver::InitialiseFramebuffer() - Adopt a geometry and allocate the
+ * back buffer.
+ * @w: Screen width in pixels.
+ * @h: Screen height in pixels.
+ * @b: Bits per pixel.
+ * @vram: Hardware framebuffer, or NULL to defer mapping.
+ */
+void GraphicsDriver::InitialiseFramebuffer(uint32_t w, uint32_t h, uint32_t b, uint32_t* vram) {
+    // Validate the framebuffer size before allocating.
+    uint64_t pixel_count = (uint64_t)w * (uint64_t)h;
+    if (w == 0 || h == 0 || pixel_count > (0xFFFFFFFFu / sizeof(uint32_t))) {
+        HALT("CRITICAL: Invalid graphics dimensions!");
+    }
+
     this->width = w;
     this->height = h;
     this->bpp = b;
     this->videoMemory = vram;
 
-    // Validate the framebuffer size before allocating.
-    uint64_t pixel_count = (uint64_t)width * (uint64_t)height;
-    if (width == 0 || height == 0 || pixel_count > (0xFFFFFFFFu / sizeof(uint32_t))) {
-        HALT("CRITICAL: Invalid graphics dimensions!");
-    }
-    this->backBuffer = new uint32_t[width * height];
+    this->backBuffer = new uint32_t[w * h];
     if (!this->backBuffer) {
         HALT("CRITICAL: Failed to allocate graphics back buffer!\n");
     }
@@ -61,8 +84,57 @@ GraphicsDriver::GraphicsDriver(uint32_t w, uint32_t h, uint32_t b, uint32_t* vra
     PrecomputeAlphaTable();
 }
 
+GraphicsDriver::GraphicsDriver(uint32_t w, uint32_t h, uint32_t b, uint32_t* vram) {
+    InitialiseFramebuffer(w, h, b, vram);
+}
+
 GraphicsDriver::~GraphicsDriver() {
     if (backBuffer) delete[] backBuffer;
+}
+
+/**
+ * GraphicsDriver::ResizeBackBuffer() - Reallocate the scratch buffer for a new geometry.
+ * @w: New width in pixels.
+ * @h: New height in pixels.
+ *
+ * Copies the overlapping top-left region and clears the rest. The old buffer is
+ * released only after the replacement exists, so a failed allocation leaves the
+ * driver unchanged.
+ *
+ * Return: True on success, false on invalid geometry or allocation failure.
+ */
+bool GraphicsDriver::ResizeBackBuffer(uint32_t w, uint32_t h) {
+    if (w == 0 || h == 0) return false;
+
+    uint64_t pixel_count = (uint64_t)w * (uint64_t)h;
+    if (pixel_count > (0xFFFFFFFFu / sizeof(uint32_t))) return false;
+
+    uint32_t* newBuffer = new uint32_t[(size_t)pixel_count];
+    if (!newBuffer) {
+        KDBG1("ResizeBackBuffer: allocation of %ux%u failed", w, h);
+        return false;
+    }
+
+    const uint32_t clearColor = 0xFF000000;  // Opaque black.
+    for (uint64_t i = 0; i < pixel_count; i++) {
+        newBuffer[i] = clearColor;
+    }
+
+    // Carry over the region that exists in both geometries.
+    if (backBuffer) {
+        uint32_t copyW = (w < this->width) ? w : this->width;
+        uint32_t copyH = (h < this->height) ? h : this->height;
+        for (uint32_t y = 0; y < copyH; y++) {
+            memcpy(&newBuffer[(size_t)y * w], &backBuffer[(size_t)y * this->width],
+                   (size_t)copyW * sizeof(uint32_t));
+        }
+        delete[] backBuffer;
+    }
+
+    this->backBuffer = newBuffer;
+    this->width = w;
+    this->height = h;
+    return true;
 }
 
 /**

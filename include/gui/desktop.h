@@ -33,6 +33,20 @@
 #include <gui/widget.h>
 
 /**
+ * ApplyDisplayMode() - Switch the display to a new resolution and re-lay out.
+ * @width: Requested width in pixels.
+ * @height: Requested height in pixels.
+ *
+ * Every resolution change funnels through here: at boot from the persisted
+ * settings, and at runtime from the Settings app. Lives in the GUI layer
+ * because re-laying out the desktop is a GUI concern, while the actual hardware
+ * switch is delegated to the active GraphicsDriver.
+ *
+ * Return: True when the new mode is active and the desktop has been re-laid out.
+ */
+bool ApplyDisplayMode(uint16_t width, uint16_t height);
+
+/**
  * class Desktop - The root widget, managing wallpaper, cursor, and windows.
  *
  * Acts as the top-level composite: it owns every window, tracks the mouse,
@@ -46,6 +60,12 @@ protected:
     uint32_t MouseY;
     uint32_t current_id = 1000;
     Bitmap* Wallpaper;
+    // Native-resolution wallpaper, decoded once and kept so resolution changes
+    // rescale from memory instead of re-reading the BMP off the disk.
+    Bitmap* WallpaperSource;
+
+    // BuildWallpaper() - Produce a screen-sized wallpaper for w x h.
+    Bitmap* BuildWallpaper(int32_t w, int32_t h);
 
     // Cursor optimization buffers.
     int32_t oldMouseX = 0;
@@ -58,6 +78,10 @@ protected:
 
     LinkedList<EventHandler*> HguiEventHandlers;
     Taskbar* taskbar;
+
+    // While set, every mouse event is routed to this widget alone so a modal
+    // dialog cannot be clicked through. NULL when no dialog is up.
+    Widget* modalWidget = nullptr;
 
 public:
     static Desktop* activeInstance;
@@ -123,10 +147,34 @@ public:
      */
     void Focus(Widget* widget);
 
+    /**
+     * SetModalWidget() - Give one widget exclusive mouse input, or release it.
+     * @widget: Widget to receive all mouse events, or NULL to release.
+     */
+    void SetModalWidget(Widget* widget);
+
+    /** GetModalWidget() - Return the widget holding exclusive input, or NULL. */
+    Widget* GetModalWidget() const {
+        return modalWidget;
+    }
+
     /** GetTaskbar() - Return the taskbar attached to the desktop. */
     Taskbar* GetTaskbar() {
         return taskbar;
     }
+
+    /**
+     * OnResolutionChanged() - Re-lay out the whole desktop for a new screen size.
+     * @w: New screen width in pixels.
+     * @h: New screen height in pixels.
+     *
+     * Called after the graphics driver accepted a mode switch. Resizes the
+     * root widget, rebuilds the wallpaper for the new geometry, re-docks the
+     * taskbar, pulls windows that no longer fit back on screen, and clamps the
+     * cursor. A full repaint is scheduled so the first frame after the switch
+     * is already correct.
+     */
+    void OnResolutionChanged(uint32_t w, uint32_t h);
 
     // Driver inputs.
     void OnMouseDown(uint8_t button) override;

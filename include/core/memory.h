@@ -53,6 +53,29 @@ int kheap_init(void* start_addr, void* end_addr);
 void kheap_print_blocks();
 
 /**
+ * kheap_used_bytes() - Bytes currently allocated in the kernel heap.
+ *
+ * Derived by walking the TLSF pool. Block header overhead is included, so the
+ * figure slightly overstates the bytes handed out. Intended for diagnosing
+ * allocation pressure, not for exact accounting.
+ */
+size_t kheap_used_bytes();
+
+/**
+ * kheap_free_bytes() - Bytes currently free in the kernel heap.
+ */
+size_t kheap_free_bytes();
+
+/**
+ * kheap_largest_free_block() - Size of the biggest single free block.
+ *
+ * Comparing this against kheap_free_bytes() distinguishes genuine exhaustion
+ * from fragmentation: plenty free but a small largest block means an
+ * allocation failed for want of one contiguous run, not for want of bytes.
+ */
+size_t kheap_largest_free_block();
+
+/**
  * kmalloc() - Allocate bytes from the kernel heap.
  * @size: Number of bytes to allocate.
  *

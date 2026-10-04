@@ -44,6 +44,7 @@ EXCLUDE_PATHS=(
     ./include/core/tlsf
     ./stdlib/math
     ./stdlib/string
+    ./third_party/jsmn
     ./core/filesystem/FatFs/ff.c
     ./core/filesystem/FatFs/ffunicode.c
     ./include/core/filesystem/FatFs/ff.h

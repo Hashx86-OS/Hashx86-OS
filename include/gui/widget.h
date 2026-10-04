@@ -120,6 +120,19 @@ public:
     virtual void RedrawToCache();
 
     /**
+     * Resize() - Change the widget's size and reallocate its draw cache.
+     * @newW: New width in pixels.
+     * @newH: New height in pixels.
+     *
+     * Used when the screen geometry changes and windows have to be clamped or
+     * stretched. A zero dimension hides the widget's cache without failing.
+     *
+     * Return: True on success, false when the size is invalid or the cache
+     * allocation failed (the widget keeps its previous size in that case).
+     */
+    bool Resize(int32_t newW, int32_t newH);
+
+    /**
      * Draw() - Blit the cache to the screen if the widget is dirty.
      * @gc: Target graphics driver.
      */

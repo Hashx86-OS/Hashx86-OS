@@ -27,8 +27,12 @@
 
 #include <types.h>
 
-#define GUI_SCREEN_WIDTH 1600
-#define GUI_SCREEN_HEIGHT 900
+// Default framebuffer geometry. Used by the BGA driver when no mode has been
+// requested yet, and as the built-in settings default, so a machine with no
+// external graphics driver and no settings file still comes up here. Anything
+// that needs the *current* geometry must ask the active GraphicsDriver instead.
+#define GUI_SCREEN_WIDTH 1024
+#define GUI_SCREEN_HEIGHT 768
 #define GUI_SCREEN_BPP 32
 
 // All color constants below are packed as 0xAARRGGBB.

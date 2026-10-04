@@ -96,6 +96,62 @@ int kheap_init(void* start_addr, void* end_addr) {
     return 0;
 }
 
+/**
+ * tallyBlock() - tlsf_walker that accumulates pool usage into a HeapTotals.
+ */
+struct HeapTotals {
+    size_t used;
+    size_t free;
+    size_t largestFree;
+};
+
+static void tallyBlock(void* ptr, size_t size, int used, void* user) {
+    HeapTotals* t = (HeapTotals*)user;
+    if (used) {
+        t->used += size;
+    } else {
+        t->free += size;
+        if (size > t->largestFree) t->largestFree = size;
+    }
+}
+
+/**
+ * heapTotalsLocked() - Read pool usage. Caller must already hold the lock.
+ *
+ * TLSF keeps no running used/free counters, so the only way to observe
+ * pressure is to walk the pool. Block sizes include per-block header
+ * overhead, so `used` slightly overstates the bytes handed out; that is fine
+ * for diagnosing pressure and matches what TLSF itself reasons about.
+ */
+static void heapTotalsLocked(HeapTotals* out) {
+    out->used = 0;
+    out->free = 0;
+    out->largestFree = 0;
+    if (!g_tlsf) return;
+    tlsf_walk_pool(tlsf_get_pool(g_tlsf), tallyBlock, out);
+}
+
+size_t kheap_used_bytes() {
+    InterruptGuard guard;
+    HeapTotals t;
+    heapTotalsLocked(&t);
+    return t.used;
+}
+
+size_t kheap_free_bytes() {
+    InterruptGuard guard;
+    HeapTotals t;
+    heapTotalsLocked(&t);
+    return t.free;
+}
+
+size_t kheap_largest_free_block() {
+    InterruptGuard guard;
+    HeapTotals t;
+    heapTotalsLocked(&t);
+    return t.largestFree;
+}
+
 void kheap_print_blocks() {
     InterruptGuard guard;
     if (!g_tlsf) return;
@@ -108,7 +164,12 @@ void* kmalloc(size_t size) {
     InterruptGuard guard;
     if (size == 0 || size > 0x7FFFFFFF || !g_tlsf) return NULL;
     void* ptr = tlsf_malloc(g_tlsf, size);
-    if (!ptr) KDBG1("OOM size=%u", (unsigned int)size);
+    if (!ptr) {
+        HeapTotals t;
+        heapTotalsLocked(&t);
+        KDBG1("OOM size=%u used=%u free=%u largestFree=%u", (unsigned int)size,
+              (unsigned int)t.used, (unsigned int)t.free, (unsigned int)t.largestFree);
+    }
     return ptr;
 }
 
@@ -150,7 +211,13 @@ void* aligned_kmalloc(size_t size, size_t alignment) {
     if (!g_tlsf || !tlsf_request_valid(size, alignment)) return NULL;
 
     void* ptr = tlsf_memalign(g_tlsf, alignment, size);
-    if (!ptr) KDBG1("AlignedOOM size=%u align=%u", (unsigned int)size, (unsigned int)alignment);
+    if (!ptr) {
+        HeapTotals t;
+        heapTotalsLocked(&t);
+        KDBG1("AlignedOOM size=%u align=%u used=%u free=%u largestFree=%u", (unsigned int)size,
+              (unsigned int)alignment, (unsigned int)t.used, (unsigned int)t.free,
+              (unsigned int)t.largestFree);
+    }
     return ptr;
 }
 

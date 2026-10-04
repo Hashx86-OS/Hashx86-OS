@@ -26,6 +26,7 @@
 #include <core/Iguard.h>
 #include <core/globals.h>
 #include <gui/Hgui.h>
+#include <gui/desktop.h>
 
 namespace {
 constexpr uint32_t USER_LOWER_BOUND = 0x10000000;
@@ -179,6 +180,9 @@ uint32_t HguiHandler::HandleInterrupt(uint32_t esp) {
             break;
         case FONT:
             ret = HandleFont(cpu, data_ptr);
+            break;
+        case DISPLAY:
+            ret = HandleDisplay(cpu, data_ptr);
             break;
         case EVENT:
             ret = HandleEvent(cpu);
@@ -382,6 +386,56 @@ int32_t HguiHandler::HandleFont(CPUState* cpu, const WidgetData* _data) {
     }
 
     return -1;
+}
+
+int32_t HguiHandler::HandleDisplay(CPUState* cpu, const WidgetData* _data) {
+    if (!cpu || !_data) return -1;
+    // The mode switch re-allocates the back buffer and mutates the widget tree,
+    // so it must not race the GUI task. The dispatcher's InterruptGuard is held
+    // for the whole request; the GUI task takes the same guard while drawing.
+    InterruptGuard guard;
+
+    switch ((uint32_t)cpu->ebx) {
+        case GET_MODE_COUNT: {
+            // The active driver is the only source of truth for what it can
+            // actually program, so the list follows whichever driver is loaded.
+            int count = 0;
+            if (!g_GraphicsDriver) return -1;
+            g_GraphicsDriver->GetSupportedModes(&count);
+            return (int32_t)count;
+        }
+
+        case GET_MODE: {
+            // param0 = index into the mode list.
+            if (!g_GraphicsDriver) return -1;
+            int count = 0;
+            const DisplayMode* modes = g_GraphicsDriver->GetSupportedModes(&count);
+            if (!modes) return -1;
+            int32_t index = _data->param0;
+            if (index < 0 || index >= count) return -1;
+            // Pack into a single word so user space needs no memory copy.
+            return (int32_t)(((uint32_t)modes[index].height << 16) | modes[index].width);
+        }
+
+        case GET_CURRENT_MODE: {
+            if (!g_GraphicsDriver) return -1;
+            uint32_t w = g_GraphicsDriver->GetWidth();
+            uint32_t h = g_GraphicsDriver->GetHeight();
+            if (w > 0xFFFF || h > 0xFFFF) return -1;
+            return (int32_t)(((uint32_t)h << 16) | w);
+        }
+
+        case SET_MODE: {
+            // param0 = width, param1 = height.
+            uint32_t w = (uint32_t)_data->param0;
+            uint32_t h = (uint32_t)_data->param1;
+            if (w > 0xFFFF || h > 0xFFFF) return -1;
+            return ApplyDisplayMode((uint16_t)w, (uint16_t)h) ? 1 : -1;
+        }
+
+        default:
+            return -1;
+    }
 }
 
 int32_t HguiHandler::HandleIconButton(CPUState* cpu, const WidgetData* _data) {
@@ -595,6 +649,11 @@ int32_t HguiHandler::HandleListView(CPUState* cpu, const WidgetData* _data) {
         ListView* widget = FindOwnedWidget<ListView>(_data->param0, proc->pid, &Widget::IsListView);
         if (!widget) return -1;
         return widget->GetSelectedIndex();
+    } else if ((uint32_t)cpu->ebx == SET_SELECTED) {
+        // param0 = widgetID, param1 = row index (-1 clears the selection).
+        ListView* widget = FindOwnedWidget<ListView>(_data->param0, proc->pid, &Widget::IsListView);
+        if (!widget) return -1;
+        return widget->SetSelectedIndex(_data->param1) ? 1 : -1;
     } else if ((uint32_t)cpu->ebx == SET_TEXT) {
         ListView* widget = FindOwnedWidget<ListView>(_data->param0, proc->pid, &Widget::IsListView);
         if (!widget) return -1;

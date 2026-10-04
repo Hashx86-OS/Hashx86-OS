@@ -36,6 +36,8 @@
 #define USER_CODE_SELECTOR 0x18    // 3 * 8
 #define USER_DATA_SELECTOR 0x20    // 4 * 8
 #define TSS_SELECTOR 0x28          // 5 * 8
+#define REAL16_CODE_SELECTOR 0x30  // 6 * 8 - 16-bit code for the VBE real-mode shim
+#define REAL16_DATA_SELECTOR 0x38  // 7 * 8 - 16-bit data for the VBE real-mode shim
 
 /**
  * struct GDT - An 8-byte segment descriptor in the global descriptor table.

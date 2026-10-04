@@ -22,34 +22,25 @@
 ; SOFTWARE.
 ;
 
-;
-;  @file        loader.asm
-;  @brief       Main loader of #x86
-;
-;  @date        11/02/2026
-;  @version     1.0.0
-;
-;
 ; Refer to https://www.gnu.org/software/grub/manual/multiboot/multiboot.html;Header-layout for more info.
-;
+
 ; ---------------------------------------------------------------------------------------------- ;
-; Multiboot header (VBE VESA Graphics with 1152x864x32) NOTE : If you want to use VBE graphics,  ;
-;                                                              uncomment this section            ;
+; Multiboot header - GRUB loads the kernel but does NOT set a video mode.                        ;
+; The kernel programs the VESA/VBE graphics hardware itself at boot via its own drivers          ;
+; (see core/drivers/vbe.* and bga.sys), independent of any bootloader-chosen mode.               ;
 ; ---------------------------------------------------------------------------------------------- ;
 FMBALIGN    equ 1<<0						; Align loaded modules on page boundaries            ;
 MEMINFO     equ 1<<1						; Provide memory map                                 ;
-VIDINFO     equ 1<<2						; OS wants video mode set                            ;
 ;                                                                                                ;
-FLAGS       equ FMBALIGN | MEMINFO | VIDINFO; This is the multiboot 'flag' field                 ;
+FLAGS       equ FMBALIGN | MEMINFO			; No VIDINFO: the bootloader must not set a mode     ;
 MAGIC       equ 0x1BADB002					; Magic Number                                       ;
 CHECKSUM    equ -(MAGIC + FLAGS)			; Checksum                                           ;
 ;                                                                                                ;
-; NOTE :                                                                                         ;
-;     *) Yes, I hard-coded the VESA Graphics config into this assembly file because I'm lazy.    ;
-;     *) If future me wants to make this configurable, too bad.                                  ;
-;                                                                              - Past me         ;
-;                                                                                  :)            ;
+; Notes:                                                                                         ;
+;   *) The VBE/VGA video-mode fields are intentionally absent from this header.                  ;
+;   *) The kernel initializes its own graphics once paging is up.                                ;
 ;                                                                                                ;
+; ---------------------------------------------------------------------------------------------- ;
 section .multiboot                                                                               ;
 align 4                                                                                          ;
     dd MAGIC                             ; Store the magic number                                ;
@@ -61,31 +52,6 @@ align 4                                                                         
     dd 0                                 ; Load end Address                                      ;
     dd 0                                 ; Bss end Address                                       ;
     dd 0                                 ; Entry Address                                         ;
-;                                                                                                ;
-    dd 0                                 ; Mode Type                                             ;
-    dd 1152                              ; Width                                                 ;
-    dd 864                               ; Height                                                ;
-    dd 32                                ; Depth                                                 ;
-; ---------------------------------------------------------------------------------------------- ;
-
-
-
-; ---------------------------------------------------------------------------------------------- ;
-; Multiboot header (VGA)  NOTE : If you want to use ugly VGA graphics, uncomment this section    ;
-; ---------------------------------------------------------------------------------------------- ;
-;FMBALIGN    equ 1<<0						; Align loaded modules on page boundaries            ;
-;MEMINFO     equ 1<<1						; Provide memory map                                 ;
-;VIDINFO     equ 1<<2						; OS wants video mode set                            ;
-;                                                                                                ;
-;FLAGS       equ FMBALIGN | MEMINFO | VIDINFO; This is the multiboot 'flag' field                ;
-;MAGIC       equ 0x1BADB002					; Magic Number                                       ;
-;CHECKSUM    equ -(MAGIC + FLAGS)			; Checksum                                           ;
-;                                                                                                ;
-;section .multiboot                                                                              ;
-;align 4                                                                                         ;
-;    dd MAGIC                     ; Store the magic number                                       ;
-;    dd FLAGS                     ; Store the flags value                                        ;
-;    dd CHECKSUM                  ; Store the checksum value                                     ;
 ; ---------------------------------------------------------------------------------------------- ;
 
 ; Define the text section where executable code is placed

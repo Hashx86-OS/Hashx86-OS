@@ -45,6 +45,12 @@
 #define START_MENU_HEADER_HEIGHT 40
 #define START_MENU_PADDING 6
 #define START_MENU_MAX_ITEMS 8
+#define START_MENU_MAX_POWER_BUTTONS 4
+
+// Round power buttons in the start menu header, right of the title.
+#define START_MENU_POWER_BTN_DIAMETER 24
+#define START_MENU_POWER_BTN_GAP 6
+#define START_MENU_POWER_BTN_PAD 10
 
 // Taskbar tabs.
 #define TASKBAR_TAB_HEIGHT 28
@@ -81,6 +87,12 @@
 #define START_MENU_ITEM_BG_PRESSED 0xFF2A2A2A
 #define START_MENU_ITEM_TEXT 0xFFE0E0E0
 #define START_MENU_ITEM_DESC_TEXT 0xFF888888
+
+// Power button faces. The red reads as destructive against the dark menu.
+#define START_MENU_POWER_BTN_BG 0xFFB3261E
+#define START_MENU_POWER_BTN_BG_HOVER 0xFFD0372C
+#define START_MENU_POWER_BTN_BG_PRESSED 0xFF8C1E18
+#define START_MENU_POWER_BTN_GLYPH 0xFFFFFFFF
 #define START_MENU_SEPARATOR 0xFF3A3A3A
 
 // Taskbar tab colors.
@@ -111,10 +123,68 @@ struct TaskbarAppEntry {
 // Widget classes.
 
 /**
+ * enum StartMenuAction - What a start menu entry does when clicked.
+ *
+ * An entry either launches a program from disk or runs a built-in system
+ * action, so the two kinds share one widget and one row layout.
+ */
+enum StartMenuAction {
+    /** Launch the program named by the entry's path. */
+    START_MENU_ACTION_LAUNCH = 0,
+    /** Pulse the CPU reset line. */
+    START_MENU_ACTION_RESTART,
+    /** Ask the platform to power the machine off. */
+    START_MENU_ACTION_SHUTDOWN,
+};
+
+/**
+ * class StartMenuPowerButton - A small round button in the start menu header.
+ *
+ * Renders just a glyph from the icon font inside a filled circle and performs
+ * its system action on click. Sits in the header row rather than the entry
+ * list, so the power controls stay clear of the applications.
+ */
+class StartMenuPowerButton : public Widget {
+private:
+    uint32_t iconCodepoint;
+    Font* iconFont;
+    StartMenuAction action;
+    bool isPressed;
+    bool isHovered;
+
+public:
+    /**
+     * StartMenuPowerButton() - Construct a round power button.
+     * @parent: Parent widget, or NULL for a root widget.
+     * @x: X position relative to @parent.
+     * @y: Y position relative to @parent.
+     * @w: Button diameter in pixels.
+     * @h: Button diameter in pixels.
+     * @action: System action to perform on click.
+     * @iconName: Symbolic icon name to look up.
+     */
+    StartMenuPowerButton(Widget* parent, int32_t x, int32_t y, int32_t w, int32_t h,
+                         StartMenuAction action, const char* iconName);
+
+    /**
+     * ~StartMenuPowerButton() - Release the icon font face.
+     */
+    ~StartMenuPowerButton();
+
+    /** RedrawToCache() - Paint the circular button face and its glyph. */
+    void RedrawToCache() override;
+
+    void OnMouseDown(int32_t x, int32_t y, uint8_t button) override;
+    void OnMouseUp(int32_t x, int32_t y, uint8_t button) override;
+    void OnMouseMove(int32_t oldx, int32_t oldy, int32_t newx, int32_t newy) override;
+};
+
+/**
  * class StartMenuButton - A start menu entry that launches an application.
  *
  * Renders a label with an optional description and runs the referenced binary
- * through the process loader when clicked.
+ * through the process loader when clicked. Power actions live in the header as
+ * round buttons, so this widget only ever launches programs.
  */
 class StartMenuButton : public Widget {
 private:
@@ -232,6 +302,10 @@ public:
 class StartMenu : public CompositeWidget {
 private:
     int32_t itemCount;
+    int32_t powerButtonCount;
+
+    /** resizeToFitItems() - Re-dock the menu to its current entry count. */
+    void resizeToFitItems();
 
 public:
     /**
@@ -256,6 +330,16 @@ public:
      * @binPath: Program path to launch.
      */
     void AddApp(const char* name, const char* description, const char* binPath);
+
+    /**
+     * AddPowerButton() - Add a round system action button to the header row.
+     * @action: System action to run on click.
+     * @iconName: Symbolic icon name to look up.
+     *
+     * Buttons stack right to left from the menu's right padding, in the order
+     * they are added.
+     */
+    void AddPowerButton(StartMenuAction action, const char* iconName);
 
     /** Draw() - Paint the menu with its entries. */
     void Draw(GraphicsDriver* gc) override;
@@ -348,6 +432,13 @@ public:
     void AddApp(const char* name, const char* description, const char* binPath);
 
     /**
+     * AddPowerButton() - Forward a round power button to the start menu header.
+     * @action: System action to run on click.
+     * @iconName: Symbolic icon name to look up.
+     */
+    void AddPowerButton(StartMenuAction action, const char* iconName);
+
+    /**
      * ToggleStartMenu() - Open the menu if closed, close it if open.
      */
     void ToggleStartMenu();
@@ -399,6 +490,16 @@ public:
      * RepositionTabs() - Lay out all tabs side by side in order.
      */
     void RepositionTabs();
+
+    /**
+     * SetScreenDimensions() - Re-dock the bar after a resolution change.
+     * @screenW: New screen width in pixels.
+     * @screenH: New screen height in pixels.
+     *
+     * Moves the bar back to the bottom edge, stretches it to the new width,
+     * re-docks the clock and the start menu, and re-lays out the window tabs.
+     */
+    void SetScreenDimensions(int32_t screenW, int32_t screenH);
 
     /** IsTaskbar() - Return true for taskbar widget types. */
     bool IsTaskbar() const override {

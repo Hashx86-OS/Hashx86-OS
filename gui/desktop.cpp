@@ -25,6 +25,7 @@
 #define KDBG_COMPONENT "GUI:DESKTOP"
 #include <core/Iguard.h>
 #include <core/filesystem/Paths.h>
+#include <core/globals.h>
 #include <gui/desktop.h>
 
 Desktop* Desktop::activeInstance = nullptr;
@@ -37,22 +38,15 @@ Desktop::Desktop(int32_t w, int32_t h)
 
     KDBG1("DESKTOP Initialized with ID 0x%x", this->ID);
 
-    // Initialize the wallpaper.
-    Bitmap* wallpaperImg = new Bitmap(PATH_DESKTOP_BMP);
-    if (!wallpaperImg) {
-        HALT("CRITICAL: Failed to allocate desktop wallpaper bitmap!\n");
+    // Initialize the wallpaper. The source is decoded once and kept; the
+    // screen-sized copy is rescaled from it for the current geometry.
+    this->WallpaperSource = new Bitmap(PATH_DESKTOP_BMP);
+    if (this->WallpaperSource && !this->WallpaperSource->IsValid()) {
+        delete this->WallpaperSource;
+        this->WallpaperSource = nullptr;
     }
 
-    if (wallpaperImg->IsValid()) {
-        this->Wallpaper = wallpaperImg;
-    } else {
-        // Fallback: a solid bluish color.
-        this->Wallpaper = new Bitmap(w, h, 0xFF0000FF);
-        if (!this->Wallpaper) {
-            HALT("CRITICAL: Failed to allocate fallback wallpaper bitmap!\n");
-        }
-        delete wallpaperImg;
-    }
+    this->Wallpaper = BuildWallpaper(w, h);
 
     memset(cursorBackBuffer, 0, sizeof(cursorBackBuffer));
 
@@ -68,15 +62,113 @@ Desktop::Desktop(int32_t w, int32_t h)
     taskbar->AddApp("MemViewer", "Memory inspector", PATH_MEMVIEW);
     taskbar->AddApp("Explorer", "File Manager", PATH_EXPLORER);
     taskbar->AddApp("Calculator", "Calculator GUI", PATH_CALCULATOR);
+    taskbar->AddApp("Settings", "Display & resolution", PATH_SETTINGS);
     taskbar->AddApp("Terminal", "CLI preview", PATH_TERMINAL);
     taskbar->AddApp("Game3D", "3D Game Engine", PATH_GAME3D);
+
+    // Power controls, as small round buttons on the right of the start menu
+    // header so they stay clear of the application list. These act
+    // immediately on click with no confirmation.
+    taskbar->AddPowerButton(START_MENU_ACTION_RESTART, "fa-restart");
+    taskbar->AddPowerButton(START_MENU_ACTION_SHUTDOWN, "fa-power-off");
 
     // NOTE: Taskbar is NOT added to childrenList.
 }
 
 Desktop::~Desktop() {
     if (Wallpaper) delete Wallpaper;
+    if (WallpaperSource) delete WallpaperSource;
     if (taskbar) delete taskbar;
+}
+
+/**
+ * Desktop::BuildWallpaper() - Produce a screen-sized wallpaper for w x h.
+ * @w: Screen width in pixels.
+ * @h: Screen height in pixels.
+ *
+ * Rescales the resident source to cover the screen with its aspect ratio
+ * preserved, centered so the overflow crops evenly on both axes. An image
+ * larger than the screen is center-cropped at native resolution rather than
+ * downscaled, so it stays sharp instead of turning to mush.
+ *
+ * Falls back to a solid bluish fill if the source is missing or the rescale
+ * cannot be allocated, so the desktop always has a valid background.
+ */
+Bitmap* Desktop::BuildWallpaper(int32_t w, int32_t h) {
+    if (WallpaperSource) {
+        Bitmap* scaled = Bitmap::ScaledCover(WallpaperSource, w, h);
+        if (scaled && scaled->IsValid()) return scaled;
+        if (scaled) delete scaled;
+    }
+
+    Bitmap* solid = new Bitmap(w, h, 0xFF0000FF);
+    if (!solid || !solid->IsValid()) {
+        if (solid) delete solid;
+        HALT("CRITICAL: Failed to allocate fallback wallpaper bitmap!\n");
+    }
+    return solid;
+}
+
+/**
+ * Desktop::OnResolutionChanged() - Re-lay out the whole desktop for a new screen size.
+ * @w: New screen width in pixels.
+ * @h: New screen height in pixels.
+ *
+ * The wallpaper is rescaled to cover the new screen with its aspect ratio kept,
+ * so a screen larger than the image upscales it and a screen smaller than the
+ * image centers and crops it. Windows are clamped instead of scaled, so their
+ * contents keep their size.
+ */
+void Desktop::OnResolutionChanged(uint32_t w, uint32_t h) {
+    if (w == 0 || h == 0) return;
+    if ((int32_t)w == this->w && (int32_t)h == this->h) return;
+
+    // Serialize against the GUI task, which draws from this same tree.
+    InterruptGuard guard;
+
+    // Release the cache Widget sized for the old geometry. CompositeWidget::Draw()
+    // still runs Widget::Draw() here, so a stale cache would be memset to the new
+    // w*h and overrun into allocator metadata; null makes RedrawToCache() a no-op.
+    if (cache) {
+        delete[] cache;
+        cache = nullptr;
+    }
+    this->w = (int32_t)w;
+    this->h = (int32_t)h;
+
+    // ---- Wallpaper --------------------------------------------------------
+    Bitmap* rebuilt = BuildWallpaper((int32_t)w, (int32_t)h);
+    if (rebuilt) {
+        delete this->Wallpaper;
+        this->Wallpaper = rebuilt;
+    }
+    // ---- Taskbar ----------------------------------------------------------
+    if (taskbar) {
+        taskbar->SetScreenDimensions((int32_t)w, (int32_t)h);
+    }
+
+    // ---- Windows ----------------------------------------------------------
+    // Keep the usable area above the taskbar.
+    int32_t usableH = (int32_t)h - TASKBAR_HEIGHT;
+    childrenList.ForEach([&](Widget* child) {
+        if (child->w > (int32_t)w) child->Resize((int32_t)w, child->h);
+        if (child->h > usableH) child->Resize(child->w, usableH);
+        if (child->x < 0) child->x = 0;
+        if (child->y < 0) child->y = 0;
+        if (child->x + child->w > (int32_t)w) child->x = (int32_t)w - child->w;
+        if (child->y + child->h > usableH) child->y = usableH - child->h;
+        child->MarkDirty();
+    });
+
+    // ---- Cursor -----------------------------------------------------------
+    if (MouseX + CURSOR_SIZE > w) MouseX = (w > CURSOR_SIZE) ? w - CURSOR_SIZE : 0;
+    if (MouseY + CURSOR_SIZE > h) MouseY = (h > CURSOR_SIZE) ? h - CURSOR_SIZE : 0;
+    hasBackBuffer = false;
+
+    // Force a full repaint on the next frame.
+    this->isDirty = true;
+
+    KDBG1("Desktop re-laid out for %ux%u", w, h);
 }
 
 void Desktop::createNewHandler(uint32_t pid, ThreadControlBlock* thread) {
@@ -280,7 +372,25 @@ void Desktop::GetFocus(Widget* widget) {
     }
 }
 
+/**
+ * Desktop::SetModalWidget() - Give one widget exclusive mouse input.
+ * @widget: Widget to receive all mouse events, or NULL to release.
+ *
+ * Set by a modal dialog so clicks land on the prompt instead of the windows
+ * behind it. A NULL widget clears the lock.
+ */
+void Desktop::SetModalWidget(Widget* widget) {
+    modalWidget = widget;
+    this->isDirty = true;
+}
+
 void Desktop::OnMouseDown(uint8_t button) {
+    // A modal dialog owns the pointer until it is dismissed.
+    if (modalWidget && modalWidget->isVisible) {
+        modalWidget->OnMouseDown((int32_t)MouseX, (int32_t)MouseY, button);
+        return;
+    }
+
     // Check whether the click is in the start menu area (above the taskbar).
     if (taskbar && taskbar->IsStartMenuOpen() && taskbar->StartMenuContains(MouseX, MouseY)) {
         taskbar->OnMouseDown(MouseX, MouseY, button);
@@ -301,6 +411,12 @@ void Desktop::OnMouseDown(uint8_t button) {
 }
 
 void Desktop::OnMouseUp(uint8_t button) {
+    // Route the release to the modal dialog that took the press.
+    if (modalWidget && modalWidget->isVisible) {
+        modalWidget->OnMouseUp((int32_t)MouseX, (int32_t)MouseY, button);
+        return;
+    }
+
     // Route to the start menu.
     if (taskbar && taskbar->IsStartMenuOpen() && taskbar->StartMenuContains(MouseX, MouseY)) {
         taskbar->OnMouseUp(MouseX, MouseY, button);
@@ -333,6 +449,13 @@ void Desktop::OnMouseMove(int32_t dx, int32_t dy) {
     MouseX = (uint32_t)newX;
     MouseY = (uint32_t)newY;
 
+    // A modal dialog consumes motion too, so hover states elsewhere do not
+    // update behind it.
+    if (modalWidget && modalWidget->isVisible) {
+        modalWidget->OnMouseMove(oldX, oldY, (int32_t)MouseX, (int32_t)MouseY);
+        return;
+    }
+
     // Pass the delta to the UI.
     CompositeWidget::OnMouseMove(oldX, oldY, MouseX, MouseY);
 
@@ -353,4 +476,47 @@ void Desktop::OnSpecialKeyDown(uint8_t key) {
 }
 void Desktop::OnSpecialKeyUp(uint8_t key) {
     CompositeWidget::OnSpecialKeyUp(key);
+}
+
+/**
+ * ApplyDisplayMode() - Switch the display to a new resolution and re-lay out.
+ * @width: Requested width in pixels.
+ * @height: Requested height in pixels.
+ *
+ * The active GraphicsDriver owns the hardware switch and reports the geometry
+ * it actually adopted (an adapter may clamp what it accepted), so the relayout
+ * is driven by the driver rather than by the request.
+ *
+ * Return: True when the new mode is active and the desktop has been re-laid out.
+ */
+bool ApplyDisplayMode(uint16_t width, uint16_t height) {
+    if (!g_GraphicsDriver) return false;
+    if (width == 0 || height == 0) return false;
+
+    uint32_t currentW = g_GraphicsDriver->GetWidth();
+    uint32_t currentH = g_GraphicsDriver->GetHeight();
+    if (width == currentW && height == currentH) {
+        return true;
+    }
+
+    // A fullscreen process mapped the back buffer into its own address space
+    // (Hsys_getFramebuffer). Reallocating it would leave that mapping pointing at
+    // freed memory, so the switch is refused until the app gives the screen up.
+    if (g_stop_gui_rendering) {
+        KDBG1("ApplyDisplayMode: refused, PID %d owns the framebuffer", g_gui_owner_pid);
+        return false;
+    }
+
+    if (!g_GraphicsDriver->SetVideoMode(width, height)) {
+        KDBG1("ApplyDisplayMode: driver refused %ux%u", width, height);
+        return false;
+    }
+
+    // Re-lay out the desktop against the geometry the driver actually adopted.
+    if (Desktop::activeInstance) {
+        Desktop::activeInstance->OnResolutionChanged(g_GraphicsDriver->GetWidth(),
+                                                     g_GraphicsDriver->GetHeight());
+    }
+
+    return true;
 }

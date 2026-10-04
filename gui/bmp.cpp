@@ -212,3 +212,99 @@ void Bitmap::Load(File* file) {
     this->valid = true;
     KDBG2("Loaded: %dx%d", width, height);
 }
+
+/**
+ * Bitmap::ScaledCover() - Resample an image to cover a target size, centered.
+ * @src: Source image; must be valid.
+ * @dstW: Target width in pixels.
+ * @dstH: Target height in pixels.
+ *
+ * Scales by the larger of the two axis ratios so the image covers the target,
+ * then centers it and lets the overflow crop away. The scale is clamped to a
+ * minimum of 1:1, so a wallpaper larger than the screen is center-cropped at
+ * native resolution rather than downscaled into a blur.
+ *
+ * Pixels are scattered forward from source to target through 16.16 fixed point
+ * (no FPU needed). That direction reads the source strictly sequentially, and
+ * the per-column source position advances by a constant step instead of being
+ * re-divided for every pixel. Rows and columns that fall outside the target are
+ * skipped, so cropping costs nothing.
+ *
+ * Returns a newly allocated bitmap the caller owns, or nullptr if @src is
+ * invalid or the result could not be allocated.
+ */
+Bitmap* Bitmap::ScaledCover(const Bitmap* src, int32_t dstW, int32_t dstH) {
+    if (!src || !src->valid || !src->buffer) return nullptr;
+    if (dstW <= 0 || dstH <= 0) return nullptr;
+
+    const int32_t srcW = src->width;
+    const int32_t srcH = src->height;
+    if (srcW <= 0 || srcH <= 0) return nullptr;
+
+    // Cover scale in 16.16 fixed point: whichever axis is relatively tighter
+    // wins, so both axes end up covered. Stays 32-bit; a realistic screen is
+    // far below the 32768-pixel width where the shift could overflow.
+    uint32_t scale = ((uint32_t)dstW << 16) / (uint32_t)srcW;
+    const uint32_t scaleY = ((uint32_t)dstH << 16) / (uint32_t)srcH;
+    if (scaleY > scale) scale = scaleY;
+    // Never soften an image that already over-covers the target.
+    if (scale < (1u << 16)) scale = 1u << 16;
+
+    // Scaled dimensions, rounded up so rounding cannot leave an uncovered row
+    // or column at the far edge. Only the multiply and shift widen to 64-bit;
+    // 64-bit division would pull in a libgcc helper the kernel does not link.
+    const int32_t scaledW = (int32_t)(((uint64_t)srcW * scale + 0xFFFF) >> 16);
+    const int32_t scaledH = (int32_t)(((uint64_t)srcH * scale + 0xFFFF) >> 16);
+
+    // Negative offsets center-crop the overflow.
+    const int32_t offX = (dstW - scaledW) / 2;
+    const int32_t offY = (dstH - scaledH) / 2;
+
+    // Filled with an opaque base first so any pixel the sampler misses is a
+    // defined color instead of uninitialized memory.
+    Bitmap* out = new Bitmap(dstW, dstH, 0xFF000000);
+    if (!out || !out->valid) {
+        if (out) delete out;
+        KDBG1("ScaledCover: allocation failed for %dx%d", dstW, dstH);
+        return nullptr;
+    }
+
+    // Fixed-point origin of the destination's first pixel in source space.
+    const int32_t fxOrigin = -offX * ((int32_t)(((uint32_t)srcW << 16) / (uint32_t)scaledW));
+    int32_t fy = -offY * ((int32_t)(((uint32_t)srcH << 16) / (uint32_t)scaledH));
+
+    const uint32_t* s = src->buffer;
+    uint32_t* d = out->buffer;
+
+    // Destination-to-source step per axis, so neither loop divides. Cover
+    // guarantees scaledW/scaledH are >= the target, so the origins below are
+    // non-negative and the accumulators never go negative.
+    const int32_t stepX = (int32_t)(((uint32_t)srcW << 16) / (uint32_t)scaledW);
+    const int32_t stepY = (int32_t)(((uint32_t)srcH << 16) / (uint32_t)scaledH);
+
+    // Gather rather than scatter: driven by the destination it writes every
+    // target pixel exactly once. The reverse direction would floor the source
+    // position per step and skip target columns whenever the step exceeds one,
+    // punching holes in an upscaled image.
+    for (int32_t y = 0; y < dstH; y++) {
+        int32_t sy = (fy >> 16);
+        fy += stepY;
+        if (sy < 0) sy = 0;
+        if (sy >= srcH) sy = srcH - 1;
+
+        const uint32_t* srcRow = &s[(size_t)sy * srcW];
+        uint32_t* dstRow = &d[(size_t)y * dstW];
+
+        int32_t fx = fxOrigin;
+        for (int32_t x = 0; x < dstW; x++) {
+            int32_t sx = (fx >> 16);
+            fx += stepX;
+            if (sx < 0) sx = 0;
+            if (sx >= srcW) sx = srcW - 1;
+            dstRow[x] = srcRow[sx];
+        }
+    }
+
+    KDBG2("ScaledCover: %dx%d -> %dx%d", srcW, srcH, dstW, dstH);
+    return out;
+}

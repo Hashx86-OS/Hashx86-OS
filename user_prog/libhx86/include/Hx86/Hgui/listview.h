@@ -48,6 +48,14 @@ public:
     void SetItems(ListViewItemData* items, int count);
     void Clear();
     int GetSelectedIndex();
+
+    /**
+     * SetSelectedIndex() - Highlight a row programmatically.
+     * @index: Row to select, or -1 to clear the selection.
+     *
+     * Return: True when @index was in range, false otherwise.
+     */
+    bool SetSelectedIndex(int index);
     void SetHeader(const char* text);
 };
 

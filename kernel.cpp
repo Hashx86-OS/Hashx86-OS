@@ -23,9 +23,12 @@
  */
 
 #define KDBG_COMPONENT "KERNEL"
+#include <core/drivers/vbe.h>
 #include <core/filesystem/Paths.h>
 #include <core/kstack.h>
+#include <core/settings.h>
 #include <gui/bootanim.h>
+#include <gui/desktop.h>
 #include <kernel.h>
 
 #define DEBUG_ENABLED TRUE;
@@ -332,23 +335,45 @@ void init_pci(FileSystem* boot_partition, DriverManager* driverManager) {
                     GraphicsDriver* newScreen = drv->AsGraphicsDriver();
 
                     if (newScreen) {
-                        GraphicsDriver* oldDR = g_GraphicsDriver;
-
-                        // Update the global graphics driver reference.
-                        g_GraphicsDriver = newScreen;
-
-                        // Copy the old screen content to the new screen.
-                        int32_t x, y;
-                        g_GraphicsDriver->GetScreenCenter(oldDR->GetWidth(), oldDR->GetHeight(), x,
-                                                          y);
-
-                        if (oldDR->GetBackBuffer()) {
-                            g_GraphicsDriver->DrawBitmap(x, y, oldDR->GetBackBuffer(),
-                                                         oldDR->GetWidth(), oldDR->GetHeight());
-                        }
+                        // Activate before touching anything: the BGA
+                        // constructor is hardware-free, so the framebuffer is
+                        // only valid once Activate() has programmed the adapter
+                        // and mapped the BAR. Activate() reports failure by
+                        // returning with a null framebuffer, so the driver is
+                        // rejected here instead of being published globally.
                         drv->Activate();
-                        g_GraphicsDriver->Flush();
-                        KDBG1("BGA Module Loaded Successfully.");
+
+                        if (newScreen->GetVideoMemory() && newScreen->GetBackBuffer()) {
+                            GraphicsDriver* oldDR = g_GraphicsDriver;
+
+                            // Carry the current image over to the new geometry
+                            // before the global is republished, so nothing
+                            // observes a half-populated back buffer.
+                            if (oldDR && oldDR->GetBackBuffer()) {
+                                int32_t x, y;
+                                newScreen->GetScreenCenter(oldDR->GetWidth(), oldDR->GetHeight(), x,
+                                                           y);
+                                newScreen->DrawBitmap(x, y, oldDR->GetBackBuffer(),
+                                                      oldDR->GetWidth(), oldDR->GetHeight());
+                            }
+
+                            g_GraphicsDriver = newScreen;
+                            g_GraphicsDriver->Flush();
+                            KDBG1("BGA Module Loaded Successfully.");
+
+                            // Retire the bootstrap VBE driver now that a real
+                            // driver owns the panel. The delete is deferred to
+                            // after the splash thread exits: the animator is
+                            // still drawing here and reads g_GraphicsDriver
+                            // per frame, so freeing its driver now would race.
+                            VESA_BIOS_Extensions* vbe = VESA_BIOS_Extensions::activeInstance;
+                            if (vbe && (GraphicsDriver*)vbe == oldDR) {
+                                vbe->Deactivate();
+                                KDBG1("Bootstrap VBE retired; releasing after the splash.");
+                            }
+                        } else {
+                            KDBG1("Error: BGA driver failed to activate, keeping current driver.");
+                        }
                     } else {
                         KDBG1("Error: Driver loaded, but is not a GraphicsDriver!");
                     }
@@ -634,8 +659,31 @@ void BootMain(void* arg) {
     // Draw the title and re-sync the animation background atomically.
     BootTitleResync();
 
+    // ---- Persisted settings: read now, apply after the splash ---------------
+    // Parsing happens here so a malformed file is reported during boot, but the
+    // mode is NOT applied yet. The splash animator is running on another thread
+    // and captured its background rectangle at the boot resolution;
+    // re-programming the panel underneath it leaves that rectangle stale and
+    // the animator never completes its exit handshake, deadlocking boot. The
+    // mode is applied after the handoff instead, below.
+    struct Settings settings;
+    SettingsDefaults(&settings);
+    if (SettingsLoad(&settings, PATH_SETTINGS_FILE)) {
+        KDBG1("Loaded settings: display %ux%u", (unsigned)settings.displayWidth,
+              (unsigned)settings.displayHeight);
+    } else {
+        KDBG1("No usable %s, using defaults: display %ux%u", PATH_SETTINGS_FILE,
+              (unsigned)settings.displayWidth, (unsigned)settings.displayHeight);
+    }
+    // Fall back to the live mode if the defaults somehow do not match it.
+    if (settings.displayWidth == 0 || settings.displayHeight == 0) {
+        settings.displayWidth = (uint16_t)g_GraphicsDriver->GetWidth();
+        settings.displayHeight = (uint16_t)g_GraphicsDriver->GetHeight();
+    }
+
     // ---- Slow stage 4: desktop + syscall interfaces ------------------------
-    Desktop* desktop = new Desktop(GUI_SCREEN_WIDTH, GUI_SCREEN_HEIGHT);
+    Desktop* desktop =
+        new Desktop((int32_t)g_GraphicsDriver->GetWidth(), (int32_t)g_GraphicsDriver->GetHeight());
     if (!desktop) {
         HALT("CRITICAL: Failed to allocate Desktop!\n");
     }
@@ -710,11 +758,41 @@ void BootMain(void* arg) {
     }
 
     KDBG1("Welcome to #x86!");
+
+    // The splash thread is gone, so the retired bootstrap VBE driver can be
+    // freed. It is deliberately not owned by the DriverManager - it predates it
+    // and is constructed before paging - so this is the only place its
+    // lifetime is closed. ~VESA_BIOS_Extensions() clears activeInstance.
+    if (VESA_BIOS_Extensions::activeInstance &&
+        (GraphicsDriver*)VESA_BIOS_Extensions::activeInstance != g_GraphicsDriver) {
+        delete VESA_BIOS_Extensions::activeInstance;
+        KDBG1("Bootstrap VBE driver released.");
+    }
+
     {
         InterruptGuard guard;
         g_driverManager->ActivateAll();
     }
     KDBG1("System Drivers Activated.");
+
+    // ---- Apply the persisted display mode ----------------------------------
+    // Safe to re-program the panel now that the splash animator has exited and
+    // released the framebuffer. ApplyDisplayMode() re-lays out the desktop,
+    // which was created above at whatever mode the bootloader started in, so
+    // this is the same path a live resolution change takes.
+    if (settings.displayWidth != g_GraphicsDriver->GetWidth() ||
+        settings.displayHeight != g_GraphicsDriver->GetHeight()) {
+        KDBG1("Applying saved resolution %ux%u", (unsigned)settings.displayWidth,
+              (unsigned)settings.displayHeight);
+        if (!ApplyDisplayMode(settings.displayWidth, settings.displayHeight)) {
+            KDBG1("Saved resolution %ux%u unavailable, keeping %ux%u",
+                  (unsigned)settings.displayWidth, (unsigned)settings.displayHeight,
+                  (unsigned)g_GraphicsDriver->GetWidth(), (unsigned)g_GraphicsDriver->GetHeight());
+        } else {
+            KDBG1("Display now %ux%u", (unsigned)g_GraphicsDriver->GetWidth(),
+                  (unsigned)g_GraphicsDriver->GetHeight());
+        }
+    }
 
     // Start the desktop thread now that boot is complete.
     DesktopArgs* desktopArgs = new DesktopArgs{g_GraphicsDriver, desktop, g_bootPartition};
@@ -759,6 +837,27 @@ extern "C" void kernelMain(void* multiboot_structure, uint32_t magicnumber) {
     init_memory(mbinfo);
     InitializePIT(1000);
 
+    // ---- VBE graphics self-initialization --------------------------------
+    // The multiboot header carries no video-mode request (no VIDINFO), so the
+    // bootloader leaves the hardware untouched. Ask the VGA BIOS directly by
+    // dropping to real mode for int 0x10 (VBE). This must run before paging:
+    // real mode cannot operate while CR0.PG is set.
+    // The driver probes the VGA BIOS itself: constructing it is the whole
+    // initialization, with no separate pre-probe step.
+    g_GraphicsDriver = new VESA_BIOS_Extensions();
+    if (!g_GraphicsDriver) {
+        HALT("CRITICAL: Failed to allocate VESA_BIOS_Extensions!\n");
+    }
+    if (!g_GraphicsDriver->GetVideoMemory()) {
+        HALT("CRITICAL: VBE self-initialization failed - no framebuffer!\n");
+    }
+
+    // Black base until BootMain draws thwe boot image.
+    {
+        InterruptGuard guard;
+        g_GraphicsDriver->Flush();  // Present the cleared backbuffer as splash base.
+    }
+
     KDBG1("Initializing paging...");
 
     g_paging = new Paging();
@@ -770,22 +869,6 @@ extern "C" void kernelMain(void* multiboot_structure, uint32_t magicnumber) {
 
     // The slow stages run in the BootMain worker thread; only
     // IRQ-independent, filesystem-free setup stays on this path.
-
-    if (!(mbinfo->flags & (1 << 12))) {
-        HALT("CRITICAL: Multiboot framebuffer info not available - cannot initialize graphics!\n");
-    }
-    g_GraphicsDriver =
-        new VESA_BIOS_Extensions(mbinfo->framebuffer_width, mbinfo->framebuffer_height, 32,
-                                 (uint32_t*)mbinfo->framebuffer_addr);
-    if (!g_GraphicsDriver) {
-        HALT("CRITICAL: Failed to allocate VESA_BIOS_Extensions!\n");
-    }
-
-    // Black base until BootMain draws the boot image.
-    {
-        InterruptGuard guard;
-        g_GraphicsDriver->Flush();  // Present the cleared backbuffer as splash base.
-    }
 
     // ---- Early multithreading bring-up ------------------------------------
     // The scheduler + timer IRQ go live before the slow stages (BootMain
