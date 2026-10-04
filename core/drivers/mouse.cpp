@@ -51,6 +51,14 @@ void MouseEventHandler::OnMouseDown(uint8_t button) {}
 void MouseEventHandler::OnMouseUp(uint8_t button) {}
 
 /**
+ * MouseEventHandler::OnMouseWheel() - Called when the wheel is scrolled.
+ * @delta: Positive when scrolling down, negative when scrolling up.
+ */
+void MouseEventHandler::OnMouseWheel(int32_t delta) {
+    (void)delta;
+}
+
+/**
  * MouseDriver::MouseDriver() - Construct the mouse driver.
  * @manager: Interrupt manager owning IRQ 12.
  * @handler: Event handler receiving mouse events.

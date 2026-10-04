@@ -58,6 +58,12 @@ public:
      * @button: The released button.
      */
     virtual void OnMouseUp(uint8_t button);
+
+    /**
+     * OnMouseWheel() - Called when the wheel is scrolled.
+     * @delta: Positive when scrolling down, negative when scrolling up.
+     */
+    virtual void OnMouseWheel(int32_t delta);
 };
 
 /**

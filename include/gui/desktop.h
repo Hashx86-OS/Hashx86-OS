@@ -222,6 +222,7 @@ public:
     void OnMouseDown(uint8_t button) override;
     void OnMouseUp(uint8_t button) override;
     void OnMouseMove(int32_t dx, int32_t dy) override;
+    void OnMouseWheel(int32_t delta) override;
     void OnKeyDown(const char* key) override;
     void OnSpecialKeyDown(uint8_t key) override;
     void OnKeyUp(const char* key) override;

@@ -24,6 +24,7 @@
 
 #include "../framework.h"
 
+#include <gui/input/inputQueue.h>
 #include <gui/inputEvent.h>
 #include <gui/widget.h>
 
@@ -127,4 +128,59 @@ TEST(key_repeat_and_modifiers_reach_focused_child) {
     CHECK_EQ(a->mod, 0);
     CHECK_EQ(b->repeat, 1);
     CHECK_EQ(b->mod, 1);
+}
+
+TEST(input_queue_is_fifo_and_wraps) {
+    InputQueue queue;
+    CHECK_EQ(queue.Count(), 0u);
+
+    for (uint32_t i = 0; i < InputQueue::CAPACITY; i++) {
+        InputEvent e = {};
+        e.type = IE_KEY_DOWN;
+        e.x = (int32_t)i;
+        CHECK(queue.Push(e));
+    }
+    CHECK_EQ(queue.Count(), InputQueue::CAPACITY);
+
+    // Full: the next push is dropped and counted.
+    InputEvent extra = {};
+    extra.type = IE_KEY_REPEAT;
+    CHECK(!queue.Push(extra));
+    CHECK_EQ(queue.OverflowCount(), 1u);
+
+    // Drain half, then push again to exercise wraparound.
+    InputEvent out = {};
+    for (uint32_t i = 0; i < InputQueue::CAPACITY / 2; i++) {
+        CHECK(queue.Pop(out));
+        CHECK_EQ(out.x, (int32_t)i);
+    }
+    for (uint32_t i = 0; i < InputQueue::CAPACITY / 2; i++) {
+        InputEvent e = {};
+        e.type = IE_MOUSE_MOVE;
+        e.x = (int32_t)(1000 + i);
+        CHECK(queue.Push(e));
+    }
+
+    // FIFO order continues across the wrap.
+    for (uint32_t i = InputQueue::CAPACITY / 2; i < InputQueue::CAPACITY; i++) {
+        CHECK(queue.Pop(out));
+        CHECK_EQ(out.x, (int32_t)i);
+    }
+    for (uint32_t i = 0; i < InputQueue::CAPACITY / 2; i++) {
+        CHECK(queue.Pop(out));
+        CHECK_EQ(out.x, (int32_t)(1000 + i));
+    }
+    CHECK_EQ(queue.Count(), 0u);
+    CHECK(!queue.Pop(out));
+}
+
+TEST(input_queue_clear) {
+    InputQueue queue;
+    InputEvent e = {};
+    e.type = IE_MOUSE_DOWN;
+    queue.Push(e);
+    queue.Push(e);
+    queue.Clear();
+    CHECK_EQ(queue.Count(), 0u);
+    CHECK(!queue.Pop(e));
 }

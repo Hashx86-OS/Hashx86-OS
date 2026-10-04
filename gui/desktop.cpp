@@ -513,9 +513,22 @@ void Desktop::OnMouseMove(int32_t dx, int32_t dy) {
     }
 }
 
+void Desktop::OnMouseWheel(int32_t delta) {
+    if (modalWidget && modalWidget->isVisible) {
+        modalWidget->OnMouseWheel(delta);
+        return;
+    }
+    if (taskbar && taskbar->ContainsCoordinate((int32_t)MouseX, (int32_t)MouseY)) {
+        taskbar->OnMouseWheel(delta);
+        return;
+    }
+    CompositeWidget::OnMouseWheel(delta);
+}
+
 void Desktop::OnKeyDown(const char* key) {
     CompositeWidget::OnKeyDown(key);
 }
+
 void Desktop::OnKeyUp(const char* key) {
     CompositeWidget::OnKeyUp(key);
 }

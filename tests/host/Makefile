@@ -47,6 +47,7 @@ SRCS := main.cpp \
         $(ROOT)/gui/elements/window_action_button.cpp \
         $(ROOT)/gui/elements/window_action_button_round.cpp \
         $(ROOT)/gui/render/raster.cpp \
+        $(ROOT)/gui/input/inputQueue.cpp \
         $(ROOT)/gui/renderer/nina.cpp \
         $(ROOT)/gui/fonts/font.cpp \
         $(ROOT)/core/fonts/ttf_render.cpp
