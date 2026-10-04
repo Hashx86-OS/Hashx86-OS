@@ -154,6 +154,15 @@ public:
     void Focus(Widget* widget);
 
     /**
+     * FocusTopMostWindow() - Focus the topmost visible child window.
+     *
+     * Hands keyboard focus to the window behind a dialog that is closing, or
+     * clears it when none is visible. Used instead of dropping focus on the
+     * floor, which would strand input until the user clicked a window.
+     */
+    void FocusTopMostWindow();
+
+    /**
      * SetModalWidget() - Give one widget exclusive mouse input, or release it.
      * @widget: Widget to receive all mouse events, or NULL to release.
      */

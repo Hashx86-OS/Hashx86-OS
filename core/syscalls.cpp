@@ -92,11 +92,14 @@ void ClearProcessStdin(ProcessControlBlock* process) {
 }
 
 // Page-directory indices that Hsys_getFramebuffer replaced with per-process
-// copies carrying PAGE_USER. Only one process can hold the framebuffer at a
-// time (g_gui_owner_pid), so a single record suffices; Hsys_initCli uses it to
-// undo the grant when the owner gives the screen up.
+// copies carrying PAGE_USER, plus the directory they belong to. Only one process
+// can hold the framebuffer at a time (g_gui_owner_pid), so a single record
+// suffices; Hsys_initCli uses it to undo the grant when the owner gives the
+// screen up. The owner is stored so a revoke can never touch a different
+// process's tables.
 uint32_t g_fb_private_start_pd = 0;
 uint32_t g_fb_private_end_pd = 0;
+uint32_t* g_fb_private_owner = nullptr;
 bool g_fb_private_valid = false;
 
 /**
@@ -105,13 +108,15 @@ bool g_fb_private_valid = false;
  *
  * Restores the shared kernel page-directory entries for the recorded
  * framebuffer range, frees the per-process page-table copies, and flushes the
- * TLB. Without this the process keeps PAGE_USER access to the kernel back
- * buffer after it gives the screen up, and that mapping dangles once a later
- * mode switch frees the old buffer. Process teardown performs the same reclaim
- * for a process that exits while still owning the screen.
+ * TLB. Only acts when @directory is the recorded owner, so a stale or foreign
+ * directory can never be unmapped. Without this the process keeps PAGE_USER
+ * access to the kernel back buffer after it gives the screen up, and that
+ * mapping dangles once a later mode switch frees the old buffer. Process
+ * teardown performs the same reclaim for a process that exits while still
+ * owning the screen.
  */
 void RevokeFramebufferMapping(uint32_t* directory) {
-    if (!g_fb_private_valid || !directory || !g_paging) return;
+    if (!g_fb_private_valid || !directory || directory != g_fb_private_owner || !g_paging) return;
 
     for (uint32_t i = g_fb_private_start_pd; i <= g_fb_private_end_pd; i++) {
         if (!(directory[i] & PAGE_PRESENT)) continue;
@@ -120,6 +125,7 @@ void RevokeFramebufferMapping(uint32_t* directory) {
         directory[i] = g_paging->KernelPageDirectory[i];
     }
     g_fb_private_valid = false;
+    g_fb_private_owner = nullptr;
 
     // Stale TLB entries would keep the revoked permissions alive until the
     // next natural CR3 reload.
@@ -1151,6 +1157,16 @@ int32_t SyscallHandlers::Handle_sys_Hcall(uint32_t hcall_id, uint32_t arg1, uint
         extern Paging* g_paging;
 
         if (g_GraphicsDriver) {
+            // Ownership is exclusive. A second process taking the screen would
+            // overwrite the recorded range, leaving the first process's private
+            // tables untracked and its mapping pointed at a buffer this owner's
+            // release later frees. Refuse it; the same process may re-grant.
+            if (g_stop_gui_rendering && g_gui_owner_pid != (int)current_process->pid) {
+                KDBG1("Hsys_getFramebuffer: refused, PID %d already owns the framebuffer",
+                      g_gui_owner_pid);
+                return -1;
+            }
+
             uint32_t bufferAddr = (uint32_t)g_GraphicsDriver->GetBackBuffer();
             uint32_t width = g_GraphicsDriver->GetWidth();
             uint32_t height = g_GraphicsDriver->GetHeight();
@@ -1193,9 +1209,11 @@ int32_t SyscallHandlers::Handle_sys_Hcall(uint32_t hcall_id, uint32_t arg1, uint
                 }
             }
 
-            // Record the range so Hsys_initCli can revoke it when ownership ends.
+            // Record the range and its owner so Hsys_initCli can revoke exactly
+            // this grant when ownership ends.
             g_fb_private_start_pd = startPDIdx;
             g_fb_private_end_pd = endPDIdx;
+            g_fb_private_owner = current_process->page_directory;
             g_fb_private_valid = true;
 
             // Second pass: grant user access to the specific PTEs and their PDEs.

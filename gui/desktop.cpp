@@ -105,6 +105,7 @@ Bitmap* Desktop::BuildWallpaper(int32_t w, int32_t h) {
     if (!solid || !solid->IsValid()) {
         if (solid) delete solid;
         HALT("CRITICAL: Failed to allocate fallback wallpaper bitmap!\n");
+        return nullptr;  // HALT does not return; keeps static analysis happy.
     }
     return solid;
 }
@@ -372,6 +373,16 @@ void Desktop::GetFocus(Widget* widget) {
     }
 }
 
+void Desktop::FocusTopMostWindow() {
+    // The last visible child is the topmost in Z-order. Focusing a child raises
+    // it, so this restores keyboard input to the window behind a closing dialog.
+    Widget* topmost = nullptr;
+    childrenList.ForEach([&](Widget* c) {
+        if (c->isVisible) topmost = c;
+    });
+    GetFocus(topmost);
+}
+
 /**
  * Desktop::SetModalWidget() - Give one widget exclusive mouse input.
  * @widget: Widget to receive all mouse events, or NULL to release.
@@ -401,6 +412,14 @@ void Desktop::RunPostPresentAction() {
         // Copy out and clear atomically, so a post arriving from the IRQ path
         // can neither be dropped nor have its instance torn from under it.
         InterruptGuard guard;
+
+        // A dirty desktop means the frame just flushed is already stale: the
+        // post landed after Draw() captured the tree (Draw masks IRQs, so the
+        // click that hid the dialog is serviced once Draw returns, before
+        // Flush()). Keep the action queued - the next pass draws and presents
+        // the frame without the dialog before draining it.
+        if (this->isDirty) return;
+
         action = postPresentAction;
         instance = postPresentInstance;
         postPresentAction = nullptr;

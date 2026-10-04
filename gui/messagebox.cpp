@@ -200,18 +200,22 @@ void MessageBox::HideDialog() {
         desktop->SetModalWidget(nullptr);
     }
 
-    // Hand back the focus taken by ShowConfirm(). A hidden widget left as the
-    // desktop's focused child would swallow keystrokes, and CompositeWidget's
-    // focus path treats "already focused" as a no-op, so the next ShowConfirm()
-    // would skip the raise that puts this dialog back on top.
-    if (desktop && holdsFocus) {
-        desktop->GetFocus(nullptr);
-        holdsFocus = false;
-    }
-
     onConfirmAction = nullptr;
     confirmInstance = nullptr;
 
+    // Hide first so the dialog is no longer a visible child before focus is
+    // reassigned.
     setVisible(false);
+
+    // Hand back the focus taken by ShowConfirm(), now focusing the topmost
+    // visible window behind the hidden dialog: keyboard input keeps flowing
+    // instead of being stranded. Dropping focus to NULL would also leave
+    // CompositeWidget's "already focused" no-op guard to skip the raise that
+    // puts this dialog back on top next time.
+    if (desktop && holdsFocus) {
+        desktop->FocusTopMostWindow();
+        holdsFocus = false;
+    }
+
     MarkDirty();
 }
