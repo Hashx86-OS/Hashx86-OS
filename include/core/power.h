@@ -22,37 +22,32 @@
  * SOFTWARE.
  */
 
-#include <Hx86/Hgui/listview.h>
+#pragma once
 
-HListView::HListView(Widget* parent, int32_t x, int32_t y, uint32_t w, uint32_t h)
-    : Widget(parent, x, y, w, h) {
-    WidgetData data = {parent->ID, x, y, w, h, nullptr};
-    this->ID = HguiAPI(LISTVIEW, CREATE, (void*)&data);
-}
+/**
+ * Force-level power control.
+ *
+ * There is no ACPI interpreter and no orderly shutdown path yet, so both
+ * entries here are deliberately blunt: they stop or reset the CPU immediately
+ * and never return. Anything that needs to survive a restart has to be on disk
+ * before calling them.
+ */
 
-HListView::~HListView() {}
+/**
+ * PowerRestart() - Reset the machine.
+ *
+ * Pulses the 8042 keyboard controller's CPU-reset line, which every emulator
+ * and real PC since the AT honours, then falls back to a deliberate triple
+ * fault if the controller never resets the CPU. Does not return.
+ */
+[[noreturn]] void PowerRestart();
 
-void HListView::SetItems(ListViewItemData* items, int count) {
-    WidgetData data = {this->ID, (uint32_t)count, 0, 0, 0, (const char*)items};
-    HguiAPI(LISTVIEW, SET_ITEMS, (void*)&data);
-}
-
-void HListView::Clear() {
-    WidgetData data = {this->ID, 0, 0, 0, 0, nullptr};
-    HguiAPI(LISTVIEW, CLEAR_ITEMS, (void*)&data);
-}
-
-int HListView::GetSelectedIndex() {
-    WidgetData data = {this->ID, 0, 0, 0, 0, nullptr};
-    return (int)HguiAPI(LISTVIEW, GET_SELECTED, (void*)&data);
-}
-
-bool HListView::SetSelectedIndex(int index) {
-    WidgetData data = {this->ID, (int32_t)index, 0, 0, 0, nullptr};
-    return (int32_t)HguiAPI(LISTVIEW, SET_SELECTED, (void*)&data) == 1;
-}
-
-void HListView::SetHeader(const char* text) {
-    WidgetData data = {this->ID, 0, 0, 0, 0, text};
-    HguiAPI(LISTVIEW, SET_TEXT, (void*)&data);
-}
+/**
+ * PowerShutdown() - Stop the machine.
+ *
+ * Asks the emulator's debug-exit port to power the machine off, which is the
+ * only shutdown path available without ACPI. On bare hardware that port is
+ * unmapped, so the CPU is simply halted with interrupts disabled and the
+ * machine has to be reset from outside. Does not return.
+ */
+[[noreturn]] void PowerShutdown();

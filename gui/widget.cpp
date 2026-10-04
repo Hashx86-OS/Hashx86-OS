@@ -58,6 +58,28 @@ Widget::~Widget() {
     if (cache) delete[] cache;
 }
 
+bool Widget::Resize(int32_t newW, int32_t newH) {
+    if (newW < 0 || newH < 0) return false;
+    if (newW == this->w && newH == this->h) return true;
+
+    uint32_t* newCache = nullptr;
+    if (newW > 0 && newH > 0) {
+        size_t count = (size_t)newW * (size_t)newH;
+        if (count / (size_t)newW != (size_t)newH || count > (0xFFFFFFFFu / sizeof(uint32_t))) {
+            return false;
+        }
+        newCache = new uint32_t[count]();
+        if (!newCache) return false;
+    }
+
+    if (cache) delete[] cache;
+    cache = newCache;
+    this->w = newW;
+    this->h = newH;
+    this->MarkDirty();
+    return true;
+}
+
 void Widget::MarkDirty() {
     this->isDirty = true;
 

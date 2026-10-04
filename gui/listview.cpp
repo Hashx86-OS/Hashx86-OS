@@ -164,6 +164,34 @@ void ListView::update() {
     MarkDirty();
 }
 
+/**
+ * ListView::SetSelectedIndex() - Highlight a row programmatically.
+ * @index: Row to select, or -1 to clear the selection.
+ *
+ * The scroll offset is corrected so the row is actually visible, which matters
+ * when preselecting something below the fold.
+ *
+ * Return: True when @index was in range, false otherwise.
+ */
+bool ListView::SetSelectedIndex(int index) {
+    if (index < -1 || index >= itemCount) return false;
+
+    selectedIndex = index;
+
+    if (index >= 0) {
+        int contentH = h - LISTVIEW_HEADER_HEIGHT - 2;
+        int visibleItems = contentH > 0 ? contentH / itemHeight : 0;
+        if (index < scrollOffset) {
+            scrollOffset = index;
+        } else if (visibleItems > 0 && index >= scrollOffset + visibleItems) {
+            scrollOffset = index - visibleItems + 1;
+        }
+    }
+
+    MarkDirty();
+    return true;
+}
+
 void ListView::RedrawToCache() {
     if (!cache) {
         isDirty = false;

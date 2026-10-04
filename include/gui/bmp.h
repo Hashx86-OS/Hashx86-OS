@@ -130,6 +130,24 @@ public:
         return buffer;
     }
 
+    /**
+     * ScaledCover() - Resample an image so it covers a target size, centered.
+     * @src: Source image; must be valid.
+     * @dstW: Target width in pixels.
+     * @dstH: Target height in pixels.
+     *
+     * Preserves aspect ratio: scales by max(dstW/srcW, dstH/srcH) so both axes
+     * are covered, then centers and crops the overflow. Never scales below
+     * 1:1 - an image already larger than the target is center-cropped at
+     * native resolution instead of being softened. Every target pixel is
+     * therefore covered, so no letterbox bars appear.
+     *
+     * Samples nearest-neighbour in 16.16 fixed point, so it needs no FPU.
+     * Returns a newly allocated bitmap the caller owns, or nullptr if @src is
+     * invalid or the result could not be allocated.
+     */
+    static Bitmap* ScaledCover(const Bitmap* src, int32_t dstW, int32_t dstH);
+
 private:
     int width;
     int height;

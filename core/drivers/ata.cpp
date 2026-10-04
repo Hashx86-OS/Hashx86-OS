@@ -157,6 +157,21 @@ uint32_t AdvancedTechnologyAttachment::Identify() {
 }
 
 /**
+ * ata_poll_delay() - Short delay between status-register polls.
+ *
+ * A tight loop of port reads retires a million iterations in a few
+ * microseconds, which is far quicker than the device can answer. Without this
+ * pause a slow-but-valid completion - FLUSH CACHE in particular, since it must
+ * commit the drive's write cache - is misreported as a timeout. The delay is
+ * small enough to keep the fast paths (READ/WRITE SECTOR) snappy.
+ */
+static inline void ata_poll_delay(void) {
+    for (int i = 0; i < 256; i++) {
+        __asm__ volatile("nop");
+    }
+}
+
+/**
  * AdvancedTechnologyAttachment::Read28() - Read one sector via PIO LBA28.
  * @sectorNum: 28-bit LBA sector number.
  * @data: Destination buffer, at least @count bytes.
@@ -190,6 +205,7 @@ void AdvancedTechnologyAttachment::Read28(uint32_t sectorNum, uint8_t* data, int
             KDBG1("READ ERROR: BSY timeout");
             return;
         }
+        ata_poll_delay();
         status = commandPort.Read();
     }
     if ((status & 0x01) == 0x01) {
@@ -210,6 +226,7 @@ void AdvancedTechnologyAttachment::Read28(uint32_t sectorNum, uint8_t* data, int
             KDBG1("READ ERROR: DRQ timeout");
             return;
         }
+        ata_poll_delay();
         status = commandPort.Read();
     }
 
@@ -247,6 +264,7 @@ static bool ata_wait_drq(Port8Bit& commandPort, const char* op) {
             KDBG1("%s ERROR: BSY timeout", op);
             return false;
         }
+        ata_poll_delay();
         status = commandPort.Read();
     }
     uint32_t drqWait = 0;
@@ -263,6 +281,7 @@ static bool ata_wait_drq(Port8Bit& commandPort, const char* op) {
             KDBG1("%s ERROR: DRQ timeout", op);
             return false;
         }
+        ata_poll_delay();
         status = commandPort.Read();
     }
     return true;
@@ -290,8 +309,10 @@ static bool ata_wait_ready(Port8Bit& commandPort, const char* op) {
             KDBG1("%s ERROR: completion timeout", op);
             return false;
         }
+        ata_poll_delay();
         status = commandPort.Read();
     }
+
     if ((status & 0x01) == 0x01) {
         KDBG1("%s ERROR: ERR set after completion", op);
         return false;
@@ -388,10 +409,13 @@ bool AdvancedTechnologyAttachment::Flush() {
             KDBG1("FLUSH ERROR: ERR set while waiting for BSY");
             return false;
         }
-        if (flushWait++ > 1000000) {
+        // FLUSH CACHE may take far longer than a PIO command to answer, so it
+        // gets a wider budget than the 1M-iteration polls above.
+        if (flushWait++ > 4000000) {
             KDBG1("FLUSH ERROR: BSY timeout");
             return false;
         }
+        ata_poll_delay();
         status = commandPort.Read();
     }
 

@@ -121,6 +121,9 @@ DriverManager::DriverManager() {
     EXPORT_SYMBOL_ASM("_ZN14GraphicsDriverD2Ev");      // Destructor.
     EXPORT_SYMBOL_ASM("_ZN14GraphicsDriver5FlushEv");
     EXPORT_SYMBOL_ASM("_ZN14GraphicsDriver8PutPixelEiij");  // The (int, int, uint32) overload.
+    // Runtime mode switching: the BGA module calls the protected back-buffer
+    // resize directly, and dispatches the virtual SetVideoMode hook.
+    EXPORT_SYMBOL_ASM("_ZN14GraphicsDriver16ResizeBackBufferEjj");
 }
 
 /**

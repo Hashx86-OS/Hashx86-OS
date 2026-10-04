@@ -52,6 +52,7 @@ typedef enum {
     TERMINAL_VIEW = 0x7,
     FONT = 0x8,
     ICON_BUTTON = 0x9,
+    DISPLAY = 0xA,
 } REQ_Element;
 
 /**
@@ -83,6 +84,11 @@ typedef enum {
     SET_ENABLED = 0x14,
     SET_ICON = 0x15,
     SET_ICON_FONT_SIZE = 0x16,
+    GET_MODE_COUNT = 0x17,
+    GET_MODE = 0x18,
+    GET_CURRENT_MODE = 0x19,
+    SET_MODE = 0x1A,
+    SET_SELECTED = 0x1B,
 } REQ_MODE;
 
 /**
@@ -160,6 +166,19 @@ public:
 
     /** HandleFont() - Create or configure a font from a syscall. */
     virtual int32_t HandleFont(CPUState* cpu, const WidgetData* data);
+
+    /**
+     * HandleDisplay() - Query or change the framebuffer mode from a syscall.
+     * @cpu: CPU state holding the request.
+     * @data: Decoded request parameters.
+     *
+     * Not a widget request: exposes the display mode list, the active geometry
+     * and the mode switch itself to user-space programs.
+     *
+     * Return: The number of modes, a packed "height << 16 | width" geometry, or
+     * a negative value on failure.
+     */
+    virtual int32_t HandleDisplay(CPUState* cpu, const WidgetData* data);
 
     /**
      * HandleEvent() - Forward an input event to the owning process's handler.

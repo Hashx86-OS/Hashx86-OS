@@ -39,6 +39,7 @@ typedef enum {
     TERMINAL_VIEW = 0x7,
     FONT = 0x8,
     ICON_BUTTON = 0x9,
+    DISPLAY = 0xA,
 } REQ_Element;
 
 /** REQ_MODE - Operations that can be requested for a given element. */
@@ -66,6 +67,11 @@ typedef enum {
     SET_ENABLED = 0x14,
     SET_ICON = 0x15,
     SET_ICON_FONT_SIZE = 0x16,
+    GET_MODE_COUNT = 0x17,
+    GET_MODE = 0x18,
+    GET_CURRENT_MODE = 0x19,
+    SET_MODE = 0x1A,
+    SET_SELECTED = 0x1B,
 } REQ_MODE;
 
 uint32_t HguiAPI(REQ_Element element, REQ_MODE mode, void* data);

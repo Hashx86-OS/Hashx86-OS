@@ -22,6 +22,7 @@ objects = \
 	$(BUILD_DIR)/obj/core/drivers/mouse.o \
 	$(BUILD_DIR)/obj/core/drivers/SymbolTable.o \
 	$(BUILD_DIR)/obj/core/drivers/vbe.o \
+	$(BUILD_DIR)/obj/core/power.o \
 	$(BUILD_DIR)/obj/core/elf.o \
 	$(BUILD_DIR)/obj/core/filesystem/File.o \
 	$(BUILD_DIR)/obj/core/filesystem/msdospart.o \
@@ -43,7 +44,9 @@ objects = \
 	$(BUILD_DIR)/obj/core/pmm.o \
 	$(BUILD_DIR)/obj/core/ports.o \
 	$(BUILD_DIR)/obj/core/scheduler.o \
+	$(BUILD_DIR)/obj/core/settings.o \
 	$(BUILD_DIR)/obj/core/syscalls.o \
+	$(BUILD_DIR)/obj/asm/realmode.o \
 	$(BUILD_DIR)/obj/debug.o \
 	$(BUILD_DIR)/obj/gui/bmp.o \
 	$(BUILD_DIR)/obj/gui/bootanim.o \
@@ -58,6 +61,7 @@ objects = \
 	$(BUILD_DIR)/obj/gui/infodialog.o \
 	$(BUILD_DIR)/obj/gui/label.o \
 	$(BUILD_DIR)/obj/gui/listview.o \
+	$(BUILD_DIR)/obj/gui/messagebox.o \
 	$(BUILD_DIR)/obj/gui/progressbar.o \
 	$(BUILD_DIR)/obj/gui/renderer/nina.o \
 	$(BUILD_DIR)/obj/gui/terminalview.o \
@@ -228,14 +232,16 @@ build-run:
 	@sleep $(RUNQ_DELAY)
 	make runq
 
+# isa-debug-exit gives the start menu a real shutdown path: the guest writes
+# to port 0xF4 and QEMU exits. Without the device the guest just halts.
 runq: iso
 	qemu-system-i386 -cdrom $(KERNEL_ISO) -boot d -vga std -serial stdio -m 1G \
-	-drive file=$(QEMU_DISK),format=vdi
+	-drive file=$(QEMU_DISK),format=vdi -device isa-debug-exit,iobase=0xf4,iosize=0x04
 
 # Run with GDB debug
 rungdb: iso
 	qemu-system-i386 -cdrom $(KERNEL_ISO) -boot d -vga std -serial stdio -m 1G \
-	-drive file=$(QEMU_DISK),format=vdi -s -S
+	-drive file=$(QEMU_DISK),format=vdi -s -S -device isa-debug-exit,iobase=0xf4,iosize=0x04
 
 # Connect GDB to the running QEMU instance
 gdb:
@@ -322,6 +328,7 @@ hdd:
 	-sudo cp $(BUILD_DIR)/user/MeMView.bin /mnt/vdi_p1/Hashx86/apps/MeMView.bin
 	-sudo cp $(BUILD_DIR)/user/test.bin /mnt/vdi_p1/Hashx86/apps/test.bin
 	-sudo cp $(BUILD_DIR)/user/Explorer.bin /mnt/vdi_p1/Hashx86/apps/Explorer.bin
+	-sudo cp $(BUILD_DIR)/user/Settings.bin /mnt/vdi_p1/Hashx86/apps/Settings.bin
 	-sudo cp $(BUILD_DIR)/user/Terminal.bin /mnt/vdi_p1/Hashx86/apps/Terminal.bin
 	-sudo cp $(BUILD_DIR)/user/CLIHello.bin /mnt/vdi_p1/Hashx86/apps/CLIHello.bin
 	-sudo cp $(BUILD_DIR)/user/Game3D.bin /mnt/vdi_p1/Apps/Game3D/Game3D.bin
@@ -336,21 +343,16 @@ runvb: iso
 
 iso: $(KERNEL_BIN)
 	mkdir -p $(BUILD_DIR)/iso/boot/grub
-	mkdir -p $(BUILD_DIR)/iso/boot/fonts
 	cp $(KERNEL_BIN) $(BUILD_DIR)/iso/boot/kernel.bin
-#	cp bin/fonts/segoeui.bin $(BUILD_DIR)/iso/boot/fonts/segoeui.bin
 	echo 'set timeout=0' > $(BUILD_DIR)/iso/boot/grub/grub.cfg
 	echo 'set default=0' >> $(BUILD_DIR)/iso/boot/grub/grub.cfg
-#	echo 'set gfxmode=1152x864x32' >> $(BUILD_DIR)/iso/boot/grub/grub.cfg
-#	echo 'set gfxpayload=keep' >> $(BUILD_DIR)/iso/boot/grub/grub.cfg
 	echo 'terminal_output gfxterm' >> $(BUILD_DIR)/iso/boot/grub/grub.cfg
 	echo '' >> $(BUILD_DIR)/iso/boot/grub/grub.cfg
 	echo 'menuentry "My Operating System" {' >> $(BUILD_DIR)/iso/boot/grub/grub.cfg
 	echo '  multiboot /boot/kernel.bin' >> $(BUILD_DIR)/iso/boot/grub/grub.cfg
-#	echo '  module /boot/fonts/segoeui.bin' >> $(BUILD_DIR)/iso/boot/grub/grub.cfg
 	echo '  boot' >> $(BUILD_DIR)/iso/boot/grub/grub.cfg
 	echo '}' >> $(BUILD_DIR)/iso/boot/grub/grub.cfg
-	grub-mkrescue --output=$(KERNEL_ISO) --modules="video gfxterm video_bochs video_cirrus" $(BUILD_DIR)/iso
+	grub-mkrescue --output=$(KERNEL_ISO) --modules="video gfxterm video_bochs" $(BUILD_DIR)/iso
 	rm -rf $(BUILD_DIR)/iso
 
 INSTALLER_PAK = $(BUILD_DIR)/installer.pak
@@ -375,7 +377,7 @@ FORCE:
 # build/drivers. Declared output lists mirror user_prog/Makefile (SUBDIRS) and
 # drivers/Makefile (DRIVERS); stale binaries not on those lists are pruned
 # before the incremental sub-make runs so obsolete files never reach the package.
-USER_APPS = MeMView test Explorer Terminal Game3D CLIHello
+USER_APPS = MeMView test Explorer Settings Terminal Game3D CLIHello
 USER_BINS = $(addprefix $(BUILD_DIR)/user/,$(addsuffix .bin,$(USER_APPS)))
 DRIVER_SYS = $(addprefix $(BUILD_DIR)/drivers/,bga.sys ac97.sys)
 
@@ -499,7 +501,7 @@ build-installer: $(KERNEL_INSTALLER_BIN) $(INSTALLER_PAK)
 	echo '  module /installer.pak installer.pak' >> $(BUILD_DIR)/installer_iso/boot/grub/grub.cfg
 	echo '  boot' >> $(BUILD_DIR)/installer_iso/boot/grub/grub.cfg
 	echo '}' >> $(BUILD_DIR)/installer_iso/boot/grub/grub.cfg
-	grub-mkrescue --output=$(INSTALLER_ISO) --modules="video gfxterm video_bochs video_cirrus" $(BUILD_DIR)/installer_iso
+	grub-mkrescue --output=$(INSTALLER_ISO) --modules="video gfxterm video_bochs" $(BUILD_DIR)/installer_iso
 	rm -rf $(BUILD_DIR)/installer_iso
 
 # Run installer in QEMU (uses a blank disk image; created only when absent so
@@ -528,6 +530,7 @@ prog:
 #   - core/tlsf/, include/core/tlsf/  : TLSF allocator (Matthew Conte)
 #   - stdlib/math/                    : fdlibm math routines (Sun Microsystems)
 #   - stdlib/string/                  : PDCLib string routines (public domain)
+#   - third_party/jsmn/               : jsmn JSON parser (Serge A. Zaitsev, MIT)
 #   - include/ctype.h, include/string.h, include/stdlib/fdlibm.h :
 #                                     standalone PDCLib / fdlibm headers
 #   - core/filesystem/FatFs/ff.c, ffunicode.c, and
@@ -539,7 +542,7 @@ prog:
 # EXCLUDE_PATHS list in check_headers.sh and tools/license_headers.sh.
 # ------------------------------------------------------------------- #
 FORMAT_EXCLUDE_DIRS := build tools include/stb core/tlsf include/core/tlsf \
-	stdlib/math stdlib/string
+	stdlib/math stdlib/string third_party/jsmn
 FORMAT_EXCLUDE_FILES := include/ctype.h include/string.h include/stdlib/fdlibm.h \
 	core/filesystem/FatFs/ff.c core/filesystem/FatFs/ffunicode.c \
 	include/core/filesystem/FatFs/ff.h include/core/filesystem/FatFs/ffconf.h \

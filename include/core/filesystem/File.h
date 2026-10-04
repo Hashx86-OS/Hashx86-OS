@@ -32,6 +32,22 @@ class FileSystem;
 struct ProcessControlBlock;
 
 /**
+ * Open flags for sys_open(). Values match the Linux/i386 ABI so the same
+ * constants work in user space; the user-side copy lives in
+ * user_prog/libhx86/include/Hx86/Hsyscalls/syscalls.h.
+ */
+#define O_RDONLY 0x0000
+#define O_WRONLY 0x0001
+#define O_RDWR 0x0002
+#define O_CREAT 0x0040
+#define O_EXCL 0x0080
+#define O_TRUNC 0x0200
+#define O_APPEND 0x0400
+
+// Access mode is the low two bits; the rest are modifiers.
+#define O_ACCMODE 0x0003
+
+/**
  * class File - An open handle on a filesystem object.
  */
 class File {
@@ -44,6 +60,9 @@ public:
     uint32_t size;
     uint32_t id;     // Usually the first cluster number.
     uint32_t flags;  // 1=Dir, 2=ReadOnly, etc.
+
+    // The sys_open() flags this handle was created with.
+    uint32_t openFlags;
 
     // Read cursor at the current position in the file.
     uint32_t position;
@@ -66,7 +85,37 @@ public:
      */
     void Seek(uint32_t pos);
 
+    /**
+     * Write() - Write bytes at the current position, extending the file.
+     * @buffer: Source buffer.
+     * @length: Number of bytes to write.
+     *
+     * Refuses when the handle was not opened for writing, and updates the
+     * recorded size and position on success.
+     *
+     * Return: Number of bytes written, or -1 on failure.
+     */
     int Write(uint8_t* buffer, uint32_t length);
+
+    /**
+     * IsWritable() - Whether this handle permits writes.
+     *
+     * Return: True when the open flags allow writing.
+     */
+    bool IsWritable() const {
+        uint32_t acc = this->openFlags & O_ACCMODE;
+        return acc == O_WRONLY || acc == O_RDWR;
+    }
+
+    /**
+     * IsReadable() - Whether this handle permits reads.
+     *
+     * Return: True when the open flags allow reading.
+     */
+    bool IsReadable() const {
+        uint32_t acc = this->openFlags & O_ACCMODE;
+        return acc == O_RDONLY || acc == O_RDWR;
+    }
 
     void Close();
 };

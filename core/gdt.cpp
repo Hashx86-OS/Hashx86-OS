@@ -98,6 +98,12 @@ void gdt_init() {
     // (present, ring-0, system, 32-bit available TSS), byte granularity.
     gdt_set_entry(5, (uint32_t)&g_tss, sizeof(g_tss) - 1, 0x89, 0x00);
 
+    // 16-bit code/data segments used to drop to real mode for the VBE BIOS
+    // int 0x10 calls (see asm/realmode.asm). Base 0, byte granularity, 64 KiB
+    // limit: the shim runs from a copy in low memory.
+    gdt_set_entry(6, 0, 0xFFFF, 0x9A, 0x00);
+    gdt_set_entry(7, 0, 0xFFFF, 0x92, 0x00);
+
     // Load the GDT.
     load_gdt((uint32_t)&g_gdt_ptr);
 

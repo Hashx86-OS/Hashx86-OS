@@ -24,8 +24,199 @@
 
 #define KDBG_COMPONENT "GUI:TASKBAR"
 #include <core/Iguard.h>
+#include <core/filesystem/Paths.h>
+#include <core/power.h>
 #include <core/timing.h>
+#include <gui/desktop.h>
+#include <gui/iconbutton.h>
+#include <gui/messagebox.h>
 #include <gui/taskbar.h>
+
+// Shared power confirmation prompt; see PowerConfirmDialog().
+static MessageBox* g_powerDialog = nullptr;
+
+/**
+ * loadIconFontFace() - Fetch a handle on the shared icon font.
+ *
+ * Return: The SMALL face, or the MEDIUM face if SMALL is missing, or NULL if
+ * the icon font was never loaded.
+ */
+static Font* loadIconFontFace() {
+    if (!FontManager::activeInstance) return nullptr;
+    Font* f = FontManager::activeInstance->getFontByFilePath(PATH_ICON_FONT, TINY, REGULAR);
+    if (!f) {
+        f = FontManager::activeInstance->getFontByFilePath(PATH_ICON_FONT, SMALL, REGULAR);
+    }
+    return f;
+}
+
+// StartMenuPowerButton.
+StartMenuPowerButton::StartMenuPowerButton(Widget* parent, int32_t x, int32_t y, int32_t w,
+                                           int32_t h, StartMenuAction action, const char* iconName)
+    : Widget(parent, x, y, w, h),
+      iconCodepoint(0),
+      iconFont(nullptr),
+      action(action),
+      isPressed(false),
+      isHovered(false) {
+    this->iconCodepoint = IconButton::LookupIcon(iconName);
+    if (this->iconCodepoint == 0) {
+        KDBG1("StartMenu: unknown power icon %s", iconName);
+    }
+    this->iconFont = loadIconFontFace();
+}
+
+StartMenuPowerButton::~StartMenuPowerButton() {
+    if (iconFont) delete iconFont;
+}
+
+void StartMenuPowerButton::RedrawToCache() {
+    if (!cache) return;
+    memset(cache, 0, sizeof(uint32_t) * w * h);
+    if (!NINA::activeInstance) {
+        isDirty = false;
+        return;
+    }
+
+    const int32_t cx = w / 2;
+    const int32_t cy = h / 2;
+    const int32_t radius = (w < h ? w : h) / 2;
+
+    uint32_t face = START_MENU_POWER_BTN_BG;
+    if (isPressed) {
+        face = START_MENU_POWER_BTN_BG_PRESSED;
+    } else if (isHovered) {
+        face = START_MENU_POWER_BTN_BG_HOVER;
+    }
+
+    NINA::activeInstance->FillCircle(cache, w, h, cx, cy, radius, face);
+
+    if (iconCodepoint != 0 && iconFont) {
+        // Centre the glyph's box inside the circle, nudged up for descenders.
+        int32_t glyphH = iconFont->getLineHeight();
+        NINA::activeInstance->DrawCharacter(cache, w, h, cx - glyphH / 2,
+                                            cy - glyphH / 2 - glyphH / 8, iconCodepoint, iconFont,
+                                            START_MENU_POWER_BTN_GLYPH);
+    }
+
+    isDirty = false;
+}
+
+void StartMenuPowerButton::OnMouseDown(int32_t x, int32_t y, uint8_t button) {
+    if (!isVisible) return;
+    isPressed = true;
+    MarkDirty();
+}
+
+/**
+ * confirmRestart() - Run the confirmed restart.
+ * @instance: Unused.
+ *
+ * Context: Confirm button on the restart prompt, inside the GUI task. Does not
+ * return.
+ */
+static void confirmRestart(void* instance) {
+    (void)instance;
+    KDBG1("StartMenu: Restart confirmed");
+    PowerRestart();
+}
+
+/**
+ * confirmShutdown() - Run the confirmed shutdown.
+ * @instance: Unused.
+ *
+ * Context: Confirm button on the shutdown prompt, inside the GUI task. Does not
+ * return.
+ */
+static void confirmShutdown(void* instance) {
+    (void)instance;
+    KDBG1("StartMenu: Shutdown confirmed");
+    PowerShutdown();
+}
+
+/**
+ * PowerConfirmDialog() - Fetch the shared power confirmation dialog.
+ *
+ * One kernel-owned instance is created on first use and then reused, so a
+ * cancelled prompt costs no allocation and cannot be leaked per click. PID 0
+ * keeps app cleanup from tearing it down.
+ */
+static MessageBox* PowerConfirmDialog() {
+    Desktop* desktop = Desktop::activeInstance;
+    if (!desktop) return nullptr;
+
+    if (!g_powerDialog) {
+        g_powerDialog = new MessageBox(desktop);
+        if (!g_powerDialog) {
+            HALT("CRITICAL: Failed to allocate power confirmation dialog!\n");
+        }
+        g_powerDialog->SetPID(0);
+        g_powerDialog->SetID(desktop->getNewID());
+        desktop->AddChild(g_powerDialog);
+    }
+    return g_powerDialog;
+}
+
+/**
+ * closeStartMenuUnderneath() - Dismiss the start menu hosting this button.
+ *
+ * A power button is parented to the StartMenu, which is itself parented to the
+ * Taskbar that owns the Start button's active state, so closing has to go via
+ * the Taskbar rather than just hiding the menu.
+ */
+static void closeStartMenuUnderneath(Widget* powerButton) {
+    Widget* menu = powerButton ? powerButton->parent : nullptr;
+    Taskbar* taskbar = menu ? static_cast<Taskbar*>(menu->parent) : nullptr;
+    if (taskbar) taskbar->CloseStartMenu();
+}
+
+void StartMenuPowerButton::OnMouseUp(int32_t x, int32_t y, uint8_t button) {
+    if (!isVisible) return;
+    if (!isPressed) return;
+    isPressed = false;
+    isHovered = false;
+    MarkDirty();
+
+    // Irreversible, so ask first. The prompt takes the mouse until answered.
+    MessageBox* dialog = PowerConfirmDialog();
+    if (!dialog) {
+        KDBG1("StartMenu: no desktop, power action ignored");
+        return;
+    }
+
+    switch (action) {
+        case START_MENU_ACTION_RESTART:
+            KDBG1("StartMenu: Restart requested, confirming");
+            closeStartMenuUnderneath(this);
+            dialog->ShowConfirm("Restart", "Restart the system?", "Restart", &confirmRestart,
+                                nullptr);
+            break;
+
+        case START_MENU_ACTION_SHUTDOWN:
+            KDBG1("StartMenu: Shutdown requested, confirming");
+            closeStartMenuUnderneath(this);
+            dialog->ShowConfirm("Shut Down", "Shut down the system?", "Shut Down", &confirmShutdown,
+                                nullptr);
+            break;
+
+        default:
+            break;
+    }
+}
+
+void StartMenuPowerButton::OnMouseMove(int32_t oldx, int32_t oldy, int32_t newx, int32_t newy) {
+    bool inside = this->ContainsCoordinate(newx, newy);
+    bool wasInside = this->ContainsCoordinate(oldx, oldy);
+
+    if (inside && !isHovered) {
+        isHovered = true;
+        MarkDirty();
+    } else if (!inside && isHovered) {
+        isHovered = false;
+        isPressed = false;
+        MarkDirty();
+    }
+}
 
 // StartMenuButton.
 StartMenuButton::StartMenuButton(Widget* parent, int32_t x, int32_t y, int32_t w, int32_t h,
@@ -121,6 +312,7 @@ void StartMenuButton::OnMouseMove(int32_t oldx, int32_t oldy, int32_t newx, int3
 
 void StartMenuButton::LaunchProgram() {
     if (!g_bootPartition || !g_elfLoader) return;
+    if (!binPath || binPath[0] == 0) return;
 
     File* file = g_bootPartition->Open(binPath);
     if (file && file->size > 0) {
@@ -141,7 +333,7 @@ void StartMenuButton::LaunchProgram() {
 
 // StartMenu.
 StartMenu::StartMenu(CompositeWidget* parent, int32_t x, int32_t y, int32_t w, int32_t h)
-    : CompositeWidget(parent, x, y, w, h), itemCount(0) {
+    : CompositeWidget(parent, x, y, w, h), itemCount(0), powerButtonCount(0) {
     this->isFocussable = false;
     this->isVisible = false;  // Hidden by default.
 }
@@ -161,12 +353,51 @@ void StartMenu::AddApp(const char* name, const char* description, const char* bi
     this->AddChild(btn);
     itemCount++;
 
-    // Resize the menu height to fit the content.
+    resizeToFitItems();
+}
+
+/**
+ * AddPowerButton() - Add a round system action button to the header row.
+ * @action: System action to run on click.
+ * @iconName: Symbolic icon name to look up.
+ *
+ * Slots run right to left from the right padding, so the first button added
+ * ends up rightmost. These sit in the header rather than the entry list, so
+ * they do not consume an application slot.
+ */
+void StartMenu::AddPowerButton(StartMenuAction action, const char* iconName) {
+    if (powerButtonCount >= START_MENU_MAX_POWER_BUTTONS) return;
+
+    const int32_t d = START_MENU_POWER_BTN_DIAMETER;
+    const int32_t y = (START_MENU_HEADER_HEIGHT - d) / 2;
+    const int32_t x =
+        this->w - START_MENU_POWER_BTN_PAD - d - powerButtonCount * (d + START_MENU_POWER_BTN_GAP);
+
+    // Do not let a button slide under the title text.
+    if (x < START_MENU_POWER_BTN_PAD) {
+        KDBG1("StartMenu: no room for power button %d", powerButtonCount);
+        return;
+    }
+
+    StartMenuPowerButton* btn = new StartMenuPowerButton(this, x, y, d, d, action, iconName);
+    if (!btn) return;
+
+    this->AddChild(btn);
+    powerButtonCount++;
+}
+
+/**
+ * resizeToFitItems() - Re-dock the menu to the number of entries it holds.
+ *
+ * The menu anchors above the taskbar on its live height, so every append has
+ * to grow the widget and its cache or the last entry is drawn outside the
+ * background.
+ */
+void StartMenu::resizeToFitItems() {
     int32_t totalH = START_MENU_HEADER_HEIGHT + START_MENU_PADDING +
                      itemCount * (START_MENU_ITEM_HEIGHT + 2) + START_MENU_PADDING;
     this->h = totalH;
 
-    // Reallocate the cache for the new size.
     if (this->cache) delete[] this->cache;
     if (this->w > 0 && this->h > 0) {
         this->cache = new uint32_t[this->w * this->h]();
@@ -471,16 +702,42 @@ void Taskbar::RepositionTabs() {
     int32_t currentX = tabAreaStart;
     tabs.ForEach([&](TaskbarTab* tab) {
         tab->x = currentX;
-        tab->w = tabWidth;
-
         // Reallocate the cache for the new size.
-        if (tab->cache) delete[] tab->cache;
-        tab->cache = new uint32_t[tab->w * tab->h]();
-
-        tab->MarkDirty();
+        tab->Resize(tabWidth, tab->h);
         currentX += tabWidth + TASKBAR_TAB_PADDING;
     });
 
+    MarkDirty();
+}
+
+/**
+ * Taskbar::SetScreenDimensions() - Re-dock the bar after a resolution change.
+ * @screenW: New screen width in pixels.
+ * @screenH: New screen height in pixels.
+ *
+ * The taskbar is not a child of the desktop's childrenList, so it has to be
+ * re-positioned explicitly whenever the screen geometry changes.
+ */
+void Taskbar::SetScreenDimensions(int32_t screenW, int32_t screenH) {
+    this->x = 0;
+    this->y = screenH - TASKBAR_HEIGHT;
+    this->Resize(screenW, TASKBAR_HEIGHT);
+
+    // Clock stays docked to the right edge.
+    if (clockLabel) {
+        clockLabel->x = screenW - TASKBAR_CLOCK_WIDTH - TASKBAR_PADDING;
+    }
+
+    // Start menu hangs above the left edge of the bar. AddApp() grows the menu
+    // to fit its entries, so anchor on the live height rather than the
+    // header-only value the constructor started with, or the menu would drop
+    // back down over the taskbar on every resolution change.
+    if (startMenu) {
+        startMenu->x = TASKBAR_PADDING;
+        startMenu->y = -(startMenu->h);
+    }
+
+    RepositionTabs();
     MarkDirty();
 }
 
@@ -522,6 +779,14 @@ void Taskbar::AddApp(const char* name, const char* description, const char* binP
 
     // Reposition the menu Y to sit just above the taskbar.
     startMenu->y = -(startMenu->h);
+}
+
+void Taskbar::AddPowerButton(StartMenuAction action, const char* iconName) {
+    if (!startMenu) return;
+
+    // Header buttons live inside the menu, so its height is unchanged and the
+    // existing anchor still holds.
+    startMenu->AddPowerButton(action, iconName);
 }
 
 void Taskbar::ToggleStartMenu() {

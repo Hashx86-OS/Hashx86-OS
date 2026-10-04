@@ -51,7 +51,43 @@ public:
     virtual ~FileSystem() {}
 
     virtual File* Open(const char* path) = 0;
+
+    /**
+     * OpenWithFlags() - Open honouring the sys_open() access mode.
+     * @path: Path to open.
+     * @flags: O_* flags from File.h.
+     *
+     * The base implementation ignores the flags and defers to Open(), so a
+     * filesystem that cannot write still behaves correctly (and write() calls
+     * on such a handle fail). Backends that support writing override this.
+     *
+     * Return: The open handle, or null on failure.
+     */
+    virtual File* OpenWithFlags(const char* path, uint32_t flags) {
+        (void)flags;
+        return this->Open(path);
+    }
+
     virtual uint32_t ReadStream(File* file, uint8_t* buffer, uint32_t length) = 0;
+
+    /**
+     * WriteStream() - Write bytes at a file handle's current position.
+     * @file: Handle from OpenWithFlags().
+     * @buffer: Source buffer.
+     * @length: Number of bytes to write.
+     *
+     * The base implementation is a no-op, so a read-only filesystem reports
+     * failure through File::Write() rather than silently discarding data.
+     *
+     * Return: Bytes written; 0 on failure.
+     */
+    virtual uint32_t WriteStream(File* file, uint8_t* buffer, uint32_t length) {
+        (void)file;
+        (void)buffer;
+        (void)length;
+        return 0;
+    }
+
     virtual void CloseFile(File* file) = 0;
     virtual void ListRoot() = 0;
     virtual void ListDir(char* path) = 0;

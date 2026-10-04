@@ -91,6 +91,47 @@ void ClearProcessStdin(ProcessControlBlock* process) {
     process->stdinTail = 0;
 }
 
+// Page-directory indices that Hsys_getFramebuffer replaced with per-process
+// copies carrying PAGE_USER, plus the directory they belong to. Only one process
+// can hold the framebuffer at a time (g_gui_owner_pid), so a single record
+// suffices; Hsys_initCli uses it to undo the grant when the owner gives the
+// screen up. The owner is stored so a revoke can never touch a different
+// process's tables.
+uint32_t g_fb_private_start_pd = 0;
+uint32_t g_fb_private_end_pd = 0;
+uint32_t* g_fb_private_owner = nullptr;
+bool g_fb_private_valid = false;
+
+/**
+ * RevokeFramebufferMapping() - Undo the user mapping Hsys_getFramebuffer made.
+ * @directory: Page directory of the former framebuffer owner.
+ *
+ * Restores the shared kernel page-directory entries for the recorded
+ * framebuffer range, frees the per-process page-table copies, and flushes the
+ * TLB. Only acts when @directory is the recorded owner, so a stale or foreign
+ * directory can never be unmapped. Without this the process keeps PAGE_USER
+ * access to the kernel back buffer after it gives the screen up, and that
+ * mapping dangles once a later mode switch frees the old buffer. Process
+ * teardown performs the same reclaim for a process that exits while still
+ * owning the screen.
+ */
+void RevokeFramebufferMapping(uint32_t* directory) {
+    if (!g_fb_private_valid || !directory || directory != g_fb_private_owner || !g_paging) return;
+
+    for (uint32_t i = g_fb_private_start_pd; i <= g_fb_private_end_pd; i++) {
+        if (!(directory[i] & PAGE_PRESENT)) continue;
+        if (directory[i] == g_paging->KernelPageDirectory[i]) continue;
+        pmm_free_block((void*)(directory[i] & 0xFFFFF000));
+        directory[i] = g_paging->KernelPageDirectory[i];
+    }
+    g_fb_private_valid = false;
+    g_fb_private_owner = nullptr;
+
+    // Stale TLB entries would keep the revoked permissions alive until the
+    // next natural CR3 reload.
+    asm volatile("mov %%cr3, %%eax; mov %%eax, %%cr3" ::: "eax");
+}
+
 /**
  * CleanupExitedProcessGui() - Release GUI resources held by a terminated process.
  * @pid: PID of the exited process.
@@ -522,12 +563,36 @@ int32_t SyscallHandlers::Handle_sys_write(uint32_t fd, const char* buf, uint32_t
     }
 
     // stdin and unknown/output-only FDs are not writable yet.
-    return -1;
+    if (fd == 0) return -1;
+
+    ProcessControlBlock* process = Scheduler::activeInstance->GetCurrentProcess();
+    File* file = GetFileByFd(process, fd);
+    if (!file) return -1;
+
+    // The handle must have been opened for writing; O_RDONLY handles are
+    // rejected here as well as in File::Write so a partial write cannot occur.
+    if (!file->IsWritable()) return -1;
+
+    uint8_t* kernelBuf = (uint8_t*)kmalloc(count);
+    if (!kernelBuf) return -1;
+    if (!CopyFromUser(process, kernelBuf, buf, count)) {
+        kfree(kernelBuf);
+        return -1;
+    }
+
+    int written = file->Write(kernelBuf, count);
+    kfree(kernelBuf);
+    if (written < 0) return -1;
+    return (int32_t)written;
 }
 
 int32_t SyscallHandlers::Handle_sys_open(const char* path, int32_t flags) {
-    (void)flags;
     if (!path) return -1;
+    if (flags < 0) return -1;
+
+    uint32_t openFlags = (uint32_t)flags;
+    uint32_t acc = openFlags & O_ACCMODE;
+    if (acc != O_RDONLY && acc != O_WRONLY && acc != O_RDWR) return -1;
 
     ProcessControlBlock* process = Scheduler::activeInstance->GetCurrentProcess();
     char kpath[256];
@@ -537,7 +602,7 @@ int32_t SyscallHandlers::Handle_sys_open(const char* path, int32_t flags) {
     if (MSDOSPartitionTable::activeInstance && MSDOSPartitionTable::activeInstance->partitions[0]) {
         FileSystem* fs = MSDOSPartitionTable::activeInstance->partitions[0];
 
-        File* f = fs->Open(kpath);
+        File* f = fs->OpenWithFlags(kpath, openFlags);
         if (!f) return -1;
 
         int32_t fd = AllocateFd(process, f);
@@ -1092,6 +1157,16 @@ int32_t SyscallHandlers::Handle_sys_Hcall(uint32_t hcall_id, uint32_t arg1, uint
         extern Paging* g_paging;
 
         if (g_GraphicsDriver) {
+            // Ownership is exclusive. A second process taking the screen would
+            // overwrite the recorded range, leaving the first process's private
+            // tables untracked and its mapping pointed at a buffer this owner's
+            // release later frees. Refuse it; the same process may re-grant.
+            if (g_stop_gui_rendering && g_gui_owner_pid != (int)current_process->pid) {
+                KDBG1("Hsys_getFramebuffer: refused, PID %d already owns the framebuffer",
+                      g_gui_owner_pid);
+                return -1;
+            }
+
             uint32_t bufferAddr = (uint32_t)g_GraphicsDriver->GetBackBuffer();
             uint32_t width = g_GraphicsDriver->GetWidth();
             uint32_t height = g_GraphicsDriver->GetHeight();
@@ -1134,6 +1209,13 @@ int32_t SyscallHandlers::Handle_sys_Hcall(uint32_t hcall_id, uint32_t arg1, uint
                 }
             }
 
+            // Record the range and its owner so Hsys_initCli can revoke exactly
+            // this grant when ownership ends.
+            g_fb_private_start_pd = startPDIdx;
+            g_fb_private_end_pd = endPDIdx;
+            g_fb_private_owner = current_process->page_directory;
+            g_fb_private_valid = true;
+
             // Second pass: grant user access to the specific PTEs and their PDEs.
             for (uint32_t addr = startPage; addr < endPage; addr += PAGE_SIZE) {
                 uint32_t pd_idx = addr >> 22;
@@ -1168,8 +1250,10 @@ int32_t SyscallHandlers::Handle_sys_Hcall(uint32_t hcall_id, uint32_t arg1, uint
         }
 
         // If this process previously acquired fullscreen framebuffer ownership,
-        // release it when switching to CLI mode.
+        // release it when switching to CLI mode: drop the user mapping too, so
+        // the process loses access the moment it stops owning the screen.
         if (g_stop_gui_rendering && g_gui_owner_pid == (int)current_process->pid) {
+            RevokeFramebufferMapping(current_process->page_directory);
             g_stop_gui_rendering = false;
             g_gui_owner_pid = -1;
 

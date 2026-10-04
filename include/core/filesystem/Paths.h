@@ -27,11 +27,15 @@
 // Kernel binary search path on the root partition.
 #define PATH_KERNEL_MAP "kernel.map"
 
+// Persisted user settings, written by the Settings app and read at boot.
+#define PATH_SETTINGS_FILE "Hashx86/settings.json"
+
 // System applications (OS tools).
 #define PATH_HASHX86_APPS "Hashx86/apps/"
 #define PATH_CALCULATOR "Hashx86/apps/test.bin"
 #define PATH_MEMVIEW "Hashx86/apps/MeMView.bin"
 #define PATH_EXPLORER "Hashx86/apps/Explorer.bin"
+#define PATH_SETTINGS "Hashx86/apps/Settings.bin"
 #define PATH_TERMINAL "Hashx86/apps/Terminal.bin"
 #define PATH_CLIHELLO "Hashx86/apps/CLIHello.bin"
 

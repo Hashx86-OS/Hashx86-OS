@@ -73,7 +73,9 @@ public:
     ~FatFsWrapper();
 
     File* Open(const char* path) override;
+    File* OpenWithFlags(const char* path, uint32_t flags) override;
     uint32_t ReadStream(File* file, uint8_t* buffer, uint32_t length) override;
+    uint32_t WriteStream(File* file, uint8_t* buffer, uint32_t length) override;
     void CloseFile(File* file) override;
     void ListRoot() override;
     void ListDir(char* path) override;

@@ -1,6 +1,7 @@
 SUBDIRS = MeMView\
 		  test\
 		  Explorer\
+		  Settings\
 		  Terminal\
 		  Game3D\
 		  CLIHello

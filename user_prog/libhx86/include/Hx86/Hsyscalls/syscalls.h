@@ -28,6 +28,26 @@
 #include <Hx86/Hsyscalls/syscalls_x86.h>
 #include <Hx86/stdint.h>
 
+/**
+ * Open flags for syscall_open(). Values match the Linux/i386 ABI and the
+ * kernel-side copies in include/core/filesystem/File.h.
+ */
+#define O_RDONLY 0x0000
+#define O_WRONLY 0x0001
+#define O_RDWR 0x0002
+#define O_CREAT 0x0040
+#define O_EXCL 0x0080
+#define O_TRUNC 0x0200
+#define O_APPEND 0x0400
+
+// Access mode is the low two bits; the rest are modifiers.
+#define O_ACCMODE 0x0003
+
+// SEEK_* values for syscall_lseek().
+#define SEEK_SET 0
+#define SEEK_CUR 1
+#define SEEK_END 2
+
 /** struct timespec - Time interval in seconds and nanoseconds. */
 struct timespec {
     int32_t tv_sec;   // Seconds.
@@ -61,6 +81,7 @@ void syscall_exit_group(uint32_t status);
 int32_t syscall_read(uint32_t fd, char* buf, uint32_t count);
 int32_t syscall_write(uint32_t fd, const char* buf, uint32_t count);
 int32_t syscall_open(const char* path, int32_t flags);
+int32_t syscall_lseek(uint32_t fd, int32_t offset, int32_t whence);
 int32_t syscall_close(uint32_t fd);
 int32_t syscall_execve(const char* path, char* const argv[], char* const envp[]);
 int32_t syscall_brk(int32_t increment);

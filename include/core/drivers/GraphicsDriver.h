@@ -31,6 +31,16 @@
 #include <types.h>
 
 /**
+ * struct DisplayMode - A framebuffer geometry a driver can program.
+ * @width: Width in pixels.
+ * @height: Height in pixels.
+ */
+struct DisplayMode {
+    uint16_t width;
+    uint16_t height;
+};
+
+/**
  * class GraphicsDriver - Framebuffer-based 2D graphics backend.
  * @width: Screen width in pixels.
  * @height: Screen height in pixels.
@@ -58,12 +68,75 @@ protected:
 
     void PrecomputeAlphaTable();
 
+    /**
+     * GraphicsDriver() - Deferred-initialization constructor.
+     *
+     * Leaves the driver unconfigured so a subclass can learn its geometry by
+     * talking to hardware first. Unusable until InitialiseFramebuffer() runs.
+     */
+    GraphicsDriver();
+
+    /**
+     * InitialiseFramebuffer() - Adopt a geometry and allocate the back buffer.
+     * @w: Screen width in pixels.
+     * @h: Screen height in pixels.
+     * @b: Bits per pixel.
+     * @vram: Hardware framebuffer, or NULL to defer mapping.
+     *
+     * Allocates and clears the software back buffer and precomputes the alpha
+     * table. HALTs on an invalid geometry or a failed allocation, because a
+     * driver without a back buffer cannot draw.
+     */
+    void InitialiseFramebuffer(uint32_t w, uint32_t h, uint32_t b, uint32_t* vram);
+
+    /**
+     * ResizeBackBuffer() - Reallocate the scratch buffer for a new geometry.
+     * @w: New width in pixels.
+     * @h: New height in pixels.
+     *
+     * Preserves the overlapping top-left region so the change does not flash an
+     * undefined image, and updates width/height for the drawing primitives.
+     *
+     * Return: True on success, false on invalid geometry or failed allocation
+     * (the old buffer is kept in that case).
+     */
+    bool ResizeBackBuffer(uint32_t w, uint32_t h);
+
 public:
     GraphicsDriver(uint32_t w, uint32_t h, uint32_t bpp, uint32_t* vram);
     virtual ~GraphicsDriver();
 
     // Hardware interface.
     virtual void Flush();
+
+    /**
+     * SetVideoMode() - Switch the display to a new resolution at runtime.
+     * @w: Requested width in pixels.
+     * @h: Requested height in pixels.
+     *
+     * Programs the hardware, makes sure the linear framebuffer is mapped, and
+     * resizes the back buffer. Purely virtual on purpose: a driver that omitted
+     * it would otherwise inherit a software-only resize that reports success
+     * while the panel never changes.
+     *
+     * Context: Called from the GUI syscall dispatcher with interrupts disabled.
+     *
+     * Return: True on success, false when the driver cannot honour the request.
+     */
+    virtual bool SetVideoMode(uint32_t w, uint32_t h) = 0;
+
+    /**
+     * GetSupportedModes() - Report the geometries this driver can program.
+     * @count: Receives the number of entries.
+     *
+     * The single source of truth for what the Settings app may offer. A driver
+     * lists only modes it has confirmed it can activate, so a request is never
+     * advertised and then rejected.
+     *
+     * Return: A DisplayMode array valid for the lifetime of the driver, or NULL
+     * when the driver supports no fixed list.
+     */
+    virtual const DisplayMode* GetSupportedModes(int* count) = 0;
 
     // Getters.
     uint32_t GetWidth() {

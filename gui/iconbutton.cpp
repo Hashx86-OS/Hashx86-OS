@@ -83,6 +83,7 @@ const IconMapping IconButton::iconTable[] = {
     {"fa-filter", 0xf0b0},
     {"fa-refresh", 0xf021},
     {"fa-sync", 0xf021},
+    {"fa-restart", 0xf021},  // Same glyph; the OS uses it for the Restart action.
     {"fa-share", 0xf064},
     {"fa-tag", 0xf02b},
     {"fa-tags", 0xf02c},

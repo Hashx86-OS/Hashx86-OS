@@ -162,7 +162,35 @@ bool FatFsWrapper::PathToFatFs(const char* path, char* out, uint32_t outLen) {
  * Return: A File handle bound to an open FatFs stream, or NULL on failure.
  */
 File* FatFsWrapper::Open(const char* path) {
+    return this->OpenWithFlags(path, O_RDONLY);
+}
+
+/**
+ * FatFsWrapper::OpenWithFlags() - Open a file honouring the requested access mode.
+ * @path: Path to open.
+ * @flags: O_* flags as passed to sys_open().
+ *
+ * The O_* flags are mapped onto FatFs' FA_* open modes. O_CREAT without O_EXCL
+ * uses FA_OPEN_ALWAYS so an existing file is preserved, matching POSIX, while
+ * O_CREAT|O_EXCL uses FA_CREATE_NEW and fails on an existing name. Directories
+ * are always returned read-only.
+ *
+ * Return: A File handle bound to an open FatFs stream, or NULL on failure.
+ */
+File* FatFsWrapper::OpenWithFlags(const char* path, uint32_t flags) {
     if (!path) return nullptr;
+
+    // O_RDONLY is 0, so an unset access mode means read-only.
+    uint32_t acc = flags & O_ACCMODE;
+    if (acc != O_RDONLY && acc != O_WRONLY && acc != O_RDWR) acc = O_RDONLY;
+
+    // Truncating requires write access; refuse the nonsensical combination
+    // rather than letting FatFs truncate a handle that cannot write.
+    if ((flags & O_TRUNC) && acc == O_RDONLY) return nullptr;
+
+    // O_EXCL only has meaning together with O_CREAT; on its own it must not
+    // silently turn a plain open into a create.
+    if ((flags & O_EXCL) && !(flags & O_CREAT)) return nullptr;
 
     char fatPath[256];
     if (!PathToFatFs(path, fatPath, sizeof(fatPath))) return nullptr;
@@ -193,19 +221,31 @@ File* FatFsWrapper::Open(const char* path) {
         root->position = 0;
         root->filesystem = this;
         root->flags = 1;
+        root->openFlags = O_RDONLY;
         slot->file = root;
         return root;
     }
 
+    // A create request legitimately targets a name that does not exist yet, so
+    // a failed f_stat is only fatal when the caller did not ask to create.
+    bool creating = (flags & O_CREAT) != 0;
+    bool isDir = false;
+
     FILINFO info;
     FRESULT res = f_stat(fatPath, &info);
-    if (res != FR_OK) return nullptr;
+    if (res != FR_OK) {
+        if (!creating) return nullptr;
+    } else {
+        isDir = (info.fattrib & AM_DIR) != 0;
+    }
 
-    BYTE mode = FA_READ | FA_OPEN_EXISTING;
-    if (info.fattrib & AM_DIR) {
+    // A directory is enumerated through a DIR handle, not a FIL handle, so it
+    // needs its own open path regardless of the access mode asked for.
+    if (isDir) {
         DIR d;
-        FRESULT res2 = f_opendir(&d, fatPath);
-        if (res2 != FR_OK) return nullptr;
+        res = f_opendir(&d, fatPath);
+        if (res != FR_OK) return nullptr;
+
         FatFsSlot* slot = slotMgr->alloc(nullptr, true);
         if (!slot) {
             f_closedir(&d);
@@ -220,24 +260,45 @@ File* FatFsWrapper::Open(const char* path) {
             slotMgr->free(slot);
             return nullptr;
         }
-        uint32_t i = 0;
-        while (path[i] && i < 127) {
-            dir->name[i] = path[i];
-            i++;
-        }
-        dir->name[i] = 0;
+        for (uint32_t i = 0; i < sizeof(dir->name) - 1 && path[i]; i++) dir->name[i] = path[i];
+        dir->name[sizeof(dir->name) - 1] = 0;
         dir->size = 0;
         dir->id = 0;
         dir->position = 0;
         dir->filesystem = this;
         dir->flags = 1;
+        dir->openFlags = O_RDONLY;
         slot->file = dir;
         return dir;
     }
 
+    BYTE mode;
+    if (acc == O_WRONLY) {
+        mode = FA_WRITE;
+    } else if (acc == O_RDWR) {
+        mode = FA_READ | FA_WRITE;
+    } else {
+        mode = FA_READ;
+    }
+
+    // FatFs expresses "truncate" as FA_CREATE_ALWAYS, which also creates.
+    // O_CREAT|O_TRUNC must map to it rather than to FA_OPEN_ALWAYS, or an
+    // existing file would silently keep its old contents.
+    if (flags & O_EXCL) {
+        mode |= FA_CREATE_NEW;
+    } else if (flags & O_TRUNC) {
+        mode |= FA_CREATE_ALWAYS;
+    } else if (flags & O_CREAT) {
+        mode |= FA_OPEN_ALWAYS;
+    } else {
+        mode |= FA_OPEN_EXISTING;
+    }
+
     FIL fil;
+    memset(&fil, 0, sizeof(fil));
     res = f_open(&fil, fatPath, mode);
     if (res != FR_OK) return nullptr;
+    fil.clust = fil.obj.sclust;
 
     File* file = new File();
     if (!file) {
@@ -264,6 +325,7 @@ File* FatFsWrapper::Open(const char* path) {
     file->position = 0;
     file->filesystem = this;
     file->flags = 0;
+    file->openFlags = flags;
 
     return file;
 }
@@ -349,6 +411,48 @@ uint32_t FatFsWrapper::ReadStream(File* file, uint8_t* buffer, uint32_t length) 
     res = f_read(&slot->u.fil, buffer, length, &br);
     if (res != FR_OK) return 0;
     return (uint32_t)br;
+}
+
+/**
+ * FatFsWrapper::WriteStream() - Write bytes at a file handle's position.
+ * @file: Handle from OpenWithFlags().
+ * @buffer: Source buffer.
+ * @length: Number of bytes to write.
+ *
+ * Mirrors ReadStream() by seeking to the tracked position first, so the
+ * kernel-side cursor is authoritative. O_APPEND instead seeks to the current
+ * end of file on every call. Directory handles are rejected.
+ *
+ * Return: Bytes written; 0 on a bad handle or FatFs error.
+ */
+uint32_t FatFsWrapper::WriteStream(File* file, uint8_t* buffer, uint32_t length) {
+    if (!file || !buffer || length == 0) return 0;
+
+    FatFsSlot* slot = slotMgr->find(file);
+    if (!slot) return 0;
+    if (slot->isDir) return 0;
+
+    FSIZE_t target = (file->openFlags & O_APPEND) ? f_size(&slot->u.fil) : (FSIZE_t)file->position;
+
+    // f_lseek() computes fp->clust as the cluster the seek target lands in, and
+    // f_write() walks the chain forward from whatever fp->clust holds - it
+    // never re-derives the cluster from fp->fptr. So the cursor must survive
+    // the seek: resetting it to the start of the chain after f_lseek() would
+    // make a write at a nonzero offset land in cluster 0 and overwrite the
+    // front of the file. Seed it only for the case f_lseek() does not cover:
+    // a target of 0 skips its normal-seek branch entirely, leaving fp->clust
+    // as f_open() set it (0, i.e. no cluster chain to follow).
+    if (target == 0) {
+        slot->u.fil.clust = slot->u.fil.obj.sclust;
+    }
+
+    FRESULT res = f_lseek(&slot->u.fil, target);
+    if (res != FR_OK) return 0;
+
+    UINT bw = 0;
+    res = f_write(&slot->u.fil, buffer, length, &bw);
+    if (res != FR_OK) return 0;
+    return (uint32_t)bw;
 }
 
 void FatFsWrapper::CloseFile(File* file) {

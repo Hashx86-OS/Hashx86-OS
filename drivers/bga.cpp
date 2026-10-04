@@ -47,6 +47,7 @@
 #define VBE_DISPI_DISABLED 0x00
 #define VBE_DISPI_ENABLED 0x01
 #define VBE_DISPI_LFB_ENABLED 0x40
+#define VBE_DISPI_BGA_ID 0xB0C5
 
 DEFINE_DRIVER_INFO("BGA Driver for Hashx86", "0.1.0", {0x1234, 0x1111},  // QEMU / Bochs
                    {0x80EE, 0xBEEF},                                     // VirtualBox
@@ -80,6 +81,83 @@ private:
     uint16_t ReadRegister(uint16_t index) {
         outw(VBE_DISPI_IOPORT_INDEX, index);
         return inw(VBE_DISPI_IOPORT_DATA);
+    }
+
+    /**
+     * ProgramMode() - Write a complete VBE-DISPI mode descriptor to the adapter.
+     * @w: Mode width in pixels.
+     * @h: Mode height in pixels.
+     *
+     * The DISPI interface is a plain I/O register bank, so this works from
+     * protected mode with paging enabled - no BIOS round trip is involved.
+     * The requested geometry is read back afterwards because adapters silently
+     * clamp resolutions they cannot honour.
+     *
+     * Return: True when the adapter reports the exact requested geometry.
+     */
+    bool ProgramMode(uint32_t w, uint32_t h) {
+        WriteRegister(VBE_DISPI_INDEX_ENABLE, VBE_DISPI_DISABLED);
+        WriteRegister(VBE_DISPI_INDEX_ID, VBE_DISPI_BGA_ID);
+        WriteRegister(VBE_DISPI_INDEX_X_OFFSET, 0);
+        WriteRegister(VBE_DISPI_INDEX_Y_OFFSET, 0);
+        WriteRegister(VBE_DISPI_INDEX_XRES, (uint16_t)w);
+        WriteRegister(VBE_DISPI_INDEX_YRES, (uint16_t)h);
+        WriteRegister(VBE_DISPI_INDEX_BPP, 32);
+        WriteRegister(VBE_DISPI_INDEX_VIRT_WIDTH, (uint16_t)w);
+        WriteRegister(VBE_DISPI_INDEX_ENABLE, VBE_DISPI_ENABLED | VBE_DISPI_LFB_ENABLED);
+
+        uint16_t gotX = ReadRegister(VBE_DISPI_INDEX_XRES);
+        uint16_t gotY = ReadRegister(VBE_DISPI_INDEX_YRES);
+        if (gotX != (uint16_t)w || gotY != (uint16_t)h) {
+            printf("[BGA] ProgramMode: asked %ux%u, read back %ux%u (bpp=%u)\n", w, h, gotX, gotY,
+                   ReadRegister(VBE_DISPI_INDEX_BPP));
+            return false;
+        }
+        return true;
+    }
+
+    /**
+     * MapFramebuffer() - Ensure the LFB physical range is present in page tables.
+     * @fb_size: Number of bytes the framebuffer needs.
+     *
+     * The adapter keeps the same LFB base address across mode switches, so this
+     * only has to extend the mapping when a larger mode needs more pages.
+     *
+     * Return: True when every page of the range is mapped.
+     */
+    bool MapFramebuffer(uint64_t fb_size) {
+        if (fb_size == 0 || fb_size > 0xFFFFFFFFu) {
+            printf("[BGA] Error: Invalid framebuffer size\n");
+            return false;
+        }
+        if (!g_paging || !g_paging->KernelPageDirectory) {
+            printf("[BGA] Error: Paging not initialized\n");
+            return false;
+        }
+
+        uint32_t start = this->physFramebufferAddr & ~(PAGE_SIZE - 1);
+
+        // Compute end in 64-bit to avoid wrap on 32-bit truncation.
+        uint64_t end64 = (uint64_t)this->physFramebufferAddr + fb_size + PAGE_SIZE - 1;
+        // Also mask in 64-bit so the alignment is correct even if the sum exceeds 4GB.
+        uint64_t alignedEnd = end64 & ~((uint64_t)PAGE_SIZE - 1);
+        if (alignedEnd < (uint64_t)start || alignedEnd > 0xFFFFFFFFu) {
+            printf("[BGA] Error: Framebuffer region wraps or exceeds 4GB\n");
+            return false;
+        }
+        uint32_t end = (uint32_t)alignedEnd;
+
+        for (uint64_t addr = start; addr < end; addr += PAGE_SIZE) {
+            uint32_t existing = g_paging->GetPhysicalAddress(g_paging->KernelPageDirectory, addr);
+            if (existing == 0xFFFFFFFF || existing != addr) {
+                if (!g_paging->MapPage(g_paging->KernelPageDirectory, addr, addr,
+                                       PAGE_PRESENT | PAGE_RW)) {
+                    printf("[BGA] Error: Failed to map framebuffer\n");
+                    return false;
+                }
+            }
+        }
+        return true;
     }
 
     /**
@@ -147,51 +225,17 @@ public:
         printf("[BGA] Hardware Found. LFB @ 0x%x\n", this->physFramebufferAddr);
 
         // Set the video mode.
-        WriteRegister(VBE_DISPI_INDEX_ENABLE, VBE_DISPI_DISABLED);
-        WriteRegister(VBE_DISPI_INDEX_ID, 0xB0C5);  // VBE 3.0.
-        WriteRegister(VBE_DISPI_INDEX_X_OFFSET, 0);
-        WriteRegister(VBE_DISPI_INDEX_Y_OFFSET, 0);
-        WriteRegister(VBE_DISPI_INDEX_XRES, this->width);
-        WriteRegister(VBE_DISPI_INDEX_YRES, this->height);
-        WriteRegister(VBE_DISPI_INDEX_BPP, 32);
-        WriteRegister(VBE_DISPI_INDEX_VIRT_WIDTH, this->width);
-        WriteRegister(VBE_DISPI_INDEX_ENABLE, VBE_DISPI_ENABLED | VBE_DISPI_LFB_ENABLED);
+        if (!ProgramMode(this->width, this->height)) {
+            printf("[BGA] Error: Adapter refused %dx%d\n", this->width, this->height);
+            return;
+        }
 
         uint16_t bpp_result = ReadRegister(VBE_DISPI_INDEX_BPP);
         if (bpp_result != 32) {
             printf("[BGA] Warning: Hardware refused 32-bit mode! Got: %d\n", bpp_result);
         }
-        uint64_t fb_size = (uint64_t)this->width * (uint64_t)this->height * 4;
-        if (fb_size == 0 || fb_size > 0xFFFFFFFFu) {
-            printf("[BGA] Error: Invalid framebuffer size\n");
+        if (!MapFramebuffer((uint64_t)this->width * (uint64_t)this->height * 4)) {
             return;
-        }
-        if (!g_paging || !g_paging->KernelPageDirectory) {
-            printf("[BGA] Error: Paging not initialized\n");
-            return;
-        }
-
-        uint32_t start = this->physFramebufferAddr & ~(PAGE_SIZE - 1);
-
-        // Compute end in 64-bit to avoid wrap on 32-bit truncation.
-        uint64_t end64 = (uint64_t)this->physFramebufferAddr + fb_size + PAGE_SIZE - 1;
-        // Also mask in 64-bit so the alignment is correct even if the sum exceeds 4GB.
-        uint64_t alignedEnd = end64 & ~((uint64_t)PAGE_SIZE - 1);
-        if (alignedEnd < (uint64_t)start || alignedEnd > 0xFFFFFFFFu) {
-            printf("[BGA] Error: Framebuffer region wraps or exceeds 4GB\n");
-            return;
-        }
-        uint32_t end = (uint32_t)alignedEnd;
-
-        for (uint64_t addr = start; addr < end; addr += PAGE_SIZE) {
-            uint32_t existing = g_paging->GetPhysicalAddress(g_paging->KernelPageDirectory, addr);
-            if (existing == 0xFFFFFFFF || existing != addr) {
-                if (!g_paging->MapPage(g_paging->KernelPageDirectory, addr, addr,
-                                       PAGE_PRESENT | PAGE_RW)) {
-                    printf("[BGA] Error: Failed to map framebuffer\n");
-                    return;
-                }
-            }
         }
 
         // Update the GraphicsDriver framebuffer pointer.
@@ -202,10 +246,79 @@ public:
     }
 
     /**
+     * SetVideoMode() - Switch the adapter to a new resolution at runtime.
+     * @w: Requested width in pixels.
+     * @h: Requested height in pixels.
+     *
+     * Re-programs VBE-DISPI, extends the LFB mapping for the larger geometry
+     * and resizes the software back buffer. If the adapter rejects the request
+     * the previous mode is re-programmed so the screen is never left blank.
+     *
+     * Return: True when the new mode is active.
+     */
+    bool SetVideoMode(uint32_t w, uint32_t h) override {
+        if (w == 0 || h == 0) return false;
+        // The DISPI geometry registers are 16 bits wide.
+        if (w > 0xFFFF || h > 0xFFFF) return false;
+        if (!this->is_Active) {
+            printf("[BGA] Error: Driver not active\n");
+            return false;
+        }
+        if (w == this->width && h == this->height) return true;
+
+        // Map first: a larger mode needs more pages before the adapter is told
+        // to start scanning out beyond the current mapping.
+        if (!MapFramebuffer((uint64_t)w * (uint64_t)h * 4)) {
+            ProgramMode(this->width, this->height);
+            return false;
+        }
+
+        if (!ProgramMode(w, h)) {
+            printf("[BGA] Error: Adapter refused %ux%u, restoring %ux%u\n", w, h, this->width,
+                   this->height);
+            ProgramMode(this->width, this->height);
+            return false;
+        }
+
+        if (!ResizeBackBuffer(w, h)) {
+            printf("[BGA] Error: Back buffer resize failed, restoring %ux%u\n", this->width,
+                   this->height);
+            ProgramMode(this->width, this->height);
+            return false;
+        }
+
+        this->videoMemory = (uint32_t*)this->physFramebufferAddr;
+        printf("[BGA] Mode switched: %ux%u\n", w, h);
+        return true;
+    }
+
+    /**
      * Deactivate() - Disable the display.
      */
     void Deactivate() override {
         WriteRegister(VBE_DISPI_INDEX_ENABLE, VBE_DISPI_DISABLED);
+    }
+
+    /**
+     * GetSupportedModes() - Report the geometries the adapter can be asked for.
+     * @count: Receives the number of entries.
+     *
+     * VBE-DISPI takes 16-bit XRES/YRES, so this adapter is not limited to a
+     * BIOS-reported list the way the VBE driver is. These are the common
+     * 32-bpp panel geometries, offered largest first; anything else still works
+     * but is not advertised in Settings.
+     *
+     * Return: The static mode table.
+     */
+    const DisplayMode* GetSupportedModes(int* count) override {
+        static const DisplayMode kModes[] = {
+            {1920, 1080}, {1600, 900}, {1440, 900}, {1366, 768}, {1280, 1024},
+            {1280, 720},  {1152, 864}, {1024, 768}, {800, 600},  {640, 480},
+        };
+        if (count) {
+            *count = (int)(sizeof(kModes) / sizeof(kModes[0]));
+        }
+        return kModes;
     }
 
     /**

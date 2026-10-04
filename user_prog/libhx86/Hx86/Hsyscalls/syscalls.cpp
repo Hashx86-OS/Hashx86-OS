@@ -56,6 +56,15 @@ int32_t syscall_open(const char* path, int32_t flags) {
     return return_data;
 }
 
+int32_t syscall_lseek(uint32_t fd, int32_t offset, int32_t whence) {
+    int32_t return_data = -1;
+    asm volatile("int $0x80"
+                 : "=a"(return_data)
+                 : "a"(sys_lseek), "b"(fd), "c"(offset), "d"(whence)
+                 : "memory");
+    return return_data;
+}
+
 int32_t syscall_close(uint32_t fd) {
     int32_t return_data = -1;
     asm volatile("int $0x80" : "=a"(return_data) : "a"(sys_close), "b"(fd) : "memory");

@@ -112,6 +112,17 @@ public:
     }
 
     /**
+     * SetSelectedIndex() - Highlight a row programmatically.
+     * @index: Row to select, or -1 to clear the selection.
+     *
+     * Used to preselect the entry matching current state, for example the
+     * active display resolution. The view scrolls to keep the row visible.
+     *
+     * Return: True when @index was in range, false otherwise.
+     */
+    bool SetSelectedIndex(int index);
+
+    /**
      * GetItem() - Return the item at a row index.
      * @index: Row index.
      *

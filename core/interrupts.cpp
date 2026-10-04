@@ -30,6 +30,7 @@
 #include <core/filesystem/Paths.h>
 #include <core/interrupts.h>
 #include <core/kstack.h>
+#include <core/power.h>
 #include <gui/Hgui.h>
 
 static uint16_t HWInterruptOffset = 0x20;
@@ -455,7 +456,10 @@ uint32_t InterruptManager::DohandleException(uint8_t interruptNumber, uint32_t e
         Font* g_GraphicsDriver_font = FontManager::activeInstance->getNewFont();
         if (g_GraphicsDriver_font) {
             // PANIC
-            g_GraphicsDriver->FillRectangle(0, 0, GUI_SCREEN_WIDTH, GUI_SCREEN_HEIGHT, 0x0);
+            // Use the live geometry: the screen may not match the compiled-in
+            // default if saved settings asked for a different resolution.
+            g_GraphicsDriver->FillRectangle(0, 0, g_GraphicsDriver->GetWidth(),
+                                            g_GraphicsDriver->GetHeight(), 0x0);
             Bitmap* panicImg = new Bitmap(PATH_PANIC_BMP);
             if (panicImg && panicImg->IsValid()) {
                 g_GraphicsDriver->DrawBitmap(100, 200, panicImg->GetBuffer(), panicImg->GetWidth(),
@@ -615,30 +619,8 @@ uint32_t InterruptManager::DohandleException(uint8_t interruptNumber, uint32_t e
 
     KDBG1("Attempting system reboot...\n");
 
-    Port8Bit keyboard_command_port(0x64);
-
-    // Disable interrupts to prevent interference during the reset sequence.
-    asm volatile("cli");
-
-    // Wait for the keyboard controller to be ready (input buffer empty).
-    // Time out after ~1M iterations to avoid an infinite spin in some VMs.
-    for (volatile int i = 0; i < 1000000; i++) {
-        if ((keyboard_command_port.Read() & 0x02) == 0) break;
-    }
-
-    // Send the "CPU reset" command (0xFE) to the keyboard controller.
-    keyboard_command_port.Write(0xFE);
-
-    // If the keyboard reset didn't work, force a triple fault: load a null IDT
-    // and trigger an interrupt, guaranteeing the CPU resets.
-    asm volatile(
-        "lidt (%0)\n\t"
-        "int3\n\t" ::"r"(0));
-
-    // Halt the CPU (should be unreachable).
-    while (1) {
-        asm volatile("hlt");
-    }
+    // Shares the taskbar's Restart entry, so both paths reset identically.
+    PowerRestart();
 
     return esp;
 }
