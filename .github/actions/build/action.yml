@@ -38,6 +38,11 @@ runs:
         make check-style
         ./check_headers.sh
         ./check_eof.sh
+        ./check_gui_boundary.sh
+
+    - name: Run host GUI tests (10k)
+      shell: bash
+      run: make gui-test
 
     - name: Clean build (kernel)
       shell: bash
