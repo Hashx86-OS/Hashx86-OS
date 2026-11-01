@@ -23,15 +23,20 @@
  */
 
 #define KDBG_COMPONENT "GUI:HOST"
+#include <core/Iguard.h>
 #include <core/globals.h>
 #include <core/scheduler.h>
 #include <gui/desktop.h>
 #include <gui/eventHandler.h>
+#include <gui/widget.h>
 #include <gui/widgetHost.h>
 
 WidgetHost* g_widgetHost = nullptr;
 
 namespace {
+
+// Widgets waiting to be deleted once no event dispatch is on the stack.
+LinkedList<Widget*> g_pendingWidgetDestroy;
 
 /**
  * class KernelWidgetHost - Delivers widget events to the owning process.
@@ -63,9 +68,33 @@ public:
             g_scheduler->WakeThread(handler->thread);
         }
     }
+
+    void DestroyWidgetLater(Widget* widget) override {
+        if (!widget) return;
+        // Called from the desktop task, but also possibly from a syscall
+        // thread; the push has to be atomic with respect to the drain.
+        InterruptGuard guard;
+        g_pendingWidgetDestroy.PushBack(widget);
+    }
 };
 
 }  // namespace
+
+void DrainDeferredWidgetDeletes() {
+    while (true) {
+        Widget* widget = nullptr;
+        {
+            InterruptGuard guard;
+            if (g_pendingWidgetDestroy.IsEmpty()) break;
+            widget = g_pendingWidgetDestroy.PopFront();
+        }
+
+        // Delete outside the critical section: destructors mark ancestors
+        // dirty and unlink from the registry, which is more work than the
+        // queue bookkeeping needs to hold interrupts for.
+        delete widget;
+    }
+}
 
 void InstallKernelWidgetHost() {
     if (!g_widgetHost) {

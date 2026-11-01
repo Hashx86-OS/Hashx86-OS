@@ -26,6 +26,72 @@
 #include <gui/guiplat.h>
 #include <gui/widget.h>
 
+namespace {
+
+/**
+ * HasFocusableDescendant() - Test whether a subtree contains a focus stop.
+ * @widget: Root of the subtree to inspect.
+ *
+ * Only visible widgets count; hidden children are skipped along with their
+ * subtrees.
+ */
+bool HasFocusableDescendant(Widget* widget) {
+    bool found = false;
+    widget->childrenList.ForEach([&](Widget* child) {
+        if (found || !child->isVisible) return;
+        if (child->IsFocussable() || HasFocusableDescendant(child)) found = true;
+    });
+    return found;
+}
+
+/**
+ * CollectTabStops() - Gather focus stops below @container in tab order.
+ * @container: Composite whose descendants should be visited.
+ * @stops: Destination array, or NULL to only count the stops.
+ * @count: In/out number of stops collected so far.
+ *
+ * A composite that owns focusable descendants is a container, not a stop, so
+ * traversal descends into it. Composites without focusable descendants (and
+ * ordinary focusable widgets) are stops themselves.
+ */
+void CollectTabStops(Widget* container, Widget** stops, int& count) {
+    container->childrenList.ForEach([&](Widget* child) {
+        if (!child->isVisible) return;
+
+        if (!child->IsFocussable()) {
+            if (child->IsComposite()) CollectTabStops(child, stops, count);
+            return;
+        }
+
+        if (child->IsComposite() && HasFocusableDescendant(child)) {
+            CollectTabStops(child, stops, count);
+            return;
+        }
+
+        if (stops) stops[count] = child;
+        count++;
+    });
+}
+
+/**
+ * FindDeepestFocused() - Follow the focused chain to its deepest widget.
+ * @container: Composite whose focused path should be followed.
+ *
+ * Return: The deepest focused widget, or NULL when no descendant is focused.
+ */
+Widget* FindDeepestFocused(Widget* container) {
+    Widget* focused = nullptr;
+    container->childrenList.ForEach([&](Widget* child) {
+        if (!focused && child->IsFocused()) focused = child;
+    });
+    if (!focused) return nullptr;
+
+    Widget* deeper = FindDeepestFocused(focused);
+    return deeper ? deeper : focused;
+}
+
+}  // namespace
+
 // Widget base class.
 
 void (*Widget::destructorNotify)(Widget*) = nullptr;
@@ -108,11 +174,9 @@ void Widget::Recalc() {
     if (newW < (int32_t)minWidth) newW = (int32_t)minWidth;
     if (newH < (int32_t)minHeight) newH = (int32_t)minHeight;
     if (newW != w || newH != h) {
-        w = newW;
-        h = newH;
-        if (cache) delete[] cache;
-        cache = (w > 0 && h > 0) ? new uint32_t[w * h]() : nullptr;
-        MarkDirty();
+        // Resize() performs the overflow check and only swaps the buffer once
+        // the replacement exists, so a failed recalc leaves the widget intact.
+        Resize(newW, newH);
     }
 }
 
@@ -126,9 +190,10 @@ void Widget::Draw(RasterSurface* gc) {
     if (isDirty) {
         if (isVisible) {
             RedrawToCache();
-        } else {
-            // Clear the cache if hidden.
-            if (cache) memset(cache, 0, sizeof(uint32_t) * w * h);
+        } else if (cache && w > 0 && h > 0) {
+            // Clear the cache if hidden. Guard the dimensions: a widget that
+            // was resized while hidden must not memset a huge unsigned size.
+            memset(cache, 0, sizeof(uint32_t) * (size_t)w * (size_t)h);
         }
         isDirty = false;
     }
@@ -147,6 +212,23 @@ bool Widget::ContainsCoordinate(int32_t targetX, int32_t targetY) {
     // Check whether the local coordinate lies inside the widget.
     return (targetX >= this->x) && (targetX < this->x + this->w) && (targetY >= this->y) &&
            (targetY < this->y + this->h);
+}
+
+Widget* Widget::HitTest(int32_t parentX, int32_t parentY) {
+    return (isVisible && ContainsCoordinate(parentX, parentY)) ? this : nullptr;
+}
+
+Widget* CompositeWidget::HitTest(int32_t parentX, int32_t parentY) {
+    if (!isVisible || !ContainsCoordinate(parentX, parentY)) return nullptr;
+
+    int32_t localX = parentX - this->x;
+    int32_t localY = parentY - this->y;
+
+    Widget* found = nullptr;
+    childrenList.ReverseForEach([&](Widget* child) {
+        if (!found) found = child->HitTest(localX, localY);
+    });
+    return found ? found : this;
 }
 
 // Focus.
@@ -175,6 +257,21 @@ void Widget::SetFocussable(bool focussable) {
             parent->GetFocus(nullptr);
         }
     }
+}
+
+void Widget::SetEnabled(bool value) {
+    if (enabled == value) return;
+    enabled = value;
+
+    if (!enabled) {
+        // A drag or key focus must not survive the widget becoming disabled.
+        mouseCaptured = false;
+        if (isFocused) {
+            SetFocus(false);
+            if (parent) parent->GetFocus(nullptr);
+        }
+    }
+    MarkDirty();
 }
 
 void Widget::RequestTopmostFocus() {
@@ -274,7 +371,7 @@ bool Widget::IsComposite() const {
 }
 
 bool Widget::IsMouseCaptured() const {
-    return false;
+    return mouseCaptured;
 }
 
 bool Widget::IsPressed() const {
@@ -323,12 +420,23 @@ void CompositeWidget::GetFocus(Widget* widget) {
     focusedChild = widget;
     if (widget) {
         widget->SetFocus(true);
-        // Move to the front for Z-order.
-        childrenList.Remove([&](Widget* c) { return c == widget; });
-        childrenList.PushBack(widget);
+        // Move to the front for Z-order. Only reorder an actual child: pushing
+        // an arbitrary widget would link it into this list without adopting it
+        // (leaving its real parent dangling), which corrupts both trees.
+        if (childrenList.Remove([&](Widget* c) { return c == widget; })) {
+            childrenList.PushBack(widget);
+        }
     }
 
     if (parent) parent->GetFocus(this);
+}
+
+void CompositeWidget::SetFocus(bool result) {
+    if (result == IsFocused()) return;
+    Widget::SetFocus(result);
+    // The focused child follows the container so a nested chain never keeps a
+    // stale focused widget after its ancestor loses focus.
+    if (focusedChild) focusedChild->SetFocus(result);
 }
 
 bool CompositeWidget::RemoveChild(Widget* child) {
@@ -350,20 +458,75 @@ void CompositeWidget::Draw(RasterSurface* gc) {
     // Draw the widget itself.
     Widget::Draw(gc);
 
+    if (!isVisible) return;
+
     // Draw children back-to-front.
     childrenList.ForEach([&](Widget* child) { child->Draw(gc); });
 }
 
+void CompositeWidget::RedrawToCache() {
+    if (!cache) {
+        isDirty = false;
+        return;
+    }
+
+    // Start from a transparent surface, then composite the subtree into it.
+    // Each child's cache already contains its own subtree because composites
+    // recurse here; a leaf cache is drawn by the leaf's RedrawToCache().
+    Widget::RedrawToCache();
+
+    if (!NINA::activeInstance) {
+        isDirty = false;
+        return;
+    }
+
+    childrenList.ForEach([&](Widget* child) {
+        if (!child || !child->isVisible) return;
+        if (child->w <= 0 || child->h <= 0 || !child->cache) return;
+        if (child->isDirty) child->RedrawToCache();
+        NINA::activeInstance->DrawBitmapToBuffer(cache, w, h, child->x, child->y, child->cache,
+                                                 child->w, child->h);
+    });
+    isDirty = false;
+}
+
+bool CompositeWidget::IsMouseCaptured() const {
+    if (mouseCaptured) return true;
+    bool captured = false;
+    childrenList.ForEach([&](Widget* child) {
+        if (!captured && child->isVisible && (child->IsMouseCaptured() || child->IsPressed())) {
+            captured = true;
+        }
+    });
+    return captured;
+}
+
+bool CompositeWidget::IsPressed() const {
+    bool pressed = false;
+    childrenList.ForEach([&](Widget* child) {
+        if (!pressed && child->isVisible && child->IsPressed()) pressed = true;
+    });
+    return pressed;
+}
+
 void CompositeWidget::OnMouseDown(int32_t x, int32_t y, uint8_t button) {
+    if (!enabled || !isVisible) return;
+
     // Transform to local coordinates.
     int32_t localX = x - this->x;
     int32_t localY = y - this->y;
 
+    // A press also establishes the pointer position. Wheel events carry no
+    // position of their own, so without this a click followed by a scroll
+    // (with no intervening move) would use a stale target.
+    this->lastMouseX = localX;
+    this->lastMouseY = localY;
+
     Widget* clicked = nullptr;
 
-    // Hit-test front to back.
+    // Hit-test front to back. Hidden children must not intercept clicks.
     childrenList.ReverseForEach([&](Widget* child) {
-        if (!clicked && child->ContainsCoordinate(localX, localY)) {
+        if (!clicked && child->isVisible && child->ContainsCoordinate(localX, localY)) {
             child->OnMouseDown(localX, localY, button);
             clicked = child;
         }
@@ -378,13 +541,15 @@ void CompositeWidget::OnMouseDown(int32_t x, int32_t y, uint8_t button) {
 }
 
 void CompositeWidget::OnMouseUp(int32_t x, int32_t y, uint8_t button) {
+    if (!isVisible) return;
+
     // Transform to local coordinates.
     int32_t localX = x - this->x;
     int32_t localY = y - this->y;
 
     Widget* hit = nullptr;
     childrenList.ReverseForEach([&](Widget* child) {
-        if (!hit && child->ContainsCoordinate(localX, localY)) {
+        if (!hit && enabled && child->isVisible && child->ContainsCoordinate(localX, localY)) {
             child->OnMouseUp(localX, localY, button);
             hit = child;
         }
@@ -399,6 +564,8 @@ void CompositeWidget::OnMouseUp(int32_t x, int32_t y, uint8_t button) {
 }
 
 void CompositeWidget::OnMouseMove(int32_t oldx, int32_t oldy, int32_t newx, int32_t newy) {
+    if (!enabled || !isVisible) return;
+
     int32_t localOldX = oldx - this->x;
     int32_t localOldY = oldy - this->y;
     int32_t localNewX = newx - this->x;
@@ -408,6 +575,7 @@ void CompositeWidget::OnMouseMove(int32_t oldx, int32_t oldy, int32_t newx, int3
     this->lastMouseY = localNewY;
 
     childrenList.ForEach([&](Widget* child) {
+        if (!child->isVisible) return;
         // Notify if the mouse is inside, entering/exiting, or the child has capture.
         bool inOld = child->ContainsCoordinate(localOldX, localOldY);
         bool inNew = child->ContainsCoordinate(localNewX, localNewY);
@@ -425,27 +593,32 @@ void CompositeWidget::OnMouseMove(int32_t oldx, int32_t oldy, int32_t newx, int3
 }
 
 void CompositeWidget::OnKeyDown(const char* key) {
+    if (!enabled || !isVisible) return;
     if (focusedChild) focusedChild->OnKeyDown(key);
 }
 
 void CompositeWidget::OnKeyUp(const char* key) {
+    if (!enabled || !isVisible) return;
     if (focusedChild) focusedChild->OnKeyUp(key);
 }
 
 void CompositeWidget::OnSpecialKeyDown(uint8_t key) {
+    if (!enabled || !isVisible) return;
     if (focusedChild) focusedChild->OnSpecialKeyDown(key);
 }
 
 void CompositeWidget::OnSpecialKeyUp(uint8_t key) {
+    if (!enabled || !isVisible) return;
     if (focusedChild) focusedChild->OnSpecialKeyUp(key);
 }
 
 void CompositeWidget::OnMouseWheel(int32_t delta) {
+    if (!enabled || !isVisible) return;
     // Wheel events carry no position; route to the child under the last
     // pointer position, front to back.
     Widget* target = nullptr;
     childrenList.ReverseForEach([&](Widget* child) {
-        if (!target && child->ContainsCoordinate(lastMouseX, lastMouseY)) {
+        if (!target && child->isVisible && child->ContainsCoordinate(lastMouseX, lastMouseY)) {
             target = child;
         }
     });
@@ -453,12 +626,14 @@ void CompositeWidget::OnMouseWheel(int32_t delta) {
 }
 
 void CompositeWidget::OnDoubleClick(int32_t x, int32_t y, uint8_t button) {
+    if (!enabled || !isVisible) return;
+
     int32_t localX = x - this->x;
     int32_t localY = y - this->y;
 
     Widget* target = nullptr;
     childrenList.ReverseForEach([&](Widget* child) {
-        if (!target && child->ContainsCoordinate(localX, localY)) {
+        if (!target && child->isVisible && child->ContainsCoordinate(localX, localY)) {
             child->OnDoubleClick(localX, localY, button);
             target = child;
         }
@@ -466,33 +641,45 @@ void CompositeWidget::OnDoubleClick(int32_t x, int32_t y, uint8_t button) {
 }
 
 void CompositeWidget::OnKeyRepeat(const char* key, uint32_t count) {
+    if (!enabled || !isVisible) return;
     if (focusedChild) focusedChild->OnKeyRepeat(key, count);
 }
 
 void CompositeWidget::OnKeyDownMod(const char* key, uint8_t modifiers) {
+    if (!enabled || !isVisible) return;
     if (focusedChild) focusedChild->OnKeyDownMod(key, modifiers);
 }
 
 void CompositeWidget::OnTabFocus(bool backwards) {
-    Widget* focusable[64];
+    if (!enabled || !isVisible) return;
+
+    // Count the focus stops first so the traversal has no fixed-size limit.
     int count = 0;
-    childrenList.ForEach([&](Widget* child) {
-        if (count < 64 && child->isFocussable && child->isVisible) {
-            focusable[count++] = child;
-        }
-    });
+    CollectTabStops(this, nullptr, count);
     if (count == 0) return;
 
+    Widget** stops = new Widget*[count];
+    if (!stops) return;
+    int collected = 0;
+    CollectTabStops(this, stops, collected);
+
+    Widget* currentStop = FindDeepestFocused(this);
     int current = -1;
-    for (int i = 0; i < count; i++) {
-        if (focusable[i] == focusedChild) current = i;
+    for (int i = 0; i < collected; i++) {
+        if (stops[i] == currentStop) current = i;
     }
 
     int next;
     if (backwards) {
-        next = (current <= 0) ? count - 1 : current - 1;
+        next = (current <= 0) ? collected - 1 : current - 1;
     } else {
-        next = (current + 1) % count;
+        next = (current + 1) % collected;
     }
-    GetFocus(focusable[next]);
+
+    // A composite stop is not its own child, so enter through the base
+    // implementation, which forwards the request to its parent.
+    Widget* target = stops[next];
+    target->Widget::GetFocus(target);
+
+    delete[] stops;
 }

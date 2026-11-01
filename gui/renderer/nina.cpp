@@ -45,21 +45,27 @@ NINA::~NINA() {}
 
 void NINA::DrawBitmapToBuffer(uint32_t* dst, int dstW, int dstH, int dstX, int dstY, uint32_t* src,
                               int srcW, int srcH) {
-    if (dstY + srcH <= 0 || dstY >= dstH) return;
-    if (dstX + srcW <= 0 || dstX >= dstW) return;
+    if (!dst || !src || dstW <= 0 || dstH <= 0 || srcW <= 0 || srcH <= 0) return;
 
-    int srcY0 = (dstY < 0) ? -dstY : 0;
-    int srcY1 = (dstY + srcH > dstH) ? dstH - dstY : srcH;
+    // Clip in 64-bit space so a huge offset or size cannot wrap around and
+    // turn a fully off-surface blit into a full-surface one.
+    int64_t x0 = dstX;
+    int64_t y0 = dstY;
+    int64_t x1 = (int64_t)dstX + srcW;
+    int64_t y1 = (int64_t)dstY + srcH;
+    if (x0 < 0) x0 = 0;
+    if (y0 < 0) y0 = 0;
+    if (x1 > dstW) x1 = dstW;
+    if (y1 > dstH) y1 = dstH;
+    if (x0 >= x1 || y0 >= y1) return;
 
-    int srcX0 = (dstX < 0) ? -dstX : 0;
-    int srcX1 = (dstX + srcW > dstW) ? dstW - dstX : srcW;
+    const int64_t srcX0 = x0 - (int64_t)dstX;
+    const int span = (int)(x1 - x0);
 
-    for (int y = srcY0; y < srcY1; ++y) {
-        int dy = dstY + y;
-        int clippedDstX = dstX + srcX0;
-        uint32_t* dstRow = dst + dy * dstW + clippedDstX;
-        uint32_t* srcRow = src + y * srcW + srcX0;
-        int span = srcX1 - srcX0;
+    for (int64_t y = y0; y < y1; ++y) {
+        int64_t dy = y;
+        uint32_t* dstRow = dst + dy * dstW + x0;
+        uint32_t* srcRow = src + (y - dstY) * srcW + srcX0;
 
         for (int x = 0; x < span; ++x) {
             uint32_t srcPixel = srcRow[x];
@@ -96,7 +102,7 @@ void NINA::DrawBitmap(uint32_t* buffer, int32_t bufferWidth, int32_t bufferHeigh
         return;
     }
     if (x >= bufferWidth || y >= bufferHeight) return;
-    if (x + bitmapWidth <= 0 || y + bitmapHeight <= 0) return;
+    if ((int64_t)x + bitmapWidth <= 0 || (int64_t)y + bitmapHeight <= 0) return;
 
     int32_t startCol = (x < 0) ? -x : 0;
     int32_t drawWidth = bitmapWidth - startCol;
@@ -163,115 +169,160 @@ void NINA::DrawBitmap(uint32_t* buffer, int32_t bufferWidth, int32_t bufferHeigh
 }
 
 void NINA::FillRectangle(uint32_t* buffer, int32_t bufferWidth, int32_t bufferHeight, int32_t x,
-                         int32_t y, uint32_t w, uint32_t h, uint32_t colorIndex) {
-    int32_t startX = (x < 0) ? 0 : x;
-    int32_t startY = (y < 0) ? 0 : y;
-    int32_t endX = ((x + w) > bufferWidth) ? bufferWidth : (x + w);
-    int32_t endY = ((y + h) > bufferHeight) ? bufferHeight : (y + h);
+                         int32_t y, int32_t w, int32_t h, uint32_t colorIndex) {
+    if (!buffer || bufferWidth <= 0 || bufferHeight <= 0 || w <= 0 || h <= 0) return;
 
-    for (int32_t Y = startY; Y < endY; ++Y) {
-        for (int32_t X = startX; X < endX; ++X) {
-            buffer[Y * bufferWidth + X] = colorIndex;
+    // Clip in 64-bit space: signed dimensions plus negative origins must not
+    // wrap around the 32-bit range (a rect fully left of the surface used to
+    // clamp to "fill the whole surface").
+    int64_t x0 = x;
+    int64_t y0 = y;
+    int64_t x1 = (int64_t)x + w;
+    int64_t y1 = (int64_t)y + h;
+    if (x0 < 0) x0 = 0;
+    if (y0 < 0) y0 = 0;
+    if (x1 > bufferWidth) x1 = bufferWidth;
+    if (y1 > bufferHeight) y1 = bufferHeight;
+    if (x0 >= x1 || y0 >= y1) return;
+
+    for (int64_t Y = y0; Y < y1; ++Y) {
+        uint32_t* row = buffer + Y * bufferWidth;
+        for (int64_t X = x0; X < x1; ++X) {
+            row[X] = colorIndex;
         }
     }
 }
 
 void NINA::DrawRectangle(uint32_t* buffer, int32_t bufferWidth, int32_t bufferHeight, int32_t x,
-                         int32_t y, uint32_t w, uint32_t h, uint32_t colorIndex) {
-    int32_t startX = (x < 0) ? 0 : x;
-    int32_t startY = (y < 0) ? 0 : y;
-    int32_t endX = (x + w > bufferWidth) ? bufferWidth : x + w;
-    int32_t endY = (y + h > bufferHeight) ? bufferHeight : y + h;
+                         int32_t y, int32_t w, int32_t h, uint32_t colorIndex) {
+    if (!buffer || bufferWidth <= 0 || bufferHeight <= 0 || w <= 0 || h <= 0) return;
 
-    for (int32_t X = startX; X < endX; X++) {
-        if (startY >= 0 && startY < bufferHeight) buffer[startY * bufferWidth + X] = colorIndex;
-        if (endY - 1 >= 0 && endY - 1 < bufferHeight)
-            buffer[(endY - 1) * bufferWidth + X] = colorIndex;
+    int64_t x0 = x;
+    int64_t y0 = y;
+    int64_t x1 = (int64_t)x + w - 1;
+    int64_t y1 = (int64_t)y + h - 1;
+    if (x0 < 0) x0 = 0;
+    if (y0 < 0) y0 = 0;
+    if (x1 >= bufferWidth) x1 = bufferWidth - 1;
+    if (y1 >= bufferHeight) y1 = bufferHeight - 1;
+    if (x0 > x1 || y0 > y1) return;
+
+    for (int64_t X = x0; X <= x1; ++X) {
+        buffer[y0 * bufferWidth + X] = colorIndex;
+        buffer[y1 * bufferWidth + X] = colorIndex;
     }
-
-    for (int32_t Y = startY; Y < endY; Y++) {
-        if (startX >= 0 && startX < bufferWidth) buffer[Y * bufferWidth + startX] = colorIndex;
-        if (endX - 1 >= 0 && endX - 1 < bufferWidth)
-            buffer[Y * bufferWidth + (endX - 1)] = colorIndex;
+    for (int64_t Y = y0; Y <= y1; ++Y) {
+        buffer[Y * bufferWidth + x0] = colorIndex;
+        buffer[Y * bufferWidth + x1] = colorIndex;
     }
 }
 
 void NINA::FillRoundedRectangle(uint32_t* buffer, int32_t bufferWidth, int32_t bufferHeight,
-                                int32_t x, int32_t y, uint32_t w, uint32_t h, uint32_t radius,
+                                int32_t x, int32_t y, int32_t w, int32_t h, uint32_t radius,
                                 uint32_t colorIndex) {
-    if (radius > w / 2) radius = w / 2;
-    if (radius > h / 2) radius = h / 2;
-    FillRectangle(buffer, bufferWidth, bufferHeight, x + radius, y, w - 2 * radius, h, colorIndex);
-    FillRectangle(buffer, bufferWidth, bufferHeight, x, y + radius, w, h - 2 * radius, colorIndex);
+    if (!buffer || bufferWidth <= 0 || bufferHeight <= 0 || w <= 0 || h <= 0) return;
+    if (radius > (uint32_t)(w / 2)) radius = (uint32_t)(w / 2);
+    if (radius > (uint32_t)(h / 2)) radius = (uint32_t)(h / 2);
 
-    for (int32_t dy = 0; dy <= static_cast<int32_t>(radius); ++dy) {
-        for (int32_t dx = 0; dx <= static_cast<int32_t>(radius); ++dx) {
-            if ((dx * dx + dy * dy) <= static_cast<int32_t>(radius * radius)) {
-                int32_t tlX = x + radius - dx;
-                int32_t tlY = y + radius - dy;
-                int32_t trX = x + w - radius + dx - 1;
-                int32_t brY = y + h - radius + dy - 1;
+    const int32_t r = (int32_t)radius;
+    // Edge origins are computed in 64-bit space; a rectangle that lands
+    // outside the int32 range cannot intersect the surface anyway.
+    int64_t edgeX = (int64_t)x + r;
+    int64_t edgeY = (int64_t)y + r;
+    if (edgeX >= INT32_MIN && edgeX <= INT32_MAX)
+        FillRectangle(buffer, bufferWidth, bufferHeight, (int32_t)edgeX, y, w - 2 * r, h,
+                      colorIndex);
+    if (edgeY >= INT32_MIN && edgeY <= INT32_MAX)
+        FillRectangle(buffer, bufferWidth, bufferHeight, x, (int32_t)edgeY, w, h - 2 * r,
+                      colorIndex);
+    if (r <= 0) return;
 
-                if (tlX >= 0 && tlY >= 0 && tlX < bufferWidth && tlY < bufferHeight)
-                    buffer[tlY * bufferWidth + tlX] = colorIndex;
-                if (trX >= 0 && tlY >= 0 && trX < bufferWidth && tlY < bufferHeight)
-                    buffer[tlY * bufferWidth + trX] = colorIndex;
-                if (tlX >= 0 && brY >= 0 && tlX < bufferWidth && brY < bufferHeight)
-                    buffer[brY * bufferWidth + tlX] = colorIndex;
-                if (trX >= 0 && brY >= 0 && trX < bufferWidth && brY < bufferHeight)
-                    buffer[brY * bufferWidth + trX] = colorIndex;
-            }
+    const uint64_t r2 = (uint64_t)r * (uint64_t)r;
+    for (int32_t dy = 0; dy <= r; ++dy) {
+        for (int32_t dx = 0; dx <= r; ++dx) {
+            if ((uint64_t)dx * (uint64_t)dx + (uint64_t)dy * (uint64_t)dy > r2) continue;
+
+            int64_t tlX = (int64_t)x + r - dx;
+            int64_t tlY = (int64_t)y + r - dy;
+            int64_t trX = (int64_t)x + w - r + dx - 1;
+            int64_t brY = (int64_t)y + h - r + dy - 1;
+
+            if (tlX >= 0 && tlY >= 0 && tlX < bufferWidth && tlY < bufferHeight)
+                buffer[tlY * bufferWidth + tlX] = colorIndex;
+            if (trX >= 0 && tlY >= 0 && trX < bufferWidth && tlY < bufferHeight)
+                buffer[tlY * bufferWidth + trX] = colorIndex;
+            if (tlX >= 0 && brY >= 0 && tlX < bufferWidth && brY < bufferHeight)
+                buffer[brY * bufferWidth + tlX] = colorIndex;
+            if (trX >= 0 && brY >= 0 && trX < bufferWidth && brY < bufferHeight)
+                buffer[brY * bufferWidth + trX] = colorIndex;
         }
     }
 }
 
 void NINA::DrawRoundedRectangle(uint32_t* buffer, int32_t bufferWidth, int32_t bufferHeight,
-                                int32_t x, int32_t y, uint32_t w, uint32_t h, uint32_t radius,
+                                int32_t x, int32_t y, int32_t w, int32_t h, uint32_t radius,
                                 uint32_t colorIndex) {
-    if (radius > w / 2) radius = w / 2;
-    if (radius > h / 2) radius = h / 2;
-    for (int32_t i = x + radius; i < x + w - radius; ++i) {
-        if (i >= 0 && i < bufferWidth) {
-            if (y >= 0 && y < bufferHeight) buffer[y * bufferWidth + i] = colorIndex;
-            if ((y + h - 1) >= 0 && (y + h - 1) < bufferHeight)
-                buffer[(y + h - 1) * bufferWidth + i] = colorIndex;
-        }
+    if (!buffer || bufferWidth <= 0 || bufferHeight <= 0 || w <= 0 || h <= 0) return;
+    if (radius > (uint32_t)(w / 2)) radius = (uint32_t)(w / 2);
+    if (radius > (uint32_t)(h / 2)) radius = (uint32_t)(h / 2);
+
+    const int32_t r = (int32_t)radius;
+
+    // Straight edges. The y coordinates are signed and checked explicitly so a
+    // rectangle above or below the surface never indexes the buffer.
+    int64_t top = y;
+    int64_t bottom = (int64_t)y + h - 1;
+    for (int64_t i = (int64_t)x + r; i < (int64_t)x + w - r; ++i) {
+        if (i < 0 || i >= bufferWidth) continue;
+        if (top >= 0 && top < bufferHeight) buffer[top * bufferWidth + i] = colorIndex;
+        if (bottom >= 0 && bottom < bufferHeight) buffer[bottom * bufferWidth + i] = colorIndex;
     }
 
-    for (int32_t i = y + radius; i < y + h - radius; ++i) {
-        if (i >= 0 && i < bufferHeight) {
-            if (x >= 0 && x < bufferWidth) buffer[i * bufferWidth + x] = colorIndex;
-            if ((x + w - 1) >= 0 && (x + w - 1) < bufferWidth)
-                buffer[i * bufferWidth + (x + w - 1)] = colorIndex;
-        }
+    int64_t left = x;
+    int64_t right = (int64_t)x + w - 1;
+    for (int64_t i = (int64_t)y + r; i < (int64_t)y + h - r; ++i) {
+        if (i < 0 || i >= bufferHeight) continue;
+        if (left >= 0 && left < bufferWidth) buffer[i * bufferWidth + left] = colorIndex;
+        if (right >= 0 && right < bufferWidth) buffer[i * bufferWidth + right] = colorIndex;
     }
 
-    for (int32_t dy = 0; dy <= static_cast<int32_t>(radius); ++dy) {
-        for (int32_t dx = 0; dx <= static_cast<int32_t>(radius); ++dx) {
-            int32_t d2 = dx * dx + dy * dy;
-            if (d2 >= static_cast<int32_t>((radius - 1) * (radius - 1)) &&
-                d2 <= static_cast<int32_t>(radius * radius)) {
-                int32_t tlX = x + radius - dx;
-                int32_t tlY = y + radius - dy;
-                int32_t trX = x + w - radius + dx - 1;
-                int32_t brY = y + h - radius + dy - 1;
+    if (r <= 0) return;
 
-                if (tlX >= 0 && tlY >= 0 && tlX < bufferWidth && tlY < bufferHeight)
-                    buffer[tlY * bufferWidth + tlX] = colorIndex;
-                if (trX >= 0 && tlY >= 0 && trX < bufferWidth && tlY < bufferHeight)
-                    buffer[tlY * bufferWidth + trX] = colorIndex;
-                if (tlX >= 0 && brY >= 0 && tlX < bufferWidth && brY < bufferHeight)
-                    buffer[brY * bufferWidth + tlX] = colorIndex;
-                if (trX >= 0 && brY >= 0 && trX < bufferWidth && brY < bufferHeight)
-                    buffer[brY * bufferWidth + trX] = colorIndex;
-            }
+    const uint64_t outer2 = (uint64_t)r * (uint64_t)r;
+    const uint64_t inner2 = (uint64_t)(r - 1) * (uint64_t)(r - 1);
+    for (int32_t dy = 0; dy <= r; ++dy) {
+        for (int32_t dx = 0; dx <= r; ++dx) {
+            uint64_t d2 = (uint64_t)dx * (uint64_t)dx + (uint64_t)dy * (uint64_t)dy;
+            if (d2 < inner2 || d2 > outer2) continue;
+
+            int64_t tlX = (int64_t)x + r - dx;
+            int64_t tlY = (int64_t)y + r - dy;
+            int64_t trX = (int64_t)x + w - r + dx - 1;
+            int64_t brY = (int64_t)y + h - r + dy - 1;
+
+            if (tlX >= 0 && tlY >= 0 && tlX < bufferWidth && tlY < bufferHeight)
+                buffer[tlY * bufferWidth + tlX] = colorIndex;
+            if (trX >= 0 && tlY >= 0 && trX < bufferWidth && tlY < bufferHeight)
+                buffer[tlY * bufferWidth + trX] = colorIndex;
+            if (tlX >= 0 && brY >= 0 && tlX < bufferWidth && brY < bufferHeight)
+                buffer[brY * bufferWidth + tlX] = colorIndex;
+            if (trX >= 0 && brY >= 0 && trX < bufferWidth && brY < bufferHeight)
+                buffer[brY * bufferWidth + trX] = colorIndex;
         }
     }
 }
 
 void NINA::FillCircle(uint32_t* buffer, int32_t bufferWidth, int32_t bufferHeight, int32_t cx,
                       int32_t cy, uint32_t radius, uint32_t colorIndex) {
-    int32_t x = radius;
+    if (!buffer || bufferWidth <= 0 || bufferHeight <= 0) return;
+    if (radius == 0) {
+        if (cx >= 0 && cy >= 0 && cx < bufferWidth && cy < bufferHeight)
+            buffer[cy * bufferWidth + cx] = colorIndex;
+        return;
+    }
+    if (radius > 0x3FFFFFFFu) return;
+
+    int32_t x = (int32_t)radius;
     int32_t y = 0;
     int32_t err = 0;
 
@@ -301,7 +352,15 @@ void NINA::FillCircle(uint32_t* buffer, int32_t bufferWidth, int32_t bufferHeigh
 
 void NINA::DrawCircle(uint32_t* buffer, int32_t bufferWidth, int32_t bufferHeight, int32_t cx,
                       int32_t cy, uint32_t radius, uint32_t colorIndex) {
-    int32_t x = radius;
+    if (!buffer || bufferWidth <= 0 || bufferHeight <= 0) return;
+    if (radius == 0) {
+        if (cx >= 0 && cy >= 0 && cx < bufferWidth && cy < bufferHeight)
+            buffer[cy * bufferWidth + cx] = colorIndex;
+        return;
+    }
+    if (radius > 0x3FFFFFFFu) return;
+
+    int32_t x = (int32_t)radius;
     int32_t y = 0;
     int32_t err = 0;
 
@@ -332,14 +391,15 @@ void NINA::DrawCircle(uint32_t* buffer, int32_t bufferWidth, int32_t bufferHeigh
 
 void NINA::DrawLine(uint32_t* buffer, int32_t bufferWidth, int32_t bufferHeight, int32_t x0,
                     int32_t y0, int32_t x1, int32_t y1, uint32_t color) {
-    // Bresenham's line algorithm.
-    int32_t dx = (x1 > x0) ? (x1 - x0) : (x0 - x1);  // abs(x1 - x0).
-    int32_t dy = (y1 > y0) ? (y1 - y0) : (y0 - y1);  // abs(y1 - y0).
+    if (!buffer || bufferWidth <= 0 || bufferHeight <= 0) return;
 
+    // Bresenham's line algorithm. The step counters are 64-bit so a line
+    // between extreme coordinates cannot overflow the error term.
+    int64_t dx = (x1 > x0) ? (int64_t)x1 - x0 : (int64_t)x0 - x1;
+    int64_t dy = (y1 > y0) ? (int64_t)y1 - y0 : (int64_t)y0 - y1;
     int32_t sx = (x0 < x1) ? 1 : -1;
     int32_t sy = (y0 < y1) ? 1 : -1;
-
-    int32_t err = dx - dy;
+    int64_t err = dx - dy;
 
     while (true) {
         // The bounds check is critical to prevent kernel crashes.
@@ -349,7 +409,7 @@ void NINA::DrawLine(uint32_t* buffer, int32_t bufferWidth, int32_t bufferHeight,
 
         if (x0 == x1 && y0 == y1) break;
 
-        int32_t e2 = 2 * err;
+        int64_t e2 = 2 * err;
 
         if (e2 > -dy) {
             err -= dy;
@@ -365,18 +425,20 @@ void NINA::DrawLine(uint32_t* buffer, int32_t bufferWidth, int32_t bufferHeight,
 
 void NINA::DrawHorizontalLine(uint32_t* buffer, int32_t bufferWidth, int32_t bufferHeight,
                               int32_t x, int32_t y, int32_t length, uint32_t colorIndex) {
+    if (!buffer || bufferWidth <= 0 || bufferHeight <= 0) return;
     if (y < 0 || y >= bufferHeight) return;
-    for (int32_t i = 0; i < length; ++i) {
-        int32_t px = x + i;
+    for (int64_t i = 0; i < length; ++i) {
+        int64_t px = (int64_t)x + i;
         if (px >= 0 && px < bufferWidth) buffer[y * bufferWidth + px] = colorIndex;
     }
 }
 
 void NINA::DrawVerticalLine(uint32_t* buffer, int32_t bufferWidth, int32_t bufferHeight, int32_t x,
                             int32_t y, int32_t length, uint32_t colorIndex) {
+    if (!buffer || bufferWidth <= 0 || bufferHeight <= 0) return;
     if (x < 0 || x >= bufferWidth) return;
-    for (int32_t i = 0; i < length; ++i) {
-        int32_t py = y + i;
+    for (int64_t i = 0; i < length; ++i) {
+        int64_t py = (int64_t)y + i;
         if (py >= 0 && py < bufferHeight) buffer[py * bufferWidth + x] = colorIndex;
     }
 }
@@ -388,14 +450,14 @@ void NINA::DrawCharacter(uint32_t* buffer, int32_t bufferWidth, int32_t bufferHe
     if (idx < 0 || idx >= (int)font->glyph_count) return;
     int16_t* g = &font->font_glyphs[idx * 8];  // Each glyph stores 8 values.
 
-    int charID = g[0];
+    // g[0] is the glyph id and g[7] the advance; neither is needed for a
+    // single-character blit (DrawString applies the advance).
     int gridX = g[1];
     int gridY = g[2];
     int charWidth = g[3];
     int charHeight = g[4];
     int xoffset = g[5];
     int yoffset = g[6];
-    int xadvance = g[7];
 
     if (charWidth <= 0 || charHeight <= 0) return;
     if (charWidth > font->atlas_width || charHeight > font->atlas_height) return;

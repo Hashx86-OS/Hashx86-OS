@@ -45,6 +45,7 @@ private:
     int32_t contentH;
 
     void SyncBars();
+    static void OnBarChanged(ScrollBar* bar, void* user);
 
 public:
     /**
@@ -74,6 +75,16 @@ public:
 
     /** GetScrollY() - Return the vertical scroll offset. */
     int32_t GetScrollY() const;
+
+    /** GetVerticalBar() - Return the vertical scrollbar (may be hidden). */
+    ScrollBar* GetVerticalBar() const {
+        return vbar;
+    }
+
+    /** GetHorizontalBar() - Return the horizontal scrollbar (may be hidden). */
+    ScrollBar* GetHorizontalBar() const {
+        return hbar;
+    }
 
     void OnMouseWheel(int32_t delta) override;
 };

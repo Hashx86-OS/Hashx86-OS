@@ -103,7 +103,7 @@ void StartMenuPowerButton::RedrawToCache() {
 }
 
 void StartMenuPowerButton::OnMouseDown(int32_t x, int32_t y, uint8_t button) {
-    if (!isVisible) return;
+    if (!isVisible || button != 1) return;
     isPressed = true;
     MarkDirty();
 }
@@ -171,7 +171,7 @@ static void closeStartMenuUnderneath(Widget* powerButton) {
 }
 
 void StartMenuPowerButton::OnMouseUp(int32_t x, int32_t y, uint8_t button) {
-    if (!isVisible) return;
+    if (!isVisible || button != 1) return;
     if (!isPressed) return;
     isPressed = false;
     isHovered = false;
@@ -216,6 +216,10 @@ void StartMenuPowerButton::OnMouseMove(int32_t oldx, int32_t oldy, int32_t newx,
         isPressed = false;
         MarkDirty();
     }
+}
+
+bool StartMenuPowerButton::IsPressed() const {
+    return isPressed;
 }
 
 // StartMenuButton.
@@ -281,13 +285,13 @@ void StartMenuButton::RedrawToCache() {
 }
 
 void StartMenuButton::OnMouseDown(int32_t x, int32_t y, uint8_t button) {
-    if (!isVisible) return;
+    if (!isVisible || button != 1) return;
     isPressed = true;
     MarkDirty();
 }
 
 void StartMenuButton::OnMouseUp(int32_t x, int32_t y, uint8_t button) {
-    if (!isVisible) return;
+    if (!isVisible || button != 1) return;
     if (isPressed) {
         isPressed = false;
         isHovered = false;
@@ -310,6 +314,10 @@ void StartMenuButton::OnMouseMove(int32_t oldx, int32_t oldy, int32_t newx, int3
     }
 }
 
+bool StartMenuButton::IsPressed() const {
+    return isPressed;
+}
+
 void StartMenuButton::LaunchProgram() {
     if (!g_bootPartition || !g_elfLoader) return;
     if (!binPath || binPath[0] == 0) return;
@@ -319,6 +327,8 @@ void StartMenuButton::LaunchProgram() {
         ProcessControlBlock* prog = g_elfLoader->loadELF(file, nullptr);
         if (!prog) {
             KDBG1("StartMenu: Failed to load ELF: %s\n", binPath);
+        } else if (!g_scheduler->StartProcess(prog, nullptr)) {
+            KDBG1("StartMenu: Failed to start ELF: %s\n", binPath);
         }
         file->Close();
         delete file;
@@ -502,13 +512,13 @@ void StartButton::RedrawToCache() {
 }
 
 void StartButton::OnMouseDown(int32_t x, int32_t y, uint8_t button) {
-    if (!isVisible) return;
+    if (!isVisible || button != 1) return;
     isPressed = true;
     MarkDirty();
 }
 
 void StartButton::OnMouseUp(int32_t x, int32_t y, uint8_t button) {
-    if (!isVisible) return;
+    if (!isVisible || button != 1) return;
     if (isPressed) {
         isPressed = false;
         MarkDirty();
@@ -527,6 +537,10 @@ void StartButton::OnMouseMove(int32_t oldx, int32_t oldy, int32_t newx, int32_t 
         isPressed = false;
         MarkDirty();
     }
+}
+
+bool StartButton::IsPressed() const {
+    return isPressed;
 }
 
 // TaskbarTab.
@@ -590,7 +604,7 @@ void TaskbarTab::RedrawToCache() {
 }
 
 void TaskbarTab::OnMouseDown(int32_t x, int32_t y, uint8_t button) {
-    if (!isVisible) return;
+    if (!isVisible || button != 1) return;
 
     // Bring the associated window to the front.
     if (windowWidget && windowWidget->parent) {

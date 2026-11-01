@@ -28,6 +28,8 @@
 #include <gui/event.h>
 #include <types.h>
 
+class Widget;
+
 /**
  * class WidgetHost - Environment bridge for the portable widget layer.
  *
@@ -62,6 +64,22 @@ public:
      * @pid: Owning process ID.
      */
     virtual void WakeProcess(uint32_t pid) = 0;
+
+    /**
+     * DestroyWidgetLater() - Ask the environment to destroy @widget safely.
+     * @widget: Widget to delete once the current event dispatch has unwound.
+     *
+     * A widget cannot delete itself from inside one of its own callbacks (the
+     * caller may still be walking the tree). The kernel queues the pointer on
+     * the desktop task; tests queue it and call DrainDeferredWidgetDeletes().
+     *
+     * The default is a no-op so an environment that does not support deferred
+     * deletion leaves ownership with the caller rather than risking a
+     * use-after-free.
+     */
+    virtual void DestroyWidgetLater(Widget* widget) {
+        (void)widget;
+    }
 };
 
 /**
@@ -71,5 +89,13 @@ public:
  * Every call site must be NULL-safe.
  */
 extern WidgetHost* g_widgetHost;
+
+/**
+ * DrainDeferredWidgetDeletes() - Destroy widgets queued by DestroyWidgetLater().
+ *
+ * Called by the desktop task between input dispatches, where no widget code is
+ * on the stack. Must be defined by every environment that installs a host.
+ */
+void DrainDeferredWidgetDeletes();
 
 #endif  // WIDGET_HOST_H

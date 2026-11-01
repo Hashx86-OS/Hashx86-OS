@@ -33,7 +33,7 @@ Window::Window(CompositeWidget* parent, int32_t x, int32_t y, int32_t w, int32_t
         guiplat::Abort("CRITICAL: Failed to allocate window title!\n");
     }
     strcpy(this->windowTitle, "Untitled");
-    this->font = FontManager::activeInstance->getNewFont();
+    this->font = FontManager::activeInstance ? FontManager::activeInstance->getNewFont() : nullptr;
 
     closeButton = new ACRButton(this, w - 22, 4, "x");
     if (!closeButton) {
@@ -65,7 +65,23 @@ void Window::OnClose() {
     }
 
     this->setVisible(false);
+
+    // Cached system dialogs (power confirmation, crash reporter) are hidden
+    // and reused, so they stay attached and only become invisible.
+    if (!deleteOnClose) {
+        MarkDirty();
+        return;
+    }
+
+    // Detach first so the widget is unreachable from the live tree, then hand
+    // it to the environment for deferred destruction. Deleting here would free
+    // the window while the close-button callback (or the composite walking its
+    // children) is still on the stack.
     if (this->parent) this->parent->RemoveChild(this);
+    if (g_widgetHost) {
+        g_widgetHost->DestroyWidgetLater(this);
+    }
+    // With no host installed, ownership remains with the caller.
 }
 
 void Window::SetTitleFontSize(int32_t px) {
@@ -109,18 +125,23 @@ void Window::Draw(RasterSurface* gc) {
     if (isDirty) {
         if (isVisible) {
             RedrawToCache();
-        } else {
-            memset(cache, 0, sizeof(uint32_t) * w * h);
+        } else if (cache && w > 0 && h > 0) {
+            memset(cache, 0, sizeof(uint32_t) * (size_t)w * (size_t)h);
         }
         isDirty = false;
     }
 
-    if (isVisible) {
+    if (isVisible && cache && w > 0 && h > 0) {
         gc->DrawBitmap(X, Y, (const uint32_t*)cache, w, h);
     }
 }
 
 void Window::RedrawToCache() {
+    if (!cache || !NINA::activeInstance) {
+        isDirty = false;
+        return;
+    }
+
     uint32_t borderColor = isFocused ? WINDOW_BORDER_PRESSED : WINDOW_BORDER_NORMAL;
     NINA::activeInstance->FillRoundedRectangle(cache, w, h, 0, 0, w, h, 6, WINDOW_BG);
     NINA::activeInstance->DrawRoundedRectangle(cache, w, h, 0, 0, w, h, 6, borderColor);
@@ -131,6 +152,7 @@ void Window::RedrawToCache() {
 
     for (auto& child : childrenList) {
         if (!child->isVisible) continue;
+        if (child->w <= 0 || child->h <= 0 || !child->cache) continue;
         if (child->isDirty) child->RedrawToCache();
 
         NINA::activeInstance->DrawBitmapToBuffer(cache, w, h, child->x, child->y, child->cache,
@@ -139,6 +161,8 @@ void Window::RedrawToCache() {
 }
 
 void Window::OnMouseDown(int32_t x, int32_t y, uint8_t button) {
+    if (!enabled || !isVisible) return;
+
     // Convert desktop coordinates to window-local coordinates.
     int32_t localX = x - this->x;
     int32_t localY = y - this->y;
@@ -161,19 +185,33 @@ void Window::OnMouseUp(int32_t x, int32_t y, uint8_t button) {
 }
 
 void Window::OnMouseMove(int32_t oldx, int32_t oldy, int32_t newx, int32_t newy) {
-    if (ContainsCoordinate(oldx, oldy)) {
-        if (isDragging) {
-            int32_t dx = newx - oldx;
-            int32_t dy = newy - oldy;
-
-            this->x += dx;
-            this->y += dy;
-
-            if (this->parent) this->parent->MarkDirty();
-        }
-    } else {
-        this->isDragging = false;
+    if (!isVisible) return;
+    if (!enabled) {
+        // A disabled window neither moves nor drags; drop any title-drag that
+        // was in progress when it was disabled.
+        isDragging = false;
+        return;
     }
+
+    bool inside = ContainsCoordinate(oldx, oldy);
+
+    if (inside && isDragging) {
+        int32_t dx = newx - oldx;
+        int32_t dy = newy - oldy;
+
+        this->x += dx;
+        this->y += dy;
+
+        if (this->parent) this->parent->MarkDirty();
+
+        // Do not forward this move to children: the window origin just moved,
+        // so translating the same pointer through the *new* origin would hand
+        // the subtree a shifted pair of coordinates and fire phantom
+        // enter/leave/hover events while the user is only dragging the title.
+        return;
+    }
+
+    if (!inside) this->isDragging = false;
 
     CompositeWidget::OnMouseMove(oldx, oldy, newx, newy);
 }

@@ -178,6 +178,10 @@ void Label::Recalc() {
         default:
             break;
     }
+
+    // A size change reallocates the cache; make sure the new surface is
+    // repainted and the parents know about it.
+    MarkDirty();
 }
 
 void Label::setFontSize(int32_t px) {

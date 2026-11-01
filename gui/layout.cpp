@@ -28,7 +28,7 @@ Layout::Layout(CompositeWidget* parent, int32_t spacing, int32_t padding)
     : parent(parent), spacing(spacing), padding(padding), count(0) {}
 
 void Layout::Add(Widget* widget, int32_t stretchValue) {
-    if (!widget || count >= 64) return;
+    if (!widget || !parent || count >= 64) return;
     parent->AddChild(widget);
     managed[count] = widget;
     stretch[count] = stretchValue;

@@ -38,6 +38,8 @@
  * directly and assert on the pixels.
  *
  * All coordinates are surface-relative and clipped to the surface bounds.
+ * Rectangle sizes are signed: a non-positive width or height draws nothing,
+ * so `w - 2` on a two-pixel-wide widget is harmless instead of wrapping.
  */
 class RasterSurface {
 protected:
@@ -91,19 +93,19 @@ public:
     virtual void PutPixel(int32_t x, int32_t y, uint32_t color);
     void PutPixel(int32_t x, int32_t y, uint8_t a, uint8_t r, uint8_t g, uint8_t b);
 
-    void FillRectangle(int32_t x, int32_t y, uint32_t w, uint32_t h, uint32_t color);
-    void DrawRectangle(int32_t x, int32_t y, uint32_t w, uint32_t h, uint32_t color);
+    void FillRectangle(int32_t x, int32_t y, int32_t w, int32_t h, uint32_t color);
+    void DrawRectangle(int32_t x, int32_t y, int32_t w, int32_t h, uint32_t color);
 
     void FillCircle(int32_t cx, int32_t cy, uint32_t r, uint32_t color);
     void DrawCircle(int32_t cx, int32_t cy, uint32_t r, uint32_t color);
 
-    void FillRoundedRectangle(int32_t x, int32_t y, uint32_t w, uint32_t h, uint32_t r,
+    void FillRoundedRectangle(int32_t x, int32_t y, int32_t w, int32_t h, uint32_t r,
                               uint32_t color);
-    void DrawRoundedRectangle(int32_t x, int32_t y, uint32_t w, uint32_t h, uint32_t r,
+    void DrawRoundedRectangle(int32_t x, int32_t y, int32_t w, int32_t h, uint32_t r,
                               uint32_t color);
-    void DrawRoundedRectangleShadow(int32_t x, int32_t y, uint32_t w, uint32_t h, uint32_t size,
+    void DrawRoundedRectangleShadow(int32_t x, int32_t y, int32_t w, int32_t h, uint32_t size,
                                     uint32_t r, uint32_t color);
-    void BlurRoundedRectangle(int32_t x, int32_t y, uint32_t w, uint32_t h, uint32_t r,
+    void BlurRoundedRectangle(int32_t x, int32_t y, int32_t w, int32_t h, uint32_t r,
                               uint32_t blur);
 
     void DrawLine(int32_t x0, int32_t y0, int32_t x1, int32_t y1, uint32_t color);

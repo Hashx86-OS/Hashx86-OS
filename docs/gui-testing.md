@@ -29,9 +29,12 @@ fails if a portable GUI source includes a kernel header.
 
 The following files are portable and **must not** include `<core/...>`:
 
-- `gui/widget.cpp`, `window.cpp`, `button.cpp`, `iconbutton.cpp`, `label.cpp`,
-  `listview.cpp`, `inputbox.cpp`, `progressbar.cpp`
-- `gui/elements/*.cpp`
+- All `gui/*.cpp` widget and layout sources: `widget`, `window`, `button`,
+  `iconbutton`, `label`, `listview`, `inputbox`, `progressbar`, `checkbox`,
+  `toggle`, `slider`, `scrollbar`, `scrollcontainer`, `combobox`, `table`,
+  `tabs`, `radiobutton`, `spinbox`, `tooltip`, `textbox`, `imageview`,
+  `contextmenu`, `layout`
+- `gui/elements/*.cpp`, `gui/input/*.cpp`
 - `gui/render/raster.cpp`, `gui/renderer/nina.cpp`, `gui/fonts/font.cpp`
 
 Everything they need from the environment goes through:
@@ -60,8 +63,52 @@ Kernel-only GUI glue (`desktop.cpp`, `taskbar.cpp`, `Hgui.cpp`, `bmp.cpp`,
 6. **Event accounting**: a button press+release inside its bounds emits exactly
    one `ON_CLICK`; a release outside emits none.
 7. **Raster exactness**: a filled rectangle touches exactly its pixels and
-   nothing outside.
+   nothing outside. Sizes are signed: a non-positive width or height draws
+   nothing, and a rectangle wholly left of or above the surface stays empty
+   instead of wrapping into a full-surface fill.
 8. **Value clamping**: ranged widgets keep their value within bounds.
+9. **Coordinate frame**: every mouse callback receives coordinates in the
+   widget's *parent* frame, the same frame as `x`/`y`. Widgets that need local
+   coordinates subtract `x`/`y`; `ContainsCoordinate` expects parent-frame
+   coordinates.
+10. **Pointer capture**: a widget that starts a drag sets `SetMouseCaptured(true)`
+    and clears it on release. Composites forward the mouse-up (and moves) to a
+    capturing descendant even when the cursor leaves their bounds, so drags
+    cannot stick.
+11. **Press/release pairing**: a release only activates a widget that received
+    the matching press on it. Dragging from another widget and releasing over a
+    checkbox, tab, or combo must not trigger it.
+12. **Nested compositing**: a composite's `RedrawToCache()` composites its
+    visible children, so a `Tabs` content area or `ScrollContainer` viewport
+    renders inside its parent instead of being silently skipped.
+13. **Visibility**: hidden children are skipped by hit-testing, hover, wheel,
+    and double-click routing.
+14. **Input dispatch**: drivers push decoded `InputEvent`s from interrupt
+    context; `Desktop::ProcessInput()` drains them on the desktop task, which is
+    the only place input mutates the widget tree.
+15. **Deferred destruction**: a window closed without an owning handler is
+    detached and queued through `WidgetHost::DestroyWidgetLater()`;
+    `DrainDeferredWidgetDeletes()` frees it after every event handler has
+    returned. Cached system dialogs opt out with `Window::SetDeleteOnClose(false)`
+    and hide for reuse instead.
+16. **Popup dismissal**: `ContextMenu` tracks the active menu;
+    `DismissActiveAt()` hides it on any outside press and Escape hides it, so
+    menus owned by any window dismiss consistently.
+17. **Drag targeting**: `Widget::HitTest()` returns the deepest visible widget,
+    so `OnDragStart/Move/End` reach nested widgets rather than only the
+    top-level window. Current widgets implement dragging through pointer
+    capture (`SetMouseCaptured(true)`) plus `OnMouseMove`, not the drag hooks.
+
+`tests/host/suites/interaction_suite.cpp` holds the regression coverage for
+these rules.
+
+## Kernel arithmetic
+
+The kernel is freestanding and does not link libgcc, so a 64-bit `/` or `%`
+emits an undefined reference to `__divdi3`/`__udivdi3`. Geometry code that needs
+a wide intermediate (slider fractions, scrollbar positions) must use
+`GuiMulDivU32()` / `GuiMulDivSigned()` from `include/gui/mathutil.h`, which
+divide by a 32-bit track size using shifts and compares only.
 
 ## Adding a widget (test-first)
 

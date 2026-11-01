@@ -61,6 +61,10 @@ protected:
     bool isFocussable = true;
     bool isFocused = false;
     bool enabled = true;
+    // True while this widget owns the pointer (a drag started here and has not
+    // been released yet). Composites use it to route the release even when the
+    // cursor leaves the widget.
+    bool mouseCaptured = false;
 
 public:
     // Hierarchy.
@@ -176,6 +180,21 @@ public:
     virtual void SetFocussable(bool focussable);
 
     /**
+     * SetEnabled() - Enable or disable interaction.
+     * @value: False to make the widget ignore input.
+     *
+     * A disabled widget still paints its disabled appearance but must not
+     * receive clicks, keys, or drags. Disabling drops any pointer capture and
+     * keyboard focus so a drag cannot outlive the state change.
+     */
+    virtual void SetEnabled(bool value);
+
+    /** IsEnabled() - Report whether the widget accepts input. */
+    bool IsEnabled() const {
+        return enabled;
+    }
+
+    /**
      * RequestTopmostFocus() - Ask the environment to focus and raise this widget.
      *
      * Used when a window is dragged by its title bar. The default does nothing;
@@ -231,6 +250,15 @@ public:
      */
     virtual bool ContainsCoordinate(int32_t x, int32_t y);
 
+    /**
+     * HitTest() - Find the deepest visible widget under a point.
+     * @parentX: X in this widget's parent frame.
+     * @parentY: Y in this widget's parent frame.
+     *
+     * Return: The deepest hit widget, or NULL when the point is outside.
+     */
+    virtual Widget* HitTest(int32_t parentX, int32_t parentY);
+
     // -- Identification --
 
     /**
@@ -262,6 +290,12 @@ public:
     virtual Widget* FindWidgetByPID(uint32_t PID);
 
     // -- Event Handlers --
+    //
+    // Coordinate contract: every mouse callback receives coordinates in this
+    // widget's *parent* frame — the same frame as this->x / this->y. A widget
+    // that needs its own local coordinates subtracts x/y (or uses
+    // ContainsCoordinate(), which expects parent-frame coordinates).
+    // CompositeWidget converts between frames once while routing.
     virtual void OnMouseDown(int32_t x, int32_t y, uint8_t button);
     virtual void OnMouseUp(int32_t x, int32_t y, uint8_t button);
     virtual void OnMouseMove(int32_t oldx, int32_t oldy, int32_t newx, int32_t newy);
@@ -300,6 +334,18 @@ public:
 
     /** OnTabFocus() - Tab traversal; @backwards selects the previous widget. */
     virtual void OnTabFocus(bool backwards);
+
+    /**
+     * SetMouseCaptured() - Claim or release the pointer while dragging.
+     * @captured: True on drag start, false on release.
+     *
+     * A composite forwards mouse-up (and moves) to a capturing descendant even
+     * when the cursor has left its bounds, so a drag released outside the
+     * widget still terminates cleanly instead of sticking.
+     */
+    void SetMouseCaptured(bool captured) {
+        mouseCaptured = captured;
+    }
 
     virtual bool IsComposite() const;
     virtual bool IsMouseCaptured() const;
@@ -380,10 +426,39 @@ public:
     bool IsComposite() const override;
 
     /**
+     * IsMouseCaptured() - Report capture by this composite or any descendant.
+     *
+     * A container reports capture when a child is dragging or pressed, so the
+     * root can deliver the terminating mouse-up even if it lands outside.
+     */
+    bool IsMouseCaptured() const override;
+
+    /** IsPressed() - Report a press in this composite or any descendant. */
+    bool IsPressed() const override;
+
+    /**
+     * RedrawToCache() - Clear the cache and composite every visible child.
+     *
+     * Containers without custom chrome (Tabs, ScrollContainer, ...) get their
+     * subtree rendered by this default, so a nested composite is not invisible
+     * just because its parent only knows how to blit child caches.
+     */
+    void RedrawToCache() override;
+
+    /**
      * GetFocus() - Track @widget as the focused child.
      * @widget: Child widget receiving focus.
      */
     virtual void GetFocus(Widget* widget) override;
+
+    /**
+     * SetFocus() - Set focus and apply the same state to the focused child.
+     * @result: True to gain focus, false to lose it.
+     *
+     * Keeps a nested focus chain consistent when a container gains or loses
+     * focus as a whole.
+     */
+    virtual void SetFocus(bool result) override;
 
     /**
      * RemoveChild() - Detach and destroy @child, clearing focus if needed.
@@ -398,6 +473,9 @@ public:
      * @gc: Target raster surface.
      */
     virtual void Draw(RasterSurface* gc) override;
+
+    /** HitTest() - Return the deepest visible descendant under a parent-frame point. */
+    Widget* HitTest(int32_t parentX, int32_t parentY) override;
 
     // Event routing.
     virtual void OnMouseDown(int32_t x, int32_t y, uint8_t button) override;

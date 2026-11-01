@@ -43,6 +43,7 @@ private:
     int count;
     int selected;
     bool open;
+    bool pressed = false;
     int32_t closedHeight;
 
     void Select(int index);
@@ -89,7 +90,12 @@ public:
     void SetOpen(bool value);
 
     void RedrawToCache() override;
+    void OnMouseDown(int32_t x, int32_t y, uint8_t button) override;
     void OnMouseUp(int32_t x, int32_t y, uint8_t button) override;
+    bool IsPressed() const override;
+
+    /** OnFocusLost() - Close the drop-down when focus moves elsewhere. */
+    void OnFocusLost() override;
 };
 
 #endif  // COMBOBOX_H

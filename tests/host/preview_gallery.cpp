@@ -106,9 +106,12 @@ bool WritePPM(const char* path, RasterSurface& surface) {
 }  // namespace
 
 int main(int argc, char** argv) {
-    const char* out = (argc > 1) ? argv[1] : "/tmp/opencode/gallery.ppm";
+    const char* out = (argc > 1) ? argv[1] : "gallery.ppm";
 
-    LoadFont();
+    if (!LoadFont()) {
+        std::fprintf(stderr, "preview_gallery: failed to load the UI font\n");
+        return 1;
+    }
 
     RasterSurface surface(W, H);
     CompositeWidget root(nullptr, 0, 0, W, H);
@@ -174,11 +177,15 @@ int main(int argc, char** argv) {
     Caption(win, col2, 280, "ListView");
     ListView* list = new ListView(win, col2, 300, 260, 150);
     win->AddChild(list);
-    list->SetHeader("Name");
-    list->AddItem("Documents", 0, 1);
-    list->AddItem("photo.png", 2048, 0);
-    list->AddItem("app.exe", 65536, 2);
-    list->AddItem("readme.txt", 512, 0);
+    list->AddColumn("Name", 0);
+    const char* rowDocs[] = {"Documents"};
+    const char* rowPhoto[] = {"photo.png"};
+    const char* rowApp[] = {"app.exe"};
+    const char* rowReadme[] = {"readme.txt"};
+    list->AddItem(rowDocs, 1, 1);
+    list->AddItem(rowPhoto, 1, 0);
+    list->AddItem(rowApp, 1, 2);
+    list->AddItem(rowReadme, 1, 0);
 
     Caption(win, col2, 464, "ScrollBar");
     ScrollBar* scroll = new ScrollBar(win, col2, 484, 260, 12, false);
@@ -192,6 +199,9 @@ int main(int argc, char** argv) {
     tabs->AddTab("Files");
     tabs->AddTab("Edit");
     tabs->AddTab("View");
+    Label* tabBody = new Label(tabs->GetContentArea(), 8, 8, 250, 18, "Content for the active tab");
+    tabBody->setSize(SMALL);
+    tabs->GetContentArea()->AddChild(tabBody);
 
     Caption(win, col3, 240, "ImageView");
     const int32_t imgW = 16;

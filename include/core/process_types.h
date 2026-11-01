@@ -167,6 +167,11 @@ struct ProcessControlBlock {
     LinkedList<ThreadControlBlock*> threads;
     ProcessControlBlock* parent;
     bool isKernelProcess;
+    // Entry point for the process's first thread. Set by CreateProcess or the
+    // ELF loader; StartProcess() consumes it once the address space and any
+    // exec arguments are fully set up. Cloned processes start at the cloned
+    // instruction pointer and leave this null.
+    void (*mainEntry)(void*);
     uint16_t appType;
     HeapSegment heap;
     File* fdTable[FD_MAX];

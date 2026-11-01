@@ -73,10 +73,26 @@ public:
      * @isKernel: Whether the process is a kernel process.
      * @entrypoint: Entry function of the process.
      * @arg: Argument passed to the entry function.
+     * @createMainThread: False to register the process without a runnable
+     *                    thread. The ELF loader uses this so the new thread
+     *                    cannot be scheduled before its segments are mapped;
+     *                    the loader's caller invokes StartProcess() once the
+     *                    address space, argv, and cwd are fully set up.
      *
      * Return: The new process control block, or NULL on failure.
      */
-    ProcessControlBlock* CreateProcess(bool isKernel, void (*entrypoint)(void*), void* arg);
+    ProcessControlBlock* CreateProcess(bool isKernel, void (*entrypoint)(void*), void* arg,
+                                       bool createMainThread = true);
+
+    /**
+     * StartProcess() - Create the entry thread for a deferred process.
+     * @pcb: Process returned with createMainThread=false.
+     * @arg: Argument for the entry function.
+     *
+     * Used by the ELF loader's callers after the address space, argv and cwd
+     * are complete. On failure the process is killed and false is returned.
+     */
+    bool StartProcess(ProcessControlBlock* pcb, void* arg);
 
     /**
      * CreateThread() - Create a new thread inside a process.

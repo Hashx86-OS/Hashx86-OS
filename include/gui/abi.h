@@ -84,7 +84,24 @@ typedef enum {
     GET_CURRENT_MODE = 0x19,
     SET_MODE = 0x1A,
     SET_SELECTED = 0x1B,
+    ADD_COLUMN = 0x1C,
 } REQ_MODE;
+
+/** GUI_LISTVIEW_MAX_COLUMNS - Maximum columns a list view accepts. */
+#define GUI_LISTVIEW_MAX_COLUMNS 4
+
+/** GUI_LISTVIEW_CELL - Maximum length of one list view cell string. */
+#define GUI_LISTVIEW_CELL 64
+
+/**
+ * struct ListViewItemData - One list view row in the syscall payload.
+ * @cells: Text for each column, indexed by column order.
+ * @type: Leading icon type (0 file, 1 directory, 2 executable).
+ */
+struct ListViewItemData {
+    char cells[GUI_LISTVIEW_MAX_COLUMNS][GUI_LISTVIEW_CELL];
+    uint8_t type;
+};
 
 /**
  * struct WidgetData - Register window for the GUI syscall.

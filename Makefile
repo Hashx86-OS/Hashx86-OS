@@ -56,6 +56,7 @@ objects = \
 	$(BUILD_DIR)/obj/gui/contextmenu.o \
 	$(BUILD_DIR)/obj/gui/iconbutton.o \
 	$(BUILD_DIR)/obj/gui/imageview.o \
+	$(BUILD_DIR)/obj/gui/input/inputQueue.o \
 	$(BUILD_DIR)/obj/gui/desktop.o \
 	$(BUILD_DIR)/obj/gui/layout.o \
 	$(BUILD_DIR)/obj/gui/radiobutton.o \

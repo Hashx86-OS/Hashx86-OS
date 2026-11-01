@@ -27,10 +27,17 @@
 #include <gui/event.h>
 #include <gui/widgetHost.h>
 
+ContextMenu* ContextMenu::activeMenu = nullptr;
+
 ContextMenu::ContextMenu(Widget* parent) : Widget(parent, 0, 0, 140, 0), count(0) {
     this->isFocussable = false;
     this->isVisible = false;
     this->font = FontManager::activeInstance ? FontManager::activeInstance->getNewFont() : nullptr;
+}
+
+ContextMenu::~ContextMenu() {
+    if (activeMenu == this) activeMenu = nullptr;
+    if (font) delete font;
 }
 
 bool ContextMenu::AddItem(const char* label) {
@@ -46,34 +53,90 @@ bool ContextMenu::AddItem(const char* label) {
 }
 
 void ContextMenu::ShowAt(int32_t px, int32_t py) {
+    // An empty menu has no rows to show; activating it would leave a
+    // zero-height popup that swallows the next press.
+    if (count == 0) return;
+
+    // A second menu replaces the first.
+    if (activeMenu && activeMenu != this) activeMenu->Hide();
+
+    Resize(w, count * ITEM_HEIGHT);
+
+    // Keep the whole popup on the parent surface.
+    if (parent) {
+        if (px + w > parent->w) px = parent->w - w;
+        if (py + h > parent->h) py = parent->h - h;
+    }
+    if (px < 0) px = 0;
+    if (py < 0) py = 0;
+
     this->x = px;
     this->y = py;
-    Resize(w, count * ITEM_HEIGHT);
     this->isVisible = true;
+    activeMenu = this;
     RequestTopmostFocus();
     MarkDirty();
 }
 
 void ContextMenu::Hide() {
+    if (activeMenu == this) activeMenu = nullptr;
     if (!isVisible) return;
     isVisible = false;
     MarkDirty();
 }
 
+void ContextMenu::DismissActiveAt(int32_t screenX, int32_t screenY) {
+    ContextMenu* menu = activeMenu;
+    if (!menu) return;
+
+    int32_t originX = 0;
+    int32_t originY = 0;
+    menu->ModelToScreen(originX, originY);
+    if (screenX < originX || screenX >= originX + menu->w || screenY < originY ||
+        screenY >= originY + menu->h) {
+        menu->Hide();
+    }
+}
+
+void ContextMenu::HideActive() {
+    if (activeMenu) activeMenu->Hide();
+}
+
 void ContextMenu::OnMouseUp(int32_t x, int32_t y, uint8_t button) {
     if (!isVisible || button != 1) return;
+
     int32_t localY = y - this->y;
     int32_t localX = x - this->x;
     if (localX < 0 || localX >= w || localY < 0) return;
 
     int index = localY / ITEM_HEIGHT;
-    if (index >= 0 && index < count) {
+    bool selected = (index >= 0 && index < count);
+
+    // Hide before notifying: the callback may open a window or launch a
+    // process, and the menu must already be out of the tree's visible state.
+    Hide();
+
+    if (selected) {
         if (g_widgetHost && PID != 0) {
             g_widgetHost->PostEvent(PID, ID, ON_CLICK, (uint32_t)index);
             g_widgetHost->WakeProcess(PID);
         }
+        if (onClick) onClick(this, index, onClickUser);
     }
-    Hide();
+}
+
+void ContextMenu::Draw(RasterSurface* gc) {
+    if (!isVisible || !cache || !gc || w <= 0 || h <= 0) return;
+
+    if (isDirty) {
+        RedrawToCache();
+        isDirty = false;
+    }
+
+    int32_t X = 0;
+    int32_t Y = 0;
+    ModelToScreen(X, Y);
+    gc->DrawBitmap(X, Y, (const uint32_t*)cache, w, h);
 }
 
 void ContextMenu::RedrawToCache() {

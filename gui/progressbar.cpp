@@ -87,7 +87,7 @@ void ProgressBar::SetBackgroundColor(uint32_t color) {
 }
 
 void ProgressBar::RedrawToCache() {
-    if (!cache || w <= 0 || h <= 0) {
+    if (!cache || w <= 0 || h <= 0 || !NINA::activeInstance) {
         isDirty = false;
         return;
     }

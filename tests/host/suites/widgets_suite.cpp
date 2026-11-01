@@ -31,7 +31,9 @@
 #include <gui/combobox.h>
 #include <gui/contextmenu.h>
 #include <gui/imageview.h>
+#include <gui/label.h>
 #include <gui/layout.h>
+#include <gui/listview.h>
 #include <gui/radiobutton.h>
 #include <gui/scrollbar.h>
 #include <gui/scrollcontainer.h>
@@ -52,11 +54,13 @@ TEST(checkbox_toggles_and_emits) {
 
     CHECK(!box->GetChecked());
     HostEventReset();
+    box->OnMouseDown(20, 20, 1);
     box->OnMouseUp(20, 20, 1);
     CHECK(box->GetChecked());
     CHECK_EQ(HostEventCount(), 1);
     if (HostEventCount() == 1) CHECK_EQ(HostEventAt(0).param1, 1u);
 
+    box->OnMouseDown(20, 20, 1);
     box->OnMouseUp(20, 20, 1);
     CHECK(!box->GetChecked());
     CHECK_EQ(HostEventCount(), 2);
@@ -84,6 +88,7 @@ TEST(toggle_flips_and_clamps) {
 
     CHECK(!t->IsOn());
     HostEventReset();
+    t->OnMouseDown(20, 20, 1);
     t->OnMouseUp(20, 20, 1);
     CHECK(t->IsOn());
     CHECK_EQ(HostEventCount(), 1);
@@ -211,6 +216,7 @@ TEST(radiobutton_is_mutually_exclusive_in_group) {
     other->SetChecked(true);
 
     HostEventReset();
+    a->OnMouseDown(10, 10, 1);
     a->OnMouseUp(10, 10, 1);
     CHECK(a->GetChecked());
     CHECK(!b->GetChecked());
@@ -219,6 +225,7 @@ TEST(radiobutton_is_mutually_exclusive_in_group) {
 
     b->SetID(601);
     b->SetPID(5);
+    b->OnMouseDown(10, 40, 1);
     b->OnMouseUp(10, 40, 1);
     CHECK(b->GetChecked());
     CHECK(!a->GetChecked());
@@ -234,11 +241,13 @@ TEST(spinbox_steps_and_clamps) {
 
     CHECK_EQ(sp->GetValue(), 0);
     HostEventReset();
+    sp->OnMouseDown(10, 4, 1);
     sp->OnMouseUp(10, 4, 1);  // upper half: +2
     CHECK_EQ(sp->GetValue(), 2);
     CHECK_EQ(HostEventCount(), 1);
 
     for (int i = 0; i < 20; i++) {
+        sp->OnMouseDown(10, 20, 1);
         sp->OnMouseUp(10, 20, 1);  // lower half: -2
     }
     CHECK_EQ(sp->GetValue(), 0);
@@ -273,6 +282,7 @@ TEST(tabs_select_and_emit) {
     CHECK(tabs->GetContentArea() != nullptr);
 
     HostEventReset();
+    tabs->OnMouseDown(90, 10, 1);
     tabs->OnMouseUp(90, 10, 1);  // second header (80..160)
     CHECK_EQ(tabs->GetActive(), 1);
     CHECK_EQ(HostEventCount(), 1);
@@ -365,11 +375,13 @@ TEST(combobox_opens_selects_and_closes) {
     CHECK_EQ(strcmp(cb->GetItem(1), "Beta"), 0);
     CHECK(!cb->IsOpen());
 
+    cb->OnMouseDown(10, 10, 1);
     cb->OnMouseUp(10, 10, 1);
     CHECK(cb->IsOpen());
     CHECK_EQ(cb->h, 24 + 2 * 22);
 
     HostEventReset();
+    cb->OnMouseDown(10, 24 + 22 + 5, 1);
     cb->OnMouseUp(10, 24 + 22 + 5, 1);  // second entry
     CHECK(!cb->IsOpen());
     CHECK_EQ(cb->GetSelected(), 1);
@@ -394,6 +406,7 @@ TEST(table_selects_rows) {
     CHECK_EQ(table->GetSelected(), -1);
 
     HostEventReset();
+    table->OnMouseDown(10, 24 + 20 + 5, 1);
     table->OnMouseUp(10, 24 + 20 + 5, 1);  // second row
     CHECK_EQ(table->GetSelected(), 1);
     CHECK_EQ(HostEventCount(), 1);
@@ -415,4 +428,93 @@ TEST(scrollcontainer_scrolls_and_clamps) {
 
     sc->OnMouseWheel(1000);  // scroll back to the top
     CHECK_EQ(sc->GetScrollY(), 0);
+}
+
+TEST(listview_columns_are_appended) {
+    CompositeWidget root(nullptr, 0, 0, 300, 300);
+    ListView* list = new ListView(&root, 0, 0, 200, 120);
+    root.AddChild(list);
+
+    // A fresh list has no columns at all; the caller appends them.
+    CHECK_EQ(list->GetColumnCount(), 0);
+    CHECK(list->AddColumn("Name", 0));
+    CHECK_EQ(list->GetColumnCount(), 1);
+    CHECK(list->AddColumn("Size", 60));
+    CHECK_EQ(list->GetColumnCount(), 2);
+
+    const char* rowA[] = {"a.txt", "2 KB"};
+    const char* rowB[] = {"docs", "<DIR>"};
+    list->AddItem(rowA, 2, 0);
+    list->AddItem(rowB, 2, 1);
+    CHECK_EQ(list->GetItemCount(), 2);
+
+    const ListViewItem* item = list->GetItem(0);
+    CHECK(item != nullptr);
+    CHECK(strcmp(item->cells[0], "a.txt") == 0);
+    CHECK(strcmp(item->cells[1], "2 KB") == 0);
+
+    // Rendering the appended columns is deterministic.
+    list->RedrawToCache();
+    uint32_t first[200 * 120];
+    memcpy(first, list->cache, sizeof(first));
+    list->MarkDirty();
+    list->RedrawToCache();
+    CHECK_EQ(memcmp(first, list->cache, sizeof(first)), 0);
+
+    // Clear drops the rows but keeps the columns.
+    list->Clear();
+    CHECK_EQ(list->GetItemCount(), 0);
+    CHECK_EQ(list->GetColumnCount(), 2);
+}
+
+TEST(listview_column_limit) {
+    CompositeWidget root(nullptr, 0, 0, 300, 300);
+    ListView* list = new ListView(&root, 0, 0, 200, 120);
+    root.AddChild(list);
+
+    for (int i = 0; i < LISTVIEW_MAX_COLUMNS; i++) {
+        CHECK(list->AddColumn("c", 0));
+    }
+    CHECK(!list->AddColumn("one-too-many", 0));
+    CHECK_EQ(list->GetColumnCount(), LISTVIEW_MAX_COLUMNS);
+}
+
+TEST(listview_renders_without_columns) {
+    CompositeWidget root(nullptr, 0, 0, 300, 300);
+    ListView* list = new ListView(&root, 0, 0, 200, 120);
+    root.AddChild(list);
+
+    const char* row[] = {"only"};
+    list->AddItem(row, 1, 0);
+    CHECK_EQ(list->GetColumnCount(), 0);
+    CHECK_EQ(list->GetItemCount(), 1);
+    list->RedrawToCache();
+    CHECK(list->cache != nullptr);
+}
+
+TEST(listview_additemdata_converts_cells) {
+    CompositeWidget root(nullptr, 0, 0, 300, 300);
+    ListView* list = new ListView(&root, 0, 0, 220, 120);
+    root.AddChild(list);
+    list->AddColumn("Name", 0);
+    list->AddColumn("Size", 60);
+
+    // The syscall payload carries a 2D cell buffer; AddItemData() must turn it
+    // into the pointer array AddItem() expects. A raw cast would read cell text
+    // bytes as pointers and crash.
+    ListViewItemData data;
+    memset(&data, 0, sizeof(data));
+    strcpy(data.cells[0], "a.txt");
+    strcpy(data.cells[1], "2 KB");
+    data.type = 2;
+    list->AddItemData(data);
+
+    CHECK_EQ(list->GetItemCount(), 1);
+    const ListViewItem* it = list->GetItem(0);
+    CHECK(it != nullptr);
+    CHECK(strcmp(it->cells[0], "a.txt") == 0);
+    CHECK(strcmp(it->cells[1], "2 KB") == 0);
+    CHECK_EQ((int)it->type, 2);
+    list->RedrawToCache();
+    CHECK(list->cache != nullptr);
 }

@@ -130,7 +130,7 @@ void Button::RedrawToCache() {
 }
 
 void Button::OnMouseDown(int32_t x, int32_t y, uint8_t button) {
-    if (!isVisible) return;
+    if (!isVisible || !enabled || button != 1) return;
 
     Widget::OnMouseDown(x, y, button);
 
@@ -138,26 +138,29 @@ void Button::OnMouseDown(int32_t x, int32_t y, uint8_t button) {
     MarkDirty();
 }
 
-void Button::OnMouseUp(int32_t x, int32_t y, uint8_t) {
-    if (!isVisible) return;
+void Button::OnMouseUp(int32_t x, int32_t y, uint8_t button) {
+    if (!isVisible || button != 1) return;
+    if (!isPressed) return;
 
-    if (isPressed) {
-        isPressed = false;
-        MarkDirty();
+    isPressed = false;
+    MarkDirty();
 
-        // Emit the click only if the release is still inside the button bounds.
-        if (!ContainsCoordinate(x, y)) {
-            return;
-        }
-
-        EmitClickEvent();
+    // Emit the click only if the button is enabled and the release is still
+    // inside its bounds. A disabled button must never fire, even if it was
+    // disabled mid-press.
+    if (!enabled || !ContainsCoordinate(x, y)) {
+        return;
     }
+
+    EmitClickEvent();
 }
 
 void Button::OnMouseMove(int32_t x, int32_t y, int32_t newx, int32_t newy) {
+    (void)x;
+    (void)y;
     // newx and newy are parent-relative (window) coordinates; use
     // ContainsCoordinate for accurate hit testing.
-    bool inside = this->ContainsCoordinate(newx, newy);
+    bool inside = enabled && this->ContainsCoordinate(newx, newy);
 
     // Release the press visual if the mouse dragged outside the button.
     if (isPressed && !inside) {

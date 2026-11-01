@@ -40,6 +40,7 @@ private:
     int32_t maxValue;
     int32_t step;
     int32_t value;
+    bool pressed = false;
 
     void EmitValue();
 
@@ -66,9 +67,11 @@ public:
     }
 
     void RedrawToCache() override;
+    void OnMouseDown(int32_t x, int32_t y, uint8_t button) override;
     void OnMouseUp(int32_t x, int32_t y, uint8_t button) override;
     void OnMouseWheel(int32_t delta) override;
     void OnSpecialKeyDown(uint8_t key) override;
+    bool IsPressed() const override;
 };
 
 #endif  // SPINBOX_H

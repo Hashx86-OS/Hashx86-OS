@@ -41,6 +41,7 @@ private:
     char titles[MAX_TABS][32];
     int tabCount;
     int active;
+    int pressedTab = -1;
     CompositeWidget* content;
 
     void Select(int index);
@@ -81,6 +82,7 @@ public:
     }
 
     void RedrawToCache() override;
+    void OnMouseDown(int32_t x, int32_t y, uint8_t button) override;
     void OnMouseUp(int32_t x, int32_t y, uint8_t button) override;
 };
 

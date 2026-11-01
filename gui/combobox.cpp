@@ -81,8 +81,18 @@ void ComboBox::SetOpen(bool value) {
     MarkDirty();
 }
 
-void ComboBox::OnMouseUp(int32_t x, int32_t y, uint8_t button) {
+void ComboBox::OnMouseDown(int32_t x, int32_t y, uint8_t button) {
     if (!enabled || !isVisible || button != 1) return;
+    if (!ContainsCoordinate(x, y)) return;
+    Widget::OnMouseDown(x, y, button);
+    pressed = true;
+}
+
+void ComboBox::OnMouseUp(int32_t x, int32_t y, uint8_t button) {
+    if (button != 1) return;
+    bool wasPressed = pressed;
+    pressed = false;
+    if (!enabled || !isVisible || !wasPressed) return;
     if (!ContainsCoordinate(x, y)) return;
 
     int32_t localY = y - this->y;
@@ -96,6 +106,16 @@ void ComboBox::OnMouseUp(int32_t x, int32_t y, uint8_t button) {
     } else {
         SetOpen(false);
     }
+}
+
+bool ComboBox::IsPressed() const {
+    return pressed;
+}
+
+void ComboBox::OnFocusLost() {
+    // Clicking another widget (or tabbing away) must not leave the list
+    // floating open over its siblings.
+    if (open) SetOpen(false);
 }
 
 void ComboBox::RedrawToCache() {

@@ -45,10 +45,13 @@ private:
     bool dragging;
     int32_t dragStart;
     int32_t dragValue;
+    void (*onValueChanged)(ScrollBar*, void*) = nullptr;
+    void* onValueChangedUser = nullptr;
 
     int32_t TrackLength() const;
-    int32_t ThumbLength() const;
     int32_t MaxValue() const;
+    /** ValueRange() - Number of distinct thumb positions (MaxValue() - minValue). */
+    int32_t ValueRange() const;
 
     void EmitValue();
 
@@ -73,6 +76,25 @@ public:
     /** GetValue() - Return the current value. */
     int32_t GetValue() const {
         return value;
+    }
+
+    /** ThumbLength() - Length of the draggable thumb, in pixels. */
+    int32_t ThumbLength() const;
+
+    /** ThumbPos() - Offset of the thumb from the track start, in pixels. */
+    int32_t ThumbPos() const;
+
+    /**
+     * SetValueChanged() - Register a callback fired whenever the value changes.
+     * @cb: Called as cb(this, user); pass NULL to clear.
+     * @user: Opaque pointer handed back to @cb.
+     *
+     * Lets an owner (e.g. ScrollContainer) keep a viewport in sync with a drag
+     * without polling.
+     */
+    void SetValueChanged(void (*cb)(ScrollBar*, void*), void* user) {
+        onValueChanged = cb;
+        onValueChangedUser = user;
     }
 
     void RedrawToCache() override;

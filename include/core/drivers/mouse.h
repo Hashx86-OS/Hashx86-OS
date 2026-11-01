@@ -61,7 +61,9 @@ public:
 
     /**
      * OnMouseWheel() - Called when the wheel is scrolled.
-     * @delta: Positive when scrolling down, negative when scrolling up.
+     * @delta: Positive when scrolling up (wheel away from the user), negative
+     *         when scrolling down. This matches the widget layer's convention:
+     *         scrollbars and lists subtract the delta from their value.
      */
     virtual void OnMouseWheel(int32_t delta);
 };

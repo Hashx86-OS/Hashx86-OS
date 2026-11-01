@@ -114,6 +114,46 @@ TEST(tab_traversal_skips_non_focussable) {
     CHECK(!b->IsFocused());
 }
 
+TEST(tab_traversal_descends_into_nested_composites) {
+    CompositeWidget root(nullptr, 0, 0, 400, 40);
+    CompositeWidget* panel = new CompositeWidget(&root, 0, 0, 200, 40);
+    Probe* a = new Probe(panel, 0, 0, 50, 40);
+    Probe* b = new Probe(panel, 60, 0, 50, 40);
+    Probe* c = new Probe(&root, 220, 0, 50, 40);
+    root.AddChild(panel);
+    panel->AddChild(a);
+    panel->AddChild(b);
+    root.AddChild(c);
+
+    c->GetFocus(c);
+    CHECK(c->IsFocused());
+
+    // Wrapping from the last stop enters the nested panel's first child; the
+    // panel itself is a container, not a stop.
+    root.OnTabFocus(false);
+    CHECK(a->IsFocused());
+    CHECK(!c->IsFocused());
+
+    // The remaining stops are reachable, and only one leaf holds focus at a
+    // time even though the panel is focused as the leaf's ancestor.
+    int visitedB = 0;
+    int visitedC = 0;
+    for (int i = 0; i < 2; i++) {
+        root.OnTabFocus(false);
+        if (a->IsFocused()) CHECK(!b->IsFocused() && !c->IsFocused());
+        if (b->IsFocused()) {
+            visitedB++;
+            CHECK(!a->IsFocused() && !c->IsFocused());
+        }
+        if (c->IsFocused()) {
+            visitedC++;
+            CHECK(!a->IsFocused() && !b->IsFocused());
+        }
+    }
+    CHECK_EQ(visitedB, 1);
+    CHECK_EQ(visitedC, 1);
+}
+
 TEST(key_repeat_and_modifiers_reach_focused_child) {
     CompositeWidget root(nullptr, 0, 0, 100, 100);
     Probe* a = new Probe(&root, 0, 0, 50, 50);

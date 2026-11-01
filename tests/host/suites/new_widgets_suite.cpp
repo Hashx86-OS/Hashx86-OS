@@ -171,6 +171,7 @@ TEST(radiobutton_property_single_selected) {
     }
     for (int t = 0; t < 200; t++) {
         int idx = (int)(Rnd2() % 5);
+        buttons[idx]->OnMouseDown(10, idx * 24 + 10, 1);
         buttons[idx]->OnMouseUp(10, idx * 24 + 10, 1);
         int selected = 0;
         for (int i = 0; i < 5; i++) {

@@ -71,8 +71,18 @@ void Table::SetSelected(int row) {
     MarkDirty();
 }
 
-void Table::OnMouseUp(int32_t x, int32_t y, uint8_t button) {
+void Table::OnMouseDown(int32_t x, int32_t y, uint8_t button) {
     if (!enabled || !isVisible || button != 1) return;
+    if (!ContainsCoordinate(x, y)) return;
+    Widget::OnMouseDown(x, y, button);
+    pressed = true;
+}
+
+void Table::OnMouseUp(int32_t x, int32_t y, uint8_t button) {
+    if (button != 1) return;
+    bool wasPressed = pressed;
+    pressed = false;
+    if (!enabled || !isVisible || !wasPressed) return;
     if (!ContainsCoordinate(x, y)) return;
 
     int32_t localY = y - this->y;
@@ -86,6 +96,10 @@ void Table::OnMouseUp(int32_t x, int32_t y, uint8_t button) {
             g_widgetHost->WakeProcess(PID);
         }
     }
+}
+
+bool Table::IsPressed() const {
+    return pressed;
 }
 
 void Table::RedrawToCache() {

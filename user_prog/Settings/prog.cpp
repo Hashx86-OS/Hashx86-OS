@@ -125,7 +125,7 @@ SettingsApp::SettingsApp() {
 
     // Available resolutions.
     modeList = new HListView(mainWindow, PAD, listY, contentW, listH);
-    modeList->SetHeader("Resolution");
+    modeList->AddColumn("Resolution", 0);
 
     // Apply changes the live mode only; Save persists the current mode so it is
     // restored at the next boot. Keeping them separate means experimenting with
@@ -158,8 +158,7 @@ SettingsApp::SettingsApp() {
             modeCount = i;
             break;
         }
-        formatResolution(items[i].name, &modes[i]);
-        items[i].size = modes[i].width;
+        formatResolution(items[i].cells[0], &modes[i]);
         items[i].type = 0;
     }
 

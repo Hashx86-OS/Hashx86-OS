@@ -157,7 +157,6 @@ TEST(dirty_propagation) {
         CHECK(!root.isDirty);
         CHECK(!child.isDirty);
         CHECK(!leaf.isDirty);
-        CHECK(!leaf.isDirty);
     }
 }
 

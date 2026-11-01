@@ -30,6 +30,7 @@
 #include <core/drivers/mouse.h>
 #include <gui/bmp.h>
 #include <gui/eventHandler.h>
+#include <gui/input/inputQueue.h>
 #include <gui/taskbar.h>
 #include <gui/widget.h>
 
@@ -55,11 +56,19 @@ bool ApplyDisplayMode(uint16_t width, uint16_t height);
  * (activeInstance) is set at boot for global access.
  */
 class FileSystem;
+class ContextMenu;
 class Desktop : public CompositeWidget, public MouseEventHandler, public KeyboardEventHandler {
 protected:
     uint32_t MouseX;
     uint32_t MouseY;
     uint32_t current_id = 1000;
+
+    // Driver events land here from interrupt context; the desktop task drains
+    // the queue in ProcessInput() and mutates the widget tree from one place.
+    InputQueue inputQueue;
+
+    // Right-click menu over the wallpaper. Owned through childrenList.
+    ContextMenu* contextMenu = nullptr;
     Bitmap* Wallpaper;
     // Native-resolution wallpaper, decoded once and kept so resolution changes
     // rescale from memory instead of re-reading the BMP off the disk.
@@ -243,10 +252,32 @@ public:
     void OnKeyUp(const char* key) override;
     void OnSpecialKeyUp(uint8_t key) override;
 
+    /**
+     * ProcessInput() - Drain queued driver events and dispatch them.
+     *
+     * Called by the desktop task every loop iteration. The drivers only push
+     * decoded events; all widget mutation happens here, on the GUI task.
+     */
+    void ProcessInput();
+
     /** MouseMoved() - Report whether the cursor has moved since the last draw. */
     bool MouseMoved() {
         return (MouseX != oldMouseX || MouseY != oldMouseY);
     }
+
+protected:
+    /** DispatchInputEvent() - Route one queued event to its handler. */
+    void DispatchInputEvent(const InputEvent& event);
+
+    // Desktop-task handlers (the On* overrides only enqueue).
+    void HandleMouseDown(uint8_t button);
+    void HandleMouseUp(uint8_t button);
+    void HandleMouseMove(int32_t dx, int32_t dy);
+    void HandleMouseWheel(int32_t delta);
+    void HandleKeyDown(const char* key);
+    void HandleKeyUp(const char* key);
+    void HandleSpecialKeyDown(uint8_t key);
+    void HandleSpecialKeyUp(uint8_t key);
 };
 
 /**

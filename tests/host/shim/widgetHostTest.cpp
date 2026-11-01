@@ -22,6 +22,7 @@
  * SOFTWARE.
  */
 
+#include <gui/widget.h>
 #include <gui/widgetHost.h>
 
 #include "harness.h"
@@ -34,6 +35,9 @@ constexpr int MAX_EVENTS = 200000;
 
 HostEvent g_events[MAX_EVENTS];
 int g_count = 0;
+
+// Widgets whose deletion was deferred until the current dispatch unwinds.
+LinkedList<Widget*> g_pendingDelete;
 
 /**
  * class RecordingWidgetHost - Host implementation of WidgetHost.
@@ -57,6 +61,10 @@ public:
     }
 
     void WakeProcess(uint32_t) override {}
+
+    void DestroyWidgetLater(Widget* widget) override {
+        if (widget) g_pendingDelete.PushBack(widget);
+    }
 };
 
 RecordingWidgetHost g_host;
@@ -68,6 +76,13 @@ struct Installer {
 } g_installer;
 
 }  // namespace
+
+void DrainDeferredWidgetDeletes() {
+    while (!g_pendingDelete.IsEmpty()) {
+        Widget* widget = g_pendingDelete.PopFront();
+        delete widget;
+    }
+}
 
 int HostEventCount() {
     return g_count;

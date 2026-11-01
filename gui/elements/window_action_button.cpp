@@ -49,8 +49,9 @@ void ACButton::OnClick(void* instance, void (*callback)(void*)) {
 
 void ACButton::OnMouseUp(int32_t x, int32_t y, uint8_t button) {
     // Note: Button::OnMouseUp handles the "isPressed" state change.
+    if (button != 1) return;
     if (isPressed && isVisible) {
-        if (!ContainsCoordinate(x, y)) {
+        if (!enabled || !ContainsCoordinate(x, y)) {
             isPressed = false;
             MarkDirty();
             return;

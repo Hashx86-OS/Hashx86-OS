@@ -52,7 +52,7 @@ typedef enum {
  * struct InputEvent - A single decoded input event.
  * @type: INPUT_EVENT_TYPE.
  * @modifiers: MOD_* bitmask.
- * @x: Pointer X (desktop coordinates), or wheel scroll delta in @y.
+ * @x: Pointer X in desktop coordinates (unused for wheel events).
  * @y: Pointer Y, or the wheel delta when @type is IE_MOUSE_WHEEL.
  * @button: 1=left, 2=middle, 3=right.
  * @key: NUL-terminated character key, or empty for non-character events.

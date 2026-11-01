@@ -36,6 +36,7 @@
 class Toggle : public Widget {
 private:
     bool on;
+    bool pressed = false;
 
     void Flip();
 
@@ -59,8 +60,10 @@ public:
     }
 
     void RedrawToCache() override;
+    void OnMouseDown(int32_t x, int32_t y, uint8_t button) override;
     void OnMouseUp(int32_t x, int32_t y, uint8_t button) override;
     void OnKeyDown(const char* key) override;
+    bool IsPressed() const override;
 };
 
 #endif  // TOGGLE_H

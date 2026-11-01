@@ -68,31 +68,57 @@ void Tabs::Select(int index) {
     }
 }
 
-void Tabs::OnMouseUp(int32_t x, int32_t y, uint8_t button) {
+void Tabs::OnMouseDown(int32_t x, int32_t y, uint8_t button) {
+    if (!enabled || !isVisible || button != 1) return;
+
     int32_t localX = x - this->x;
     int32_t localY = y - this->y;
-
-    if (localY >= 0 && localY < TABS_HEIGHT && button == 1) {
+    if (localX >= 0 && localX < w && localY >= 0 && localY < TABS_HEIGHT) {
         int index = localX / TAB_WIDTH;
         if (index >= 0 && index < tabCount) {
-            Select(index);
+            pressedTab = index;
+            SetMouseCaptured(true);
+            // Focus the tab control itself, without clearing the content's
+            // focused child.
+            Widget::OnMouseDown(x, y, button);
             return;
         }
     }
 
+    CompositeWidget::OnMouseDown(x, y, button);
+}
+
+void Tabs::OnMouseUp(int32_t x, int32_t y, uint8_t button) {
+    // Deliver the release to the content subtree first: a press that started
+    // in a content widget must be released even if the cursor ended on the
+    // strip (or outside the control entirely).
     CompositeWidget::OnMouseUp(x, y, button);
+
+    int32_t localX = x - this->x;
+    int32_t localY = y - this->y;
+    int pressed = pressedTab;
+    pressedTab = -1;
+    SetMouseCaptured(false);
+
+    if (button != 1 || !enabled || !isVisible || pressed < 0) return;
+    if (localY >= 0 && localY < TABS_HEIGHT) {
+        int index = localX / TAB_WIDTH;
+        if (index == pressed && index >= 0 && index < tabCount) {
+            Select(index);
+        }
+    }
 }
 
 void Tabs::RedrawToCache() {
-    if (!cache) {
+    if (!cache || !NINA::activeInstance) {
         isDirty = false;
         return;
     }
-    memset(cache, 0, sizeof(uint32_t) * w * h);
-    if (!NINA::activeInstance) {
-        isDirty = false;
-        return;
-    }
+
+    // Compose the content area first (the default composite renders the
+    // subtree), then paint the strip over the top band. Without this the
+    // content composite was never drawn into any cache.
+    CompositeWidget::RedrawToCache();
 
     NINA::activeInstance->FillRectangle(cache, w, h, 0, 0, w, TABS_HEIGHT, TABS_STRIP_BG);
 

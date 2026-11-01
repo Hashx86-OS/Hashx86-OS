@@ -34,10 +34,25 @@ ScrollContainer::ScrollContainer(CompositeWidget* parent, int32_t x, int32_t y, 
     AddChild(content);
     AddChild(vbar);
     AddChild(hbar);
+    vbar->SetValueChanged(&ScrollContainer::OnBarChanged, this);
+    hbar->SetValueChanged(&ScrollContainer::OnBarChanged, this);
     SyncBars();
 }
 
+void ScrollContainer::OnBarChanged(ScrollBar* bar, void* user) {
+    ScrollContainer* self = (ScrollContainer*)user;
+    if (bar == self->vbar) {
+        self->content->y = -self->vbar->GetValue();
+    } else if (bar == self->hbar) {
+        self->content->x = -self->hbar->GetValue();
+    }
+    self->content->MarkDirty();
+    self->MarkDirty();
+}
+
 void ScrollContainer::SetContentSize(int32_t cw, int32_t ch) {
+    if (cw < 0) cw = 0;
+    if (ch < 0) ch = 0;
     contentW = cw;
     contentH = ch;
     content->Resize(cw, ch);
@@ -58,9 +73,13 @@ int32_t ScrollContainer::GetScrollY() const {
 }
 
 void ScrollContainer::OnMouseWheel(int32_t delta) {
-    int32_t next = vbar->GetValue() - delta;
-    vbar->SetValue(next);
-    content->y = -vbar->GetValue();
-    content->MarkDirty();
-    MarkDirty();
+    if (!enabled || !isVisible) return;
+
+    // The bar's value-changed callback repositions the content. Subtract in
+    // 64-bit space and clamp before narrowing, so a hostile wheel delta cannot
+    // overflow the value.
+    int64_t next = (int64_t)vbar->GetValue() - delta;
+    if (next > 2147483647LL) next = 2147483647LL;
+    if (next < -2147483647LL - 1) next = -2147483647LL - 1;
+    vbar->SetValue((int32_t)next);
 }

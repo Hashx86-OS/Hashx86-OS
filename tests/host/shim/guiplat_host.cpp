@@ -50,10 +50,6 @@ void Abort(const char* msg) {
     std::abort();
 }
 
-void EnterCritical() {}
-
-void ExitCritical() {}
-
 void Sleep(uint32_t ms) {
     usleep(ms * 1000);
 }

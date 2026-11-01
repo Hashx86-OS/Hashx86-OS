@@ -42,6 +42,7 @@ private:
     int columns;
     int rowCount;
     int selected;
+    bool pressed = false;
     char header[MAX_COLUMNS][32];
     char cells[MAX_ROWS][MAX_COLUMNS][32];
 
@@ -80,7 +81,9 @@ public:
     void SetSelected(int row);
 
     void RedrawToCache() override;
+    void OnMouseDown(int32_t x, int32_t y, uint8_t button) override;
     void OnMouseUp(int32_t x, int32_t y, uint8_t button) override;
+    bool IsPressed() const override;
 };
 
 #endif  // TABLE_H

@@ -31,18 +31,10 @@
 namespace guiplat {
 
 void Abort(const char* msg) {
-    printf(msg);
+    printf("%s", msg);
     do {
         asm volatile("hlt");
     } while (1);
-}
-
-void EnterCritical() {
-    asm volatile("cli");
-}
-
-void ExitCritical() {
-    asm volatile("sti");
 }
 
 void Sleep(uint32_t ms) {

@@ -27,23 +27,22 @@
 
 #include <Hx86/Hgui/widget.h>
 
-/** struct ListViewItemData - One entry in a list view.
+/** class HListView - Scrollable multi-column list widget.
  *
- * @name: Entry name, up to 63 characters plus NUL.
- * @size: Size metadata for the entry.
- * @type: Entry type; 0 = file, 1 = directory, 2 = executable.
+ * The list starts with no columns; append them with AddColumn() and fill the
+ * rows with SetItems(). Nothing about the cell content is assumed.
  */
-struct ListViewItemData {
-    char name[64];
-    uint32_t size;
-    uint8_t type;  // 0 = file, 1 = directory, 2 = executable.
-};
-
-/** class HListView - Scrollable list widget for displaying file-like entries. */
 class HListView : public Widget {
 public:
     HListView(Widget* parent, int32_t x, int32_t y, uint32_t w, uint32_t h);
     ~HListView();
+
+    /**
+     * AddColumn() - Append a column to the list.
+     * @title: Column header text.
+     * @width: Fixed width in pixels, or 0 to share leftover width.
+     */
+    void AddColumn(const char* title, int32_t width = 0);
 
     void SetItems(ListViewItemData* items, int count);
     void Clear();
@@ -56,7 +55,6 @@ public:
      * Return: True when @index was in range, false otherwise.
      */
     bool SetSelectedIndex(int index);
-    void SetHeader(const char* text);
 };
 
 #endif  // HLISTVIEW_H

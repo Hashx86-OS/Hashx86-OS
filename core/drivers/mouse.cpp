@@ -52,7 +52,8 @@ void MouseEventHandler::OnMouseUp(uint8_t button) {}
 
 /**
  * MouseEventHandler::OnMouseWheel() - Called when the wheel is scrolled.
- * @delta: Positive when scrolling down, negative when scrolling up.
+ * @delta: Positive when scrolling up (wheel away from the user), negative when
+ *         scrolling down.
  */
 void MouseEventHandler::OnMouseWheel(int32_t delta) {
     (void)delta;
@@ -237,8 +238,11 @@ uint32_t MouseDriver::HandleInterrupt(uint32_t esp) {
 
         if (hasWheel) {
             // The wheel delta is the low nibble of byte 3, sign-extended.
+            // The PS/2 convention is positive = away from the user (scroll
+            // up); the widget layer uses negative = scroll down, so forward
+            // the sign as-is rather than inverting it a second time.
             int8_t z = (int8_t)(buffer[3] << 4) >> 4;
-            if (z != 0) eventHandler->OnMouseWheel(-z);
+            if (z != 0) eventHandler->OnMouseWheel(z);
         }
     }
 

@@ -24,8 +24,30 @@
 
 #define KDBG_COMPONENT "GUI:RASTER"
 #include <gui/guiplat.h>
+#include <gui/mathutil.h>
 #include <gui/render/raster.h>
 #include <string.h>
+
+namespace {
+
+/**
+ * InsideRoundedRect() - Test whether a corner-relative point is inside a
+ * rounded rectangle.
+ * @dx: Horizontal offset from the rectangle's left edge.
+ * @dy: Vertical offset from the rectangle's top edge.
+ * @w: Rectangle width.
+ * @h: Rectangle height.
+ * @radius: Corner radius, already clamped.
+ *
+ * All arithmetic is 64-bit so both passes of BlurRoundedRectangle agree.
+ */
+bool InsideRoundedRect(int64_t dx, int64_t dy, int64_t w, int64_t h, int64_t radius) {
+    int64_t distX = (dx < radius) ? radius - dx : (dx >= w - radius) ? dx - (w - radius) : 0;
+    int64_t distY = (dy < radius) ? radius - dy : (dy >= h - radius) ? dy - (h - radius) : 0;
+    return distX * distX + distY * distY <= radius * radius;
+}
+
+}  // namespace
 
 RasterSurface::RasterSurface() {
     this->width = 0;
@@ -84,7 +106,7 @@ bool RasterSurface::Resize(uint32_t w, uint32_t h) {
 }
 
 void RasterSurface::PutPixel(int32_t x, int32_t y, uint32_t colorIndex) {
-    if ((uint32_t)x >= width || (uint32_t)y >= height) return;
+    if (!backBuffer || (uint32_t)x >= width || (uint32_t)y >= height) return;
 
     uint32_t* pixel = &backBuffer[y * width + x];
     uint8_t alpha = (colorIndex >> 24) & 0xFF;
@@ -113,144 +135,114 @@ void RasterSurface::PutPixel(int32_t x, int32_t y, uint8_t a, uint8_t r, uint8_t
 
 void RasterSurface::DrawBitmap(int32_t x, int32_t y, const uint32_t* bitmapData,
                                int32_t bitmapWidth, int32_t bitmapHeight) {
-    // Clip the vertical range to the surface.
-    int32_t startRow = 0;
-    int32_t endRow = bitmapHeight;
-    if (y < 0) startRow = -y;
-    if (y + bitmapHeight > (int32_t)this->height) endRow = this->height - y;
-
-    // Clip the horizontal range to the surface.
-    int32_t startCol = 0;
-    int32_t endCol = bitmapWidth;
-    if (x < 0) startCol = -x;
-    if (x + bitmapWidth > (int32_t)this->width) endCol = this->width - x;
-
-    for (int32_t row = startRow; row < endRow; ++row) {
-        int32_t screenY = y + row;
-        const uint32_t* bmpPtr = &bitmapData[row * bitmapWidth];
-        uint32_t* rowDst = &backBuffer[screenY * this->width];
-
-        for (int32_t col = startCol; col < endCol; ++col) {
-            int32_t screenX = x + col;
-
-            uint32_t srcColor = bmpPtr[col];
-            uint8_t alpha = (srcColor >> 24) & 0xFF;
-
-            if (alpha == 255) {
-                rowDst[screenX] = srcColor;
-            } else if (alpha > 0) {
-                uint32_t dstColor = rowDst[screenX];
-                uint32_t invAlpha = 255 - alpha;
-
-                uint8_t srcRed = (srcColor >> 16) & 0xFF;
-                uint8_t srcGreen = (srcColor >> 8) & 0xFF;
-                uint8_t srcBlue = srcColor & 0xFF;
-
-                uint8_t dstRed = (dstColor >> 16) & 0xFF;
-                uint8_t dstGreen = (dstColor >> 8) & 0xFF;
-                uint8_t dstBlue = dstColor & 0xFF;
-
-                uint8_t blendedRed = alphaTable[alpha][srcRed] + alphaTable[invAlpha][dstRed];
-                uint8_t blendedGreen = alphaTable[alpha][srcGreen] + alphaTable[invAlpha][dstGreen];
-                uint8_t blendedBlue = alphaTable[alpha][srcBlue] + alphaTable[invAlpha][dstBlue];
-
-                rowDst[screenX] =
-                    (0xFF << 24) | (blendedRed << 16) | (blendedGreen << 8) | blendedBlue;
-            }
-        }
-    }
+    if (!backBuffer || !bitmapData) return;
+    nina.DrawBitmap(backBuffer, (int32_t)width, (int32_t)height, x, y, bitmapData, bitmapWidth,
+                    bitmapHeight);
 }
 
-void RasterSurface::FillRectangle(int32_t x, int32_t y, uint32_t w, uint32_t h,
-                                  uint32_t colorIndex) {
+void RasterSurface::FillRectangle(int32_t x, int32_t y, int32_t w, int32_t h, uint32_t colorIndex) {
     if (!NINA::activeInstance) return;
     NINA::activeInstance->FillRectangle(this->backBuffer, this->width, this->height, x, y, w, h,
                                         colorIndex);
 }
 
-void RasterSurface::DrawRectangle(int32_t x, int32_t y, uint32_t w, uint32_t h,
-                                  uint32_t colorIndex) {
+void RasterSurface::DrawRectangle(int32_t x, int32_t y, int32_t w, int32_t h, uint32_t colorIndex) {
     if (!NINA::activeInstance) return;
     NINA::activeInstance->DrawRectangle(this->backBuffer, this->width, this->height, x, y, w, h,
                                         colorIndex);
 }
 
-void RasterSurface::FillRoundedRectangle(int32_t x, int32_t y, uint32_t w, uint32_t h,
+void RasterSurface::FillRoundedRectangle(int32_t x, int32_t y, int32_t w, int32_t h,
                                          uint32_t radius, uint32_t colorIndex) {
     if (!NINA::activeInstance) return;
     NINA::activeInstance->FillRoundedRectangle(this->backBuffer, this->width, this->height, x, y, w,
                                                h, radius, colorIndex);
 }
 
-void RasterSurface::DrawRoundedRectangle(int32_t x, int32_t y, uint32_t w, uint32_t h,
+void RasterSurface::DrawRoundedRectangle(int32_t x, int32_t y, int32_t w, int32_t h,
                                          uint32_t radius, uint32_t colorIndex) {
     if (!NINA::activeInstance) return;
     NINA::activeInstance->DrawRoundedRectangle(this->backBuffer, this->width, this->height, x, y, w,
                                                h, radius, colorIndex);
 }
 
-void RasterSurface::DrawRoundedRectangleShadow(int32_t x, int32_t y, uint32_t w, uint32_t h,
+void RasterSurface::DrawRoundedRectangleShadow(int32_t x, int32_t y, int32_t w, int32_t h,
                                                uint32_t shadowSize, uint32_t shadowRadius,
                                                uint32_t shadowColor) {
-    int32_t startX = x - shadowSize;
-    int32_t startY = y - shadowSize;
-    int32_t endX = x + w + shadowSize;
-    int32_t endY = y + h + shadowSize;
+    if (!backBuffer || w <= 0 || h <= 0) return;
+
+    // Keep radius² inside 32 bits so the falloff division can use the
+    // kernel-safe MulDiv helper. A shadow radius beyond the surface diagonal
+    // is visually identical anyway.
+    if (shadowRadius > 65535u) shadowRadius = 65535u;
+
+    int64_t startX = (int64_t)x - shadowSize;
+    int64_t startY = (int64_t)y - shadowSize;
+    int64_t endX = (int64_t)x + w + shadowSize;
+    int64_t endY = (int64_t)y + h + shadowSize;
+    if (startX < 0) startX = 0;
+    if (startY < 0) startY = 0;
+    if (endX > (int64_t)this->width) endX = this->width;
+    if (endY > (int64_t)this->height) endY = this->height;
+    if (startX >= endX || startY >= endY) return;
 
     uint8_t shadowAlpha = (shadowColor >> 24) & 0xFF;
     uint8_t shadowRed = (shadowColor >> 16) & 0xFF;
     uint8_t shadowGreen = (shadowColor >> 8) & 0xFF;
     uint8_t shadowBlue = shadowColor & 0xFF;
 
-    for (int32_t Y = startY; Y < endY; ++Y) {
-        if (Y < 0 || Y >= (int32_t)this->height) continue;
-        int32_t clampedStartX = (startX < 0) ? 0 : startX;
-        int32_t clampedEndX = (endX > (int32_t)this->width) ? (int32_t)this->width : endX;
-        uint32_t* pixelPtr = &backBuffer[Y * this->width + clampedStartX];
+    const uint64_t radius2 = (uint64_t)shadowRadius * (uint64_t)shadowRadius;
 
-        for (int32_t X = clampedStartX; X < clampedEndX; ++X) {
-            int32_t dx = 0, dy = 0;
+    for (int64_t Y = startY; Y < endY; ++Y) {
+        uint32_t* row = backBuffer + Y * this->width;
+        for (int64_t X = startX; X < endX; ++X) {
+            int64_t dx = 0, dy = 0;
             if (X < x)
-                dx = x - X;
-            else if (X >= x + (int32_t)w)
-                dx = X - (x + w - 1);
+                dx = (int64_t)x - X;
+            else if (X >= (int64_t)x + w)
+                dx = X - ((int64_t)x + w - 1);
             if (Y < y)
-                dy = y - Y;
-            else if (Y >= y + (int32_t)h)
-                dy = Y - (y + h - 1);
+                dy = (int64_t)y - Y;
+            else if (Y >= (int64_t)y + h)
+                dy = Y - ((int64_t)y + h - 1);
 
-            int32_t distanceSquared = dx * dx + dy * dy;
-            if (distanceSquared <= (int32_t)(shadowRadius * shadowRadius)) {
-                uint8_t alpha;
-                if (shadowRadius == 0) {
-                    alpha = shadowAlpha;  // No falloff: constant opacity.
-                } else {
-                    alpha = alphaTable[shadowAlpha][255 - (distanceSquared * 255) /
-                                                              (shadowRadius * shadowRadius)];
-                }
-                uint32_t dstColor = *pixelPtr;
-                uint32_t invAlpha = 255 - alpha;
+            uint64_t distanceSquared = (uint64_t)dx * (uint64_t)dx + (uint64_t)dy * (uint64_t)dy;
+            if (distanceSquared > radius2) continue;
 
-                uint8_t dstRed = (dstColor >> 16) & 0xFF;
-                uint8_t dstGreen = (dstColor >> 8) & 0xFF;
-                uint8_t dstBlue = dstColor & 0xFF;
-
-                uint8_t blendedRed = alphaTable[alpha][shadowRed] + alphaTable[invAlpha][dstRed];
-                uint8_t blendedGreen =
-                    alphaTable[alpha][shadowGreen] + alphaTable[invAlpha][dstGreen];
-                uint8_t blendedBlue = alphaTable[alpha][shadowBlue] + alphaTable[invAlpha][dstBlue];
-
-                *pixelPtr = (0xFF << 24) | (blendedRed << 16) | (blendedGreen << 8) | blendedBlue;
+            uint8_t alpha;
+            if (shadowRadius == 0) {
+                alpha = shadowAlpha;  // No falloff: constant opacity.
+            } else {
+                uint32_t falloff = GuiMulDivU32(distanceSquared * 255u, (uint32_t)radius2);
+                if (falloff > 255) falloff = 255;
+                alpha = alphaTable[shadowAlpha][255 - falloff];
             }
-            pixelPtr++;
+            uint32_t dstColor = row[X];
+            uint32_t invAlpha = 255 - alpha;
+
+            uint8_t dstRed = (dstColor >> 16) & 0xFF;
+            uint8_t dstGreen = (dstColor >> 8) & 0xFF;
+            uint8_t dstBlue = dstColor & 0xFF;
+
+            uint8_t blendedRed = alphaTable[alpha][shadowRed] + alphaTable[invAlpha][dstRed];
+            uint8_t blendedGreen = alphaTable[alpha][shadowGreen] + alphaTable[invAlpha][dstGreen];
+            uint8_t blendedBlue = alphaTable[alpha][shadowBlue] + alphaTable[invAlpha][dstBlue];
+
+            row[X] = (0xFF << 24) | (blendedRed << 16) | (blendedGreen << 8) | blendedBlue;
         }
     }
 }
 
-void RasterSurface::BlurRoundedRectangle(int32_t x, int32_t y, uint32_t w, uint32_t h,
+void RasterSurface::BlurRoundedRectangle(int32_t x, int32_t y, int32_t w, int32_t h,
                                          uint32_t radius, uint32_t blurRadius) {
+    if (!backBuffer || w <= 0 || h <= 0) return;
+
+    // A radius beyond the surface diagonal is visually identical, and clamping
+    // keeps the squared distance well inside 64 bits.
+    if (radius > 65535u) radius = 65535u;
+
     uint64_t pixelCount = (uint64_t)w * (uint64_t)h;
-    if (pixelCount == 0 || pixelCount > (uint64_t)(0xFFFFFFFFu / sizeof(uint32_t))) {
+    if (pixelCount > (uint64_t)(0xFFFFFFFFu / sizeof(uint32_t))) {
         return;
     }
 
@@ -271,15 +263,7 @@ void RasterSurface::BlurRoundedRectangle(int32_t x, int32_t y, uint32_t w, uint3
                 continue;
 
             // Skip pixels outside the rounded region.
-            int32_t distX = (dx < (int32_t)radius)                 ? radius - dx
-                            : (dx >= (int32_t)w - (int32_t)radius) ? dx - ((int32_t)w - radius)
-                                                                   : 0;
-            int32_t distY = (dy < (int32_t)radius)                 ? radius - dy
-                            : (dy >= (int32_t)h - (int32_t)radius) ? dy - ((int32_t)h - radius)
-                                                                   : 0;
-            int32_t dist = (distX * distX + distY * distY);
-
-            if (dist > (int32_t)(radius * radius)) continue;  // Skip the corners.
+            if (!InsideRoundedRect(dx, dy, w, h, radius)) continue;
 
             // Blur: average the nearby pixels, including alpha.
             uint32_t red = 0, green = 0, blue = 0, alpha = 0, count = 0;
@@ -324,16 +308,9 @@ void RasterSurface::BlurRoundedRectangle(int32_t x, int32_t y, uint32_t w, uint3
             if (px < 0 || py < 0 || px >= (int32_t)this->width || py >= (int32_t)this->height)
                 continue;
 
-            // Skip pixels outside the rounded region.
-            int32_t distX = (dx < (int32_t)radius)                 ? radius - dx
-                            : (dx >= (int32_t)w - (int32_t)radius) ? dx - ((int32_t)w - radius)
-                                                                   : 0;
-            int32_t distY = (dy < (int32_t)radius)                 ? radius - dy
-                            : (dy >= (int32_t)h - (int32_t)radius) ? dy - ((int32_t)h - radius)
-                                                                   : 0;
-            int32_t dist = (distX * distX + distY * distY);
-
-            if (dist > (int32_t)(radius * radius)) continue;
+            // Skip pixels outside the rounded region. The first pass uses the
+            // same test, so every written pixel has an initialized buffer slot.
+            if (!InsideRoundedRect(dx, dy, w, h, radius)) continue;
 
             // Write through PutPixel() so alpha blending applies.
             PutPixel(px, py, tempBuffer[dy * w + dx]);

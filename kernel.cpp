@@ -475,6 +475,11 @@ void pDesktop(void* arg) {
     VBE_font->setSize(MEDIUM);
 
     while (true) {
+        // Drivers queue decoded events; this is the single place where the
+        // GUI task turns them into widget mutations. It also drains deferred
+        // widget deletions from the previous frame.
+        desktop->ProcessInput();
+
         // Swap buffers only when something actually changed.
         uint32_t start = timerTicks;
 

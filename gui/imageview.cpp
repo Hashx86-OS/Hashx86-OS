@@ -24,6 +24,7 @@
 
 #define KDBG_COMPONENT "GUI:IMAGEVIEW"
 #include <gui/imageview.h>
+#include <gui/mathutil.h>
 
 ImageView::ImageView(Widget* parent, int32_t x, int32_t y, int32_t w, int32_t h,
                      const uint32_t* source, int32_t srcW, int32_t srcH)
@@ -47,7 +48,16 @@ void ImageView::SetImage(const uint32_t* source, int32_t newSrcW, int32_t newSrc
         MarkDirty();
         return;
     }
-    size_t count = (size_t)newSrcW * (size_t)newSrcH;
+
+    // Reject a source whose pixel count would overflow the allocation or the
+    // 32-bit index arithmetic used while scaling.
+    uint64_t count64 = (uint64_t)newSrcW * (uint64_t)newSrcH;
+    if (count64 == 0 || count64 > (uint64_t)(0xFFFFFFFFu / sizeof(uint32_t))) {
+        MarkDirty();
+        return;
+    }
+    size_t count = (size_t)count64;
+
     pixels = new uint32_t[count];
     if (!pixels) {
         MarkDirty();
@@ -70,14 +80,18 @@ void ImageView::RedrawToCache() {
         return;
     }
 
-    // Nearest-neighbor scale from the source into the widget cache.
+    // Nearest-neighbor scale from the source into the widget cache. The
+    // source coordinate is computed with the wide MulDiv helper: dy*srcH can
+    // exceed 32 bits for a tall source even when the cache itself is small.
+    const uint32_t srcWU = (uint32_t)srcW;
+    const uint32_t srcHU = (uint32_t)srcH;
     for (int32_t dy = 0; dy < h; dy++) {
-        int32_t sy = (int32_t)(dy * srcH / h);
-        if (sy >= srcH) sy = srcH - 1;
+        uint32_t sy = GuiMulDivU32((uint64_t)dy * srcHU, (uint32_t)h);
+        if (sy >= srcHU) sy = srcHU - 1;
         for (int32_t dx = 0; dx < w; dx++) {
-            int32_t sx = (int32_t)(dx * srcW / w);
-            if (sx >= srcW) sx = srcW - 1;
-            cache[dy * w + dx] = pixels[sy * srcW + sx];
+            uint32_t sx = GuiMulDivU32((uint64_t)dx * srcWU, (uint32_t)w);
+            if (sx >= srcWU) sx = srcWU - 1;
+            cache[(size_t)dy * (size_t)w + dx] = pixels[(size_t)sy * (size_t)srcW + sx];
         }
     }
     isDirty = false;

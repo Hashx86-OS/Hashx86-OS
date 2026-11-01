@@ -33,7 +33,7 @@ void IntToText(int32_t v, char* out) {
     char tmp[12];
     int n = 0;
     bool neg = v < 0;
-    uint32_t u = neg ? (uint32_t)(-v) : (uint32_t)v;
+    uint32_t u = neg ? 0u - (uint32_t)v : (uint32_t)v;
     if (u == 0) tmp[n++] = '0';
     while (u > 0) {
         tmp[n++] = (char)('0' + (u % 10));
@@ -81,30 +81,53 @@ void SpinBox::SetValue(int32_t v) {
     EmitValue();
 }
 
-void SpinBox::OnMouseUp(int32_t x, int32_t y, uint8_t button) {
-    if (!enabled || !isVisible) return;
-    if (button != 1) return;
+void SpinBox::OnMouseDown(int32_t x, int32_t y, uint8_t button) {
+    if (!enabled || !isVisible || button != 1) return;
     if (!ContainsCoordinate(x, y)) return;
+    Widget::OnMouseDown(x, y, button);
+    pressed = true;
+}
+
+void SpinBox::OnMouseUp(int32_t x, int32_t y, uint8_t button) {
+    if (button != 1) return;
+    bool wasPressed = pressed;
+    pressed = false;
+    if (!enabled || !isVisible || !wasPressed) return;
+    if (!ContainsCoordinate(x, y)) return;
+
     int32_t local = y - this->y;
-    if (local < h / 2) {
-        SetValue(value + step);
-    } else {
-        SetValue(value - step);
-    }
+    int64_t next = (int64_t)value + (local < h / 2 ? step : -step);
+    if (next > maxValue) next = maxValue;
+    if (next < minValue) next = minValue;
+    SetValue((int32_t)next);
 }
 
 void SpinBox::OnMouseWheel(int32_t delta) {
     if (!enabled || !isVisible) return;
-    SetValue(value + delta * step);
+    int64_t next = (int64_t)value + (int64_t)delta * step;
+    if (next > maxValue) next = maxValue;
+    if (next < minValue) next = minValue;
+    SetValue((int32_t)next);
 }
 
 void SpinBox::OnSpecialKeyDown(uint8_t key) {
     if (!enabled || !isVisible) return;
+
+    int64_t next = value;
     if (key == 0x48) {  // Up arrow.
-        SetValue(value + step);
+        next = (int64_t)value + step;
     } else if (key == 0x50) {  // Down arrow.
-        SetValue(value - step);
+        next = (int64_t)value - step;
+    } else {
+        return;
     }
+    if (next > maxValue) next = maxValue;
+    if (next < minValue) next = minValue;
+    SetValue((int32_t)next);
+}
+
+bool SpinBox::IsPressed() const {
+    return pressed;
 }
 
 void SpinBox::RedrawToCache() {

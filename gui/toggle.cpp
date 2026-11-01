@@ -45,12 +45,25 @@ void Toggle::Flip() {
     }
 }
 
+void Toggle::OnMouseDown(int32_t x, int32_t y, uint8_t button) {
+    if (!enabled || !isVisible || button != 1) return;
+    if (!ContainsCoordinate(x, y)) return;
+    Widget::OnMouseDown(x, y, button);
+    pressed = true;
+}
+
 void Toggle::OnMouseUp(int32_t x, int32_t y, uint8_t button) {
-    if (!enabled || !isVisible) return;
     if (button != 1) return;
+    bool wasPressed = pressed;
+    pressed = false;
+    if (!enabled || !isVisible || !wasPressed) return;
     if (ContainsCoordinate(x, y)) {
         Flip();
     }
+}
+
+bool Toggle::IsPressed() const {
+    return pressed;
 }
 
 void Toggle::OnKeyDown(const char* key) {

@@ -49,18 +49,6 @@ namespace guiplat {
 [[noreturn]] void Abort(const char* msg);
 
 /**
- * EnterCritical() - Mask interrupts (kernel) or do nothing (host tests).
- *
- * Nesting is handled by GuiCriticalGuard, not by this function.
- */
-void EnterCritical();
-
-/**
- * ExitCritical() - Restore the interrupt state saved by EnterCritical().
- */
-void ExitCritical();
-
-/**
  * Sleep() - Block the caller for a number of milliseconds.
  * @ms: Duration to sleep.
  */

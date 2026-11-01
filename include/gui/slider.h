@@ -39,8 +39,14 @@ private:
     int32_t maxValue;
     int32_t value;
     bool dragging;
+    // Distance from the pointer to the thumb's left edge at press time, so a
+    // grab does not jump the thumb under the cursor.
+    int32_t dragOffset;
 
     void EmitValue();
+    int32_t UsableWidth() const;
+    int32_t ThumbX() const;
+    int32_t ValueForThumbX(int32_t thumbX) const;
 
 public:
     /**
@@ -69,6 +75,7 @@ public:
     void OnMouseMove(int32_t oldx, int32_t oldy, int32_t newx, int32_t newy) override;
     void OnMouseUp(int32_t x, int32_t y, uint8_t button) override;
     void OnMouseWheel(int32_t delta) override;
+    void OnSpecialKeyDown(uint8_t key) override;
 };
 
 #endif  // SLIDER_H

@@ -38,6 +38,7 @@ class CheckBox : public Widget {
 private:
     char* label;
     bool checked;
+    bool pressed = false;
 
     void Toggle();
 
@@ -65,8 +66,10 @@ public:
     }
 
     void RedrawToCache() override;
+    void OnMouseDown(int32_t x, int32_t y, uint8_t button) override;
     void OnMouseUp(int32_t x, int32_t y, uint8_t button) override;
     void OnKeyDown(const char* key) override;
+    bool IsPressed() const override;
 };
 
 #endif  // CHECKBOX_H

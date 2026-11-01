@@ -23,7 +23,7 @@
  */
 
 #pragma once
-#if defined(GUI_HOST_BUILD) || defined(LIBHX86_USER_BUILD)
+#if defined(GUI_HOST_BUILD)
 #include <stddef.h>
 #include <stdint.h>
 #include <new>

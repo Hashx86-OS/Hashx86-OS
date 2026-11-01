@@ -41,23 +41,61 @@ private:
     char items[MAX_ITEMS][48];
     int count;
 
+    // Optional owner callback, fired with the selected index. Lets a
+    // kernel-owned menu act without an owning process to post an event to.
+    void (*onClick)(ContextMenu*, int32_t, void*) = nullptr;
+    void* onClickUser = nullptr;
+
+    // The menu currently shown, if any. Used to dismiss it on an outside press
+    // regardless of which window owns it.
+    static ContextMenu* activeMenu;
+
 public:
     /** ContextMenu() - Construct an empty hidden menu. */
     explicit ContextMenu(Widget* parent);
 
+    /** ~ContextMenu() - Clear the active-popup registration. */
+    ~ContextMenu();
+
     /** AddItem() - Append a selectable item. */
     bool AddItem(const char* label);
+
+    /**
+     * SetClickHandler() - Install an owner callback for item selection.
+     * @cb: Called as cb(this, index, user).
+     * @user: Opaque pointer handed back to @cb.
+     */
+    void SetClickHandler(void (*cb)(ContextMenu*, int32_t, void*), void* user) {
+        onClick = cb;
+        onClickUser = user;
+    }
 
     /** ShowAt() - Position and show the menu at (@x, @y) in parent coordinates. */
     void ShowAt(int32_t x, int32_t y);
 
-    /** Hide() - Hide the menu. */
+    /** Hide() - Hide the menu and clear its active registration. */
     void Hide();
+
+    /**
+     * DismissActiveAt() - Hide the active menu if a press lands outside it.
+     * @screenX: Press X in screen coordinates.
+     * @screenY: Press Y in screen coordinates.
+     *
+     * Called by the desktop before routing any mouse-down, so menus owned by a
+     * window are dismissed just like desktop-owned ones.
+     */
+    static void DismissActiveAt(int32_t screenX, int32_t screenY);
+
+    /** HideActive() - Hide whichever context menu is open, if any. */
+    static void HideActive();
 
     /** GetItemCount() - Return the number of items. */
     int GetItemCount() const {
         return count;
     }
+
+    /** Draw() - Blit the menu, so it works as a top-level popup. */
+    void Draw(RasterSurface* gc) override;
 
     void RedrawToCache() override;
     void OnMouseUp(int32_t x, int32_t y, uint8_t button) override;

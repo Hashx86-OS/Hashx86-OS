@@ -36,6 +36,51 @@ static char currentPath[256] = "/";
 static ListViewItemData dirEntries[MAX_ENTRIES];
 static int dirEntryCount = 0;
 
+/**
+ * formatSizeCell() - Fill a list column cell with a human-readable size.
+ * @out: Destination cell buffer (at least 16 bytes).
+ * @size: Entry size in bytes.
+ * @type: Entry type; directories render as "<DIR>".
+ *
+ * The Explorer owns the presentation of this column, so the formatting lives
+ * here rather than being baked into the list widget.
+ */
+static void formatSizeCell(char* out, uint32_t size, uint8_t type) {
+    if (type == 1) {
+        strcpy(out, "<DIR>");
+        return;
+    }
+
+    char tmp[16];
+    int n = 0;
+    uint32_t value = size;
+    if (size >= 1024) {
+        value = size / 1024;
+        if (value == 0) tmp[n++] = '0';
+        while (value > 0) {
+            tmp[n++] = '0' + (value % 10);
+            value /= 10;
+        }
+        int p = 0;
+        while (n > 0) out[p++] = tmp[--n];
+        out[p++] = ' ';
+        out[p++] = 'K';
+        out[p++] = 'B';
+        out[p] = 0;
+    } else {
+        if (value == 0) tmp[n++] = '0';
+        while (value > 0) {
+            tmp[n++] = '0' + (value % 10);
+            value /= 10;
+        }
+        int p = 0;
+        while (n > 0) out[p++] = tmp[--n];
+        out[p++] = ' ';
+        out[p++] = 'B';
+        out[p] = 0;
+    }
+}
+
 // Forward declaration used by the global g_app pointer.
 class ExplorerApp;
 static ExplorerApp* g_app = nullptr;
@@ -100,9 +145,11 @@ ExplorerApp::ExplorerApp() {
     pathLabel = new Label(mainWindow, btnEnd, toolbarY + 2, contentW - (btnEnd - pad), 20, "/");
     pathLabel->setSize(SMALL);
 
-    // File list view fills the main content area.
+    // File list view fills the main content area. Columns are appended
+    // explicitly: a name column that fills the space and a fixed size column.
     fileList = new HListView(mainWindow, pad, listY, contentW, listH);
-    fileList->SetHeader("Name");
+    fileList->AddColumn("Name", 0);
+    fileList->AddColumn("Size", 90);
 
     // Status bar at the bottom.
     statusLabel = new Label(mainWindow, pad, statusY, contentW, statusH, "Ready");
@@ -161,30 +208,32 @@ int ExplorerApp::loadDirectory(const char* path) {
                 // Copy the entry name, truncating at the 63-byte limit.
                 int j = 0;
                 while (ent->d_name[j] && j < 63) {
-                    item.name[j] = ent->d_name[j];
+                    item.cells[0][j] = ent->d_name[j];
                     j++;
                 }
-                item.name[j] = 0;
+                item.cells[0][j] = 0;
 
                 // Stat the entry for its size and type.
                 char fullpath[256];
                 memset(fullpath, 0, sizeof(fullpath));
                 strcpy(fullpath, path);
                 if (fullpath[strlen(fullpath) - 1] != '/') strcat(fullpath, "/");
-                strcat(fullpath, item.name);
+                strcat(fullpath, item.cells[0]);
 
                 struct stat st;
-                item.size = 0;
+                uint32_t entrySize = 0;
                 item.type = 0;  // Default: regular file.
 
                 if (syscall_stat(fullpath, &st) == 0) {
-                    item.size = st.st_size;
+                    entrySize = st.st_size;
                     if (st.st_mode & 0x4000) {
                         item.type = 1;  // Directory.
-                    } else if (isExecutable(item.name)) {
+                    } else if (isExecutable(item.cells[0])) {
                         item.type = 2;  // Executable.
                     }
                 }
+
+                formatSizeCell(item.cells[1], entrySize, item.type);
 
                 dirEntryCount++;
             }
@@ -278,7 +327,7 @@ void ExplorerApp::openSelected() {
     if (item.type == 1) {
         // Descend into the directory.
         if (strlen(currentPath) > 1) strcat(currentPath, "/");
-        strcat(currentPath, item.name);
+        strcat(currentPath, item.cells[0]);
         refreshDirectory();
     } else if (item.type == 2) {
         // Launch the executable.
@@ -286,7 +335,7 @@ void ExplorerApp::openSelected() {
         memset(fullpath, 0, sizeof(fullpath));
         strcpy(fullpath, currentPath);
         if (fullpath[strlen(fullpath) - 1] != '/') strcat(fullpath, "/");
-        strcat(fullpath, item.name);
+        strcat(fullpath, item.cells[0]);
 
         statusLabel->setText("Launching...");
         int32_t pid = syscall_execve(fullpath, nullptr, nullptr);
@@ -299,7 +348,7 @@ void ExplorerApp::openSelected() {
         // Regular file - show its name as info.
         char info[64];
         memset(info, 0, sizeof(info));
-        strcpy(info, item.name);
+        strcpy(info, item.cells[0]);
         strcat(info, " selected");
         statusLabel->setText(info);
     }
@@ -310,10 +359,10 @@ void ExplorerApp::onListClick() {
     if (sel >= 0 && sel < dirEntryCount) {
         char info[64];
         memset(info, 0, sizeof(info));
-        strcpy(info, dirEntries[sel].name);
+        strcpy(info, dirEntries[sel].cells[0]);
         statusLabel->setText(info);
 
-        printf("[Explorer] Selected: %s\n", dirEntries[sel].name);
+        printf("[Explorer] Selected: %s\n", dirEntries[sel].cells[0]);
     }
 }
 

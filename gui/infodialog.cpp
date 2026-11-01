@@ -35,6 +35,8 @@ InfoDialog::InfoDialog(CompositeWidget* parent, int32_t width, int32_t height)
     x = (GUI_SCREEN_WIDTH - w) / 2;
     y = (GUI_SCREEN_HEIGHT - h) / 2;
     SetPID(0);  // Kernel/system owned.
+    // The crash dialog is cached and reused; closing only hides it.
+    SetDeleteOnClose(false);
     setWindowTitle("Info");
 
     summaryLabel = new Label(this, 74, 36, w - 90, 26, "");

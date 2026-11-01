@@ -59,12 +59,27 @@ void CheckBox::Toggle() {
     }
 }
 
+void CheckBox::OnMouseDown(int32_t x, int32_t y, uint8_t button) {
+    if (!enabled || !isVisible || button != 1) return;
+    if (!ContainsCoordinate(x, y)) return;
+    Widget::OnMouseDown(x, y, button);
+    pressed = true;
+}
+
 void CheckBox::OnMouseUp(int32_t x, int32_t y, uint8_t button) {
-    if (!enabled || !isVisible) return;
     if (button != 1) return;
+    // Require a press that started on this widget: a release that merely lands
+    // here (for example after dragging a slider) must not toggle anything.
+    bool wasPressed = pressed;
+    pressed = false;
+    if (!enabled || !isVisible || !wasPressed) return;
     if (ContainsCoordinate(x, y)) {
         Toggle();
     }
+}
+
+bool CheckBox::IsPressed() const {
+    return pressed;
 }
 
 void CheckBox::OnKeyDown(const char* key) {

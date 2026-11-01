@@ -42,6 +42,9 @@ protected:
     bool isDragging;
     char* windowTitle;
     ACRButton* closeButton;
+    // True when closing without an owning handler should destroy the window.
+    // Cached kernel dialogs clear this so closing only hides them for reuse.
+    bool deleteOnClose = true;
 
 public:
     /**
@@ -61,8 +64,26 @@ public:
 
     // Core Lifecycle.
 
-    /** OnClose() - Request window teardown through the GUI event handler. */
+    /**
+     * OnClose() - Request window teardown through the GUI event handler.
+     *
+     * An owning process is asked first (ON_WINDOW_CLOSE) and decides how to
+     * dispose of the window. With no handler, the window is hidden and then
+     * destroyed later on the desktop task, unless SetDeleteOnClose(false) was
+     * set (cached system dialogs, which only hide).
+     */
     void OnClose();
+
+    /**
+     * SetDeleteOnClose() - Control fallback destruction when closed.
+     * @value: False to keep a handler-less window attached but hidden.
+     *
+     * Used by reusable kernel dialogs: their close button hides the dialog and
+     * a later Show() simply makes it visible again.
+     */
+    void SetDeleteOnClose(bool value) {
+        deleteOnClose = value;
+    }
 
     /**
      * setVisible() - Show or hide the window.
