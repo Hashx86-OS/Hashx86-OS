@@ -31,11 +31,12 @@
 #include <types.h>
 
 /**
- * class NINA - Software rasterizer used by the graphics driver.
+ * class NINA - Low-level software rasterizer.
  *
  * Draws sprites, shapes, lines, and text into a 0xAARRGGBB pixel buffer.
- * All drawing operations take an explicit destination buffer and bounds; the
- * alpha table is precomputed once for per-pixel compositing.
+ * All drawing operations take an explicit destination buffer and bounds, so
+ * the same rasterizer serves RasterSurface and the per-widget offscreen
+ * caches. The alpha table is precomputed once for per-pixel compositing.
  */
 class NINA {
 protected:

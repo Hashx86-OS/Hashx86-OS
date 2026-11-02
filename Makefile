@@ -85,7 +85,7 @@ objects = \
 	$(BUILD_DIR)/obj/gui/messagebox.o \
 	$(BUILD_DIR)/obj/gui/progressbar.o \
 	$(BUILD_DIR)/obj/gui/render/raster.o \
-	$(BUILD_DIR)/obj/gui/renderer/nina.o \
+	$(BUILD_DIR)/obj/gui/render/nina.o \
 	$(BUILD_DIR)/obj/gui/terminalview.o \
 	$(BUILD_DIR)/obj/gui/taskbar.o \
 	$(BUILD_DIR)/obj/gui/widget.o \

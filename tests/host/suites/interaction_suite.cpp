@@ -42,8 +42,8 @@
 #include <gui/imageview.h>
 #include <gui/listview.h>
 #include <gui/mathutil.h>
+#include <gui/render/nina.h>
 #include <gui/render/raster.h>
-#include <gui/renderer/nina.h>
 #include <gui/scrollbar.h>
 #include <gui/scrollcontainer.h>
 #include <gui/slider.h>

@@ -35,7 +35,7 @@ The following files are portable and **must not** include `<core/...>`:
   `tabs`, `radiobutton`, `spinbox`, `tooltip`, `textbox`, `imageview`,
   `contextmenu`, `layout`
 - `gui/elements/*.cpp`, `gui/input/*.cpp`
-- `gui/render/raster.cpp`, `gui/renderer/nina.cpp`, `gui/fonts/font.cpp`
+- `gui/render/raster.cpp`, `gui/render/nina.cpp`, `gui/fonts/font.cpp`
 
 Everything they need from the environment goes through:
 

@@ -141,29 +141,23 @@ void RasterSurface::DrawBitmap(int32_t x, int32_t y, const uint32_t* bitmapData,
 }
 
 void RasterSurface::FillRectangle(int32_t x, int32_t y, int32_t w, int32_t h, uint32_t colorIndex) {
-    if (!NINA::activeInstance) return;
-    NINA::activeInstance->FillRectangle(this->backBuffer, this->width, this->height, x, y, w, h,
-                                        colorIndex);
+    nina.FillRectangle(this->backBuffer, this->width, this->height, x, y, w, h, colorIndex);
 }
 
 void RasterSurface::DrawRectangle(int32_t x, int32_t y, int32_t w, int32_t h, uint32_t colorIndex) {
-    if (!NINA::activeInstance) return;
-    NINA::activeInstance->DrawRectangle(this->backBuffer, this->width, this->height, x, y, w, h,
-                                        colorIndex);
+    nina.DrawRectangle(this->backBuffer, this->width, this->height, x, y, w, h, colorIndex);
 }
 
 void RasterSurface::FillRoundedRectangle(int32_t x, int32_t y, int32_t w, int32_t h,
                                          uint32_t radius, uint32_t colorIndex) {
-    if (!NINA::activeInstance) return;
-    NINA::activeInstance->FillRoundedRectangle(this->backBuffer, this->width, this->height, x, y, w,
-                                               h, radius, colorIndex);
+    nina.FillRoundedRectangle(this->backBuffer, this->width, this->height, x, y, w, h, radius,
+                              colorIndex);
 }
 
 void RasterSurface::DrawRoundedRectangle(int32_t x, int32_t y, int32_t w, int32_t h,
                                          uint32_t radius, uint32_t colorIndex) {
-    if (!NINA::activeInstance) return;
-    NINA::activeInstance->DrawRoundedRectangle(this->backBuffer, this->width, this->height, x, y, w,
-                                               h, radius, colorIndex);
+    nina.DrawRoundedRectangle(this->backBuffer, this->width, this->height, x, y, w, h, radius,
+                              colorIndex);
 }
 
 void RasterSurface::DrawRoundedRectangleShadow(int32_t x, int32_t y, int32_t w, int32_t h,
@@ -321,46 +315,33 @@ void RasterSurface::BlurRoundedRectangle(int32_t x, int32_t y, int32_t w, int32_
 }
 
 void RasterSurface::FillCircle(int32_t cx, int32_t cy, uint32_t radius, uint32_t colorIndex) {
-    if (!NINA::activeInstance) return;
-    NINA::activeInstance->FillCircle(this->backBuffer, this->width, this->height, cx, cy, radius,
-                                     colorIndex);
+    nina.FillCircle(this->backBuffer, this->width, this->height, cx, cy, radius, colorIndex);
 }
 
 void RasterSurface::DrawCircle(int32_t cx, int32_t cy, uint32_t radius, uint32_t colorIndex) {
-    if (!NINA::activeInstance) return;
-    NINA::activeInstance->DrawCircle(this->backBuffer, this->width, this->height, cx, cy, radius,
-                                     colorIndex);
+    nina.DrawCircle(this->backBuffer, this->width, this->height, cx, cy, radius, colorIndex);
 }
 
 void RasterSurface::DrawLine(int32_t x0, int32_t y0, int32_t x1, int32_t y1, uint32_t color) {
-    if (!NINA::activeInstance) return;
-    NINA::activeInstance->DrawLine(this->backBuffer, this->width, this->height, x0, y0, x1, y1,
-                                   color);
+    nina.DrawLine(this->backBuffer, this->width, this->height, x0, y0, x1, y1, color);
 }
 
 void RasterSurface::DrawHorizontalLine(int32_t x, int32_t y, int32_t length, uint32_t colorIndex) {
-    if (!NINA::activeInstance) return;
-    NINA::activeInstance->DrawHorizontalLine(this->backBuffer, this->width, this->height, x, y,
-                                             length, colorIndex);
+    nina.DrawHorizontalLine(this->backBuffer, this->width, this->height, x, y, length, colorIndex);
 }
 
 void RasterSurface::DrawVerticalLine(int32_t x, int32_t y, int32_t length, uint32_t colorIndex) {
-    if (!NINA::activeInstance) return;
-    NINA::activeInstance->DrawVerticalLine(this->backBuffer, this->width, this->height, x, y,
-                                           length, colorIndex);
+    nina.DrawVerticalLine(this->backBuffer, this->width, this->height, x, y, length, colorIndex);
 }
 
 void RasterSurface::DrawCharacter(int32_t x, int32_t y, char c, Font* font, uint32_t colorIndex) {
-    if (!NINA::activeInstance) return;
-    NINA::activeInstance->DrawCharacter(this->backBuffer, this->width, this->height, x, y, c, font,
-                                        colorIndex);
+    nina.DrawCharacter(this->backBuffer, this->width, this->height, x, y, c, font, colorIndex);
 }
 
 void RasterSurface::DrawString(int32_t startX, int32_t startY, const char* str, Font* font,
                                uint32_t colorIndex) {
-    if (!NINA::activeInstance) return;
-    NINA::activeInstance->DrawString(this->backBuffer, this->width, this->height, startX, startY,
-                                     str, font, colorIndex);
+    nina.DrawString(this->backBuffer, this->width, this->height, startX, startY, str, font,
+                    colorIndex);
 }
 
 void RasterSurface::GetScreenCenter(uint32_t w, uint32_t h, int32_t& x, int32_t& y) {

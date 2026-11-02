@@ -25,7 +25,7 @@
 #define KDBG_COMPONENT "GUI:TERMINALVIEW"
 #include <gui/desktop.h>
 #include <gui/fonts/font.h>
-#include <gui/renderer/nina.h>
+#include <gui/render/nina.h>
 #include <gui/terminalview.h>
 #include <utils/linkedList.h>
 

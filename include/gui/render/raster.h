@@ -25,7 +25,7 @@
 #ifndef RASTER_H
 #define RASTER_H
 
-#include <gui/renderer/nina.h>
+#include <gui/render/nina.h>
 #include <types.h>
 
 /**
