@@ -67,6 +67,8 @@ MessageBox::MessageBox(CompositeWidget* parent, int32_t width, int32_t height)
     y = (GUI_SCREEN_HEIGHT - h) / 2;
 
     SetPID(0);  // Kernel/system owned, so app cleanup never tears it down.
+    // The dialog is cached and reused; closing only hides it.
+    SetDeleteOnClose(false);
     setWindowTitle("Confirm");
 
     messageLabel = new Label(this, MSGBOX_TEXT_X, MSGBOX_TEXT_Y, MSGBOX_TEXT_W, 24, "");

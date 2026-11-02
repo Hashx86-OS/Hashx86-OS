@@ -23,25 +23,19 @@
  */
 
 #define KDBG_COMPONENT "GUI:LISTVIEW"
-#include <core/scheduler.h>
-#include <gui/desktop.h>
 #include <gui/listview.h>
+#include <gui/mathutil.h>
+#include <gui/widgetHost.h>
 
 ListView::ListView(Widget* parent, int32_t x, int32_t y, int32_t w, int32_t h)
     : Widget(parent, x, y, w, h),
+      columnCount(0),
       itemCount(0),
       scrollOffset(0),
       selectedIndex(-1),
       hoveredIndex(-1) {
-    this->font = FontManager::activeInstance->getNewFont();
-    this->font->setSize(TINY);
-    const char* defaultHeader = "Name";
-    int i = 0;
-    while (defaultHeader[i] && i < 31) {
-        headerText[i] = defaultHeader[i];
-        i++;
-    }
-    headerText[i] = 0;
+    this->font = FontManager::activeInstance ? FontManager::activeInstance->getNewFont() : nullptr;
+    if (this->font) this->font->setSize(TINY);
 
     // The cache is allocated by the Widget constructor; do not reallocate here.
 }
@@ -61,32 +55,52 @@ void ListView::Clear() {
     MarkDirty();
 }
 
-void ListView::AddItem(const char* name, uint32_t size, uint8_t type) {
-    if (itemCount >= LISTVIEW_MAX_ITEMS) return;
-    ListViewItem& item = items[itemCount];
-    const char* safeName = name ? name : "";
+bool ListView::AddColumn(const char* title, int32_t width) {
+    if (columnCount >= LISTVIEW_MAX_COLUMNS) return false;
+    ListViewColumn& col = columns[columnCount];
+    const char* safeTitle = title ? title : "";
     int i = 0;
-    while (safeName[i] && i < 63) {
-        item.name[i] = safeName[i];
+    while (safeTitle[i] && i < LISTVIEW_TITLE_LEN - 1) {
+        col.title[i] = safeTitle[i];
         i++;
     }
-    item.name[i] = 0;
-    item.size = size;
+    col.title[i] = 0;
+    col.width = width;
+    columnCount++;
+    MarkDirty();
+    return true;
+}
+
+void ListView::AddItem(const char* const* cells, int cellCount, uint8_t type) {
+    if (itemCount >= LISTVIEW_MAX_ITEMS) return;
+    ListViewItem& item = items[itemCount];
+
+    for (int c = 0; c < LISTVIEW_MAX_COLUMNS; c++) {
+        item.cells[c][0] = 0;
+    }
+    int count = cellCount < LISTVIEW_MAX_COLUMNS ? cellCount : LISTVIEW_MAX_COLUMNS;
+    for (int c = 0; c < count; c++) {
+        const char* src = (cells && cells[c]) ? cells[c] : "";
+        int j = 0;
+        while (src[j] && j < LISTVIEW_CELL_LEN - 1) {
+            item.cells[c][j] = src[j];
+            j++;
+        }
+        item.cells[c][j] = 0;
+    }
+
     item.type = type;
     item.valid = true;
     itemCount++;
     MarkDirty();
 }
 
-void ListView::SetHeader(const char* text) {
-    const char* safeText = text ? text : "";
-    int i = 0;
-    while (safeText[i] && i < 31) {
-        headerText[i] = safeText[i];
-        i++;
+void ListView::AddItemData(const ListViewItemData& data) {
+    const char* cellPtrs[GUI_LISTVIEW_MAX_COLUMNS];
+    for (int c = 0; c < GUI_LISTVIEW_MAX_COLUMNS; c++) {
+        cellPtrs[c] = data.cells[c];
     }
-    headerText[i] = 0;
-    MarkDirty();
+    AddItem(cellPtrs, GUI_LISTVIEW_MAX_COLUMNS, data.type);
 }
 
 const ListViewItem* ListView::GetItem(int index) const {
@@ -99,14 +113,7 @@ void ListView::SetItemHeight(int h) {
     int contentH = this->h - LISTVIEW_HEADER_HEIGHT - 2;
     if (contentH > 0 && h > contentH) h = contentH;
     itemHeight = h;
-    int visibleItems = contentH > 0 ? contentH / itemHeight : 0;
-    if (visibleItems < 1 && itemCount > 0) {
-        itemHeight = contentH > 0 ? contentH : 10;
-        visibleItems = 1;
-    }
-    int maxOff = itemCount - (visibleItems > 0 ? visibleItems : 1);
-    if (maxOff < 0) maxOff = 0;
-    if (scrollOffset > maxOff) scrollOffset = maxOff;
+    ClampScrollOffset();
     MarkDirty();
 }
 
@@ -115,49 +122,62 @@ void ListView::OnKeyDown(const char* key) {
     if (key[0] == 0) return;
 
     if (key[0] == '\r' || key[0] == '\n' || key[0] == ' ') {
-        // Enter or Space fire a click event.
-        if (selectedIndex >= 0) {
-            Event* new_event = new Event{this->ID, ON_CLICK};
-            if (!new_event) return;
-            if (!Desktop::activeInstance) {
-                delete new_event;
-                return;
-            }
-            EventHandler* handler = Desktop::activeInstance->getHandler(this->PID);
-            if (!handler) {
-                delete new_event;
-                return;
-            }
-            handler->eventQueue.Add(new_event);
-            if (g_scheduler && handler->thread) {
-                g_scheduler->WakeThread(handler->thread);
-            }
+        // Enter or Space fire a click event. PID 0 means no owning process.
+        if (selectedIndex >= 0 && g_widgetHost && PID != 0) {
+            g_widgetHost->PostEvent(this->PID, this->ID, ON_CLICK);
+            g_widgetHost->WakeProcess(this->PID);
         }
     }
 }
 
 void ListView::OnSpecialKeyDown(uint8_t key) {
-    if (!enabled || !isVisible) return;
+    if (!enabled || !isVisible || itemCount <= 0) return;
 
-    if (key == 0x48) {
-        if (selectedIndex > 0) {
-            selectedIndex--;
-            if (selectedIndex < scrollOffset) {
-                scrollOffset = selectedIndex;
+    const int visible = GetVisibleItemCount();
+    const int last = itemCount - 1;
+    bool handled = true;
+
+    switch (key) {
+        case 0x48:  // Up.
+            if (selectedIndex < 0) {
+                selectedIndex = last;
+            } else if (selectedIndex > 0) {
+                selectedIndex--;
             }
-            MarkDirty();
-        }
-    } else if (key == 0x50) {
-        if (selectedIndex < itemCount - 1) {
-            selectedIndex++;
-            int contentH = h - LISTVIEW_HEADER_HEIGHT - 2;
-            int visibleItems = contentH / itemHeight;
-            if (visibleItems > 0 && selectedIndex >= scrollOffset + visibleItems) {
-                scrollOffset = selectedIndex - visibleItems + 1;
+            break;
+        case 0x50:  // Down.
+            if (selectedIndex < 0) {
+                selectedIndex = 0;
+            } else if (selectedIndex < last) {
+                selectedIndex++;
             }
-            MarkDirty();
-        }
+            break;
+        case 0x47:  // Home.
+            selectedIndex = 0;
+            break;
+        case 0x4F:  // End.
+            selectedIndex = last;
+            break;
+        case 0x49:  // Page up.
+            selectedIndex = (selectedIndex < 0) ? 0 : selectedIndex - visible;
+            if (selectedIndex < 0) selectedIndex = 0;
+            break;
+        case 0x51:  // Page down.
+            if (selectedIndex < 0) {
+                selectedIndex = 0;
+            } else {
+                selectedIndex += visible;
+                if (selectedIndex > last) selectedIndex = last;
+            }
+            break;
+        default:
+            handled = false;
+            break;
     }
+
+    if (!handled) return;
+    EnsureSelectionVisible();
+    MarkDirty();
 }
 
 void ListView::update() {
@@ -179,21 +199,126 @@ bool ListView::SetSelectedIndex(int index) {
     selectedIndex = index;
 
     if (index >= 0) {
-        int contentH = h - LISTVIEW_HEADER_HEIGHT - 2;
-        int visibleItems = contentH > 0 ? contentH / itemHeight : 0;
-        if (index < scrollOffset) {
-            scrollOffset = index;
-        } else if (visibleItems > 0 && index >= scrollOffset + visibleItems) {
-            scrollOffset = index - visibleItems + 1;
-        }
+        EnsureSelectionVisible();
     }
 
     MarkDirty();
     return true;
 }
 
+/**
+ * ListView::ContentWidth() - Return the pixel width available to columns.
+ *
+ * The scrollbar gutter is only subtracted when the list actually needs one, so
+ * a short list uses the full width.
+ */
+int ListView::ContentWidth() const {
+    return w - 2 - (NeedScrollbar() ? LISTVIEW_SCROLLBAR_WIDTH : 0);
+}
+
+/**
+ * ListView::ColumnGeometry() - Compute each column's x position and width.
+ * @x: Receives the left edge of each column.
+ * @cw: Receives the width of each column.
+ *
+ * Fixed-width columns keep their width; zero-width columns split whatever is
+ * left. With no columns at all the row is a single implicit column so a
+ * column-less list still renders sensibly.
+ */
+void ListView::ColumnGeometry(int32_t* x, int32_t* cw) const {
+    int contentW = ContentWidth();
+
+    if (columnCount <= 0) {
+        x[0] = 4;
+        int single = contentW - 8;
+        cw[0] = single > 0 ? single : 0;
+        return;
+    }
+
+    int fixed = 0;
+    int autos = 0;
+    for (int c = 0; c < columnCount; c++) {
+        if (columns[c].width > 0) {
+            fixed += columns[c].width;
+        } else {
+            autos++;
+        }
+    }
+
+    int pad = 4 * (columnCount + 1);
+    int autoW = autos > 0 ? (contentW - fixed - pad) / autos : 0;
+    if (autoW < 24) autoW = 24;
+
+    int cur = 4;
+    for (int c = 0; c < columnCount; c++) {
+        int wc = columns[c].width > 0 ? columns[c].width : autoW;
+        x[c] = cur;
+        cw[c] = wc;
+        cur += wc + 4;
+    }
+}
+
+bool ListView::NeedScrollbar() const {
+    int contentH = h - LISTVIEW_HEADER_HEIGHT - 2;
+    if (contentH <= 0 || itemHeight <= 0) return false;
+    // A list too narrow to hold the row text plus the gutter gets no
+    // scrollbar; otherwise the whole widget would be treated as thumb.
+    if (w <= LISTVIEW_SCROLLBAR_WIDTH + 2) return false;
+    return itemCount > contentH / itemHeight;
+}
+
+int ListView::HitRow(int32_t localY) const {
+    int visible = GetVisibleItemCount();
+    if (visible <= 0 || itemCount <= 0) return -1;
+
+    const int32_t top = LISTVIEW_HEADER_HEIGHT + 1;
+    const int64_t rowsHeight = (int64_t)visible * itemHeight;
+    if (localY < top || (int64_t)localY >= (int64_t)top + rowsHeight) return -1;
+
+    int row = scrollOffset + (int)((localY - top) / itemHeight);
+    if (row < 0 || row >= itemCount) return -1;
+    return row;
+}
+
+int ListView::ScrollbarThumbHeight(int visibleItems, int sbH) const {
+    if (visibleItems <= 0 || sbH <= 0 || itemCount <= 0) return 0;
+    uint32_t thumbH = GuiMulDivU32((uint64_t)visibleItems * (uint64_t)sbH, (uint32_t)itemCount);
+    if (thumbH < 10) thumbH = 10;
+    if (thumbH > (uint32_t)sbH) thumbH = (uint32_t)sbH;
+    return (int)thumbH;
+}
+
+int ListView::ScrollbarThumbY(int visibleItems, int sbH, int thumbH) const {
+    const int top = LISTVIEW_HEADER_HEIGHT + 1;
+    if (visibleItems <= 0 || itemCount <= visibleItems) return top;
+    int travel = sbH - thumbH;
+    if (travel <= 0) return top;
+    uint32_t offset = GuiMulDivU32((uint64_t)scrollOffset * (uint64_t)travel,
+                                   (uint32_t)(itemCount - visibleItems));
+    return top + (int)offset;
+}
+
+void ListView::ClampScrollOffset() {
+    int maxOff = itemCount - GetVisibleItemCount();
+    if (maxOff < 0) maxOff = 0;
+    if (scrollOffset < 0) scrollOffset = 0;
+    if (scrollOffset > maxOff) scrollOffset = maxOff;
+}
+
+void ListView::EnsureSelectionVisible() {
+    int visible = GetVisibleItemCount();
+    if (selectedIndex >= 0) {
+        if (selectedIndex < scrollOffset) {
+            scrollOffset = selectedIndex;
+        } else if (visible > 0 && selectedIndex >= scrollOffset + visible) {
+            scrollOffset = selectedIndex - visible + 1;
+        }
+    }
+    ClampScrollOffset();
+}
+
 void ListView::RedrawToCache() {
-    if (!cache) {
+    if (!cache || !NINA::activeInstance) {
         isDirty = false;
         return;
     }
@@ -205,21 +330,26 @@ void ListView::RedrawToCache() {
     // Border
     NINA::activeInstance->DrawRoundedRectangle(cache, w, h, 0, 0, w, h, 4, LISTVIEW_BORDER);
 
-    // Header bar.
+    // Column geometry (shared by the header and the rows).
+    int32_t colX[LISTVIEW_MAX_COLUMNS];
+    int32_t colW[LISTVIEW_MAX_COLUMNS];
+    ColumnGeometry(colX, colW);
+
+    // Header bar: one title per appended column.
     NINA::activeInstance->FillRectangle(cache, w, h, 1, 1, w - 2, LISTVIEW_HEADER_HEIGHT,
                                         LISTVIEW_HEADER_BG);
-    NINA::activeInstance->DrawString(cache, w, h, 28, 4, headerText, font, LISTVIEW_HEADER_TEXT);
-
-    // Size column header.
-    NINA::activeInstance->DrawString(cache, w, h, w - 80, 4, "Size", font, LISTVIEW_HEADER_TEXT);
+    for (int c = 0; c < columnCount; c++) {
+        int tx = colX[c] + (c == 0 ? 20 : 4);
+        NINA::activeInstance->DrawString(cache, w, h, tx, 4, columns[c].title, font,
+                                         LISTVIEW_HEADER_TEXT);
+    }
 
     // Separator under the header.
     NINA::activeInstance->DrawHorizontalLine(cache, w, h, 1, LISTVIEW_HEADER_HEIGHT, w - 2,
                                              LISTVIEW_BORDER);
 
     // Calculate the visible range.
-    int contentH = h - LISTVIEW_HEADER_HEIGHT - 2;
-    int visibleItems = contentH / itemHeight;
+    int visibleItems = GetVisibleItemCount();
     int startItem = scrollOffset;
     int endItem = startItem + visibleItems;
     if (endItem > itemCount) endItem = itemCount;
@@ -241,7 +371,7 @@ void ListView::RedrawToCache() {
         }
         NINA::activeInstance->FillRectangle(cache, w, h, 1, itemY, w - 2, itemHeight, bgColor);
 
-        // Icon indicator (small colored circle).
+        // Icon indicator (small colored circle) beside the first column.
         uint32_t iconColor;
         switch (items[i].type) {
             case 1:
@@ -256,79 +386,40 @@ void ListView::RedrawToCache() {
         }
         NINA::activeInstance->FillCircle(cache, w, h, 12, itemY + itemHeight / 2, 4, iconColor);
 
-        // Name text.
-        NINA::activeInstance->DrawString(cache, w, h, 22, itemY + 2, items[i].name, font,
-                                         LISTVIEW_ITEM_TEXT);
-
-        // Size text (if not a directory).
-        if (items[i].type != 1) {
-            char sizeStr[16];
-            uint32_t sz = items[i].size;
-            if (sz >= 1024) {
-                int kb = sz / 1024;
-                int pos = 0;
-                char tmp[16];
-                if (kb == 0) {
-                    tmp[pos++] = '0';
-                } else {
-                    while (kb > 0) {
-                        tmp[pos++] = '0' + (kb % 10);
-                        kb /= 10;
-                    }
-                }
-                for (int j = 0; j < pos; j++) {
-                    sizeStr[j] = tmp[pos - 1 - j];
-                }
-                sizeStr[pos] = ' ';
-                sizeStr[pos + 1] = 'K';
-                sizeStr[pos + 2] = 'B';
-                sizeStr[pos + 3] = 0;
-            } else {
-                int pos = 0;
-                char tmp[16];
-                uint32_t v = sz;
-                if (v == 0) {
-                    tmp[pos++] = '0';
-                } else {
-                    while (v > 0) {
-                        tmp[pos++] = '0' + (v % 10);
-                        v /= 10;
-                    }
-                }
-                for (int j = 0; j < pos; j++) {
-                    sizeStr[j] = tmp[pos - 1 - j];
-                }
-                sizeStr[pos] = ' ';
-                sizeStr[pos + 1] = 'B';
-                sizeStr[pos + 2] = 0;
+        // One text cell per column.
+        if (columnCount > 0) {
+            for (int c = 0; c < columnCount; c++) {
+                int tx = colX[c] + (c == 0 ? 20 : 4);
+                uint32_t textColor = (c == 0) ? LISTVIEW_ITEM_TEXT : 0xFF6C7086;
+                NINA::activeInstance->DrawString(cache, w, h, tx, itemY + 2, items[i].cells[c],
+                                                 font, textColor);
             }
-            NINA::activeInstance->DrawString(cache, w, h, w - 80, itemY + 2, sizeStr, font,
-                                             0xFF6C7086);
         } else {
-            NINA::activeInstance->DrawString(cache, w, h, w - 80, itemY + 2, "<DIR>", font,
-                                             0xFF89B4FA);
+            // No columns appended yet: fall back to the first cell full width.
+            NINA::activeInstance->DrawString(cache, w, h, 22, itemY + 2, items[i].cells[0], font,
+                                             LISTVIEW_ITEM_TEXT);
         }
     }
 
     // Scrollbar, if needed.
-    if (itemCount > visibleItems && visibleItems > 0) {
+    if (NeedScrollbar()) {
         int sbX = w - LISTVIEW_SCROLLBAR_WIDTH - 1;
         int sbY = LISTVIEW_HEADER_HEIGHT + 1;
-        int sbH = contentH;
+        int sbH = h - LISTVIEW_HEADER_HEIGHT - 2;
         NINA::activeInstance->FillRectangle(cache, w, h, sbX, sbY, LISTVIEW_SCROLLBAR_WIDTH, sbH,
                                             LISTVIEW_SCROLLBAR_BG);
 
-        // Thumb.
-        int thumbH = (visibleItems * sbH) / itemCount;
-        if (thumbH < 10) thumbH = 10;
-        int thumbY = sbY + (scrollOffset * (sbH - thumbH)) / (itemCount - visibleItems);
+        // Thumb. The geometry helpers are shared with hit-testing so the drawn
+        // thumb and the clickable thumb can never disagree by a few pixels.
+        int thumbH = ScrollbarThumbHeight(visibleItems, sbH);
+        int thumbY = ScrollbarThumbY(visibleItems, sbH, thumbH);
         NINA::activeInstance->FillRoundedRectangle(cache, w, h, sbX, thumbY,
                                                    LISTVIEW_SCROLLBAR_WIDTH, thumbH, 3,
                                                    LISTVIEW_SCROLLBAR_THUMB);
     }
 
     // Empty state.
-    if (itemCount == 0) {
+    if (itemCount == 0 && FontManager::activeInstance) {
         Font* msgFont = FontManager::activeInstance->getNewFont();
         if (msgFont) {
             msgFont->setSize(SMALL);
@@ -342,92 +433,120 @@ void ListView::RedrawToCache() {
 }
 
 void ListView::OnMouseDown(int32_t mx, int32_t my, uint8_t button) {
-    if (!isVisible) return;
+    if (!enabled || !isVisible) return;
 
     Widget::OnMouseDown(mx, my, button);
+    if (button != 1) return;
 
-    int localY = my - this->y;
+    // Coordinates arrive in the parent's frame; ListView-local geometry starts
+    // at (this->x, this->y).
     int localX = mx - this->x;
+    int localY = my - this->y;
 
-    if (localY > LISTVIEW_HEADER_HEIGHT && localY < h && localX >= 0 &&
-        localX < w - LISTVIEW_SCROLLBAR_WIDTH) {
-        int clickedItem = scrollOffset + (localY - LISTVIEW_HEADER_HEIGHT - 1) / itemHeight;
-        if (clickedItem >= 0 && clickedItem < itemCount) {
-            selectedIndex = clickedItem;
-            MarkDirty();
-
-            Event* new_event = new Event{this->ID, ON_CLICK};
-            if (!new_event) {
-                HALT("CRITICAL: Failed to allocate ListView click event!\n");
-            }
-
-            if (!Desktop::activeInstance) {
-                delete new_event;
-                return;
-            }
-
-            EventHandler* handler = Desktop::activeInstance->getHandler(this->PID);
-            if (!handler) {
-                delete new_event;
-                return;
-            }
-
-            handler->eventQueue.Add(new_event);
-            if (g_scheduler && handler->thread) {
-                g_scheduler->WakeThread(handler->thread);
-            }
-        }
-    }
-
-    // Scrollbar thumb drag.
-    if (localX >= w - LISTVIEW_SCROLLBAR_WIDTH - 1 && localX < w &&
+    // Scrollbar column: grab the thumb or page toward the click.
+    if (NeedScrollbar() && localX >= w - LISTVIEW_SCROLLBAR_WIDTH - 1 && localX < w &&
         localY > LISTVIEW_HEADER_HEIGHT && localY < h) {
-        isDraggingThumb = true;
-        dragStartY = my;
-        dragStartOffset = scrollOffset;
-    }
-}
+        int visibleItems = GetVisibleItemCount();
+        int sbH = h - LISTVIEW_HEADER_HEIGHT - 2;
+        int thumbH = ScrollbarThumbHeight(visibleItems, sbH);
+        int thumbY = ScrollbarThumbY(visibleItems, sbH, thumbH);
 
-void ListView::OnMouseUp(int32_t, int32_t, uint8_t) {
-    isDraggingThumb = false;
-}
-
-void ListView::OnMouseMove(int32_t, int32_t oldy, int32_t mx, int32_t my) {
-    if (!isFocused) return;
-
-    if (isDraggingThumb) {
-        int contentH = h - LISTVIEW_HEADER_HEIGHT - 2;
-        int visibleItems = contentH / itemHeight;
-        if (visibleItems <= 0 || itemCount <= visibleItems) return;
-        int sbH = contentH;
-        int thumbH = (visibleItems * sbH) / itemCount;
-        if (thumbH < 10) thumbH = 10;
-        int travel = sbH - thumbH;
-        if (travel <= 0) return;
-        int dy = my - dragStartY;
-        int deltaOff = (dy * (itemCount - visibleItems)) / travel;
-        int newOff = dragStartOffset + deltaOff;
-        if (newOff < 0) newOff = 0;
-        int maxOff = itemCount - visibleItems;
-        if (newOff > maxOff) newOff = maxOff;
-        if (newOff != scrollOffset) {
-            scrollOffset = newOff;
+        if (localY >= thumbY && localY < thumbY + thumbH) {
+            isDraggingThumb = true;
+            dragStartY = localY;
+            dragStartOffset = scrollOffset;
+            SetMouseCaptured(true);
+        } else {
+            int64_t newOff =
+                (int64_t)scrollOffset + ((localY < thumbY) ? -visibleItems : visibleItems);
+            int maxOff = itemCount - visibleItems;
+            if (maxOff < 0) maxOff = 0;
+            if (newOff < 0) newOff = 0;
+            if (newOff > maxOff) newOff = maxOff;
+            scrollOffset = (int)newOff;
             MarkDirty();
         }
         return;
     }
 
-    int localY = my - this->y;
+    // Row selection. The right edge is only reserved for a scrollbar that is
+    // actually shown; otherwise a short list uses the full width.
+    int rowRight = NeedScrollbar() ? (w - LISTVIEW_SCROLLBAR_WIDTH - 1) : (w - 1);
+    int clickedItem = HitRow(localY);
+    if (clickedItem >= 0 && localX >= 0 && localX < rowRight) {
+        selectedIndex = clickedItem;
+        MarkDirty();
+
+        if (g_widgetHost && PID != 0) {
+            g_widgetHost->PostEvent(this->PID, this->ID, ON_CLICK);
+            g_widgetHost->WakeProcess(this->PID);
+        }
+    }
+}
+
+void ListView::OnMouseWheel(int32_t delta) {
+    if (!enabled || !isVisible) return;
+    int visibleItems = GetVisibleItemCount();
+    if (visibleItems <= 0) return;
+
+    int maxOff = itemCount - visibleItems;
+    if (maxOff < 0) maxOff = 0;
+
+    // Compute in 64-bit so a hostile wheel delta cannot overflow the multiply.
+    int64_t next = (int64_t)scrollOffset - (int64_t)delta * 3;
+    if (next < 0) next = 0;
+    if (next > maxOff) next = maxOff;
+    if (next != scrollOffset) {
+        scrollOffset = (int)next;
+        MarkDirty();
+    }
+}
+
+void ListView::OnMouseUp(int32_t, int32_t, uint8_t) {
+    isDraggingThumb = false;
+    SetMouseCaptured(false);
+}
+
+void ListView::OnMouseMove(int32_t, int32_t oldy, int32_t mx, int32_t my) {
+    (void)oldy;
+    if (!enabled || !isVisible) return;
+
     int localX = mx - this->x;
-    if (localY > LISTVIEW_HEADER_HEIGHT && localY < h) {
-        if (localX >= 0 && localX < w - LISTVIEW_SCROLLBAR_WIDTH) {
-            int hovered = scrollOffset + (localY - LISTVIEW_HEADER_HEIGHT - 1) / itemHeight;
-            if (hovered >= 0 && hovered < itemCount && hovered != hoveredIndex) {
-                hoveredIndex = hovered;
-                MarkDirty();
-            }
-        } else if (hoveredIndex >= 0) {
-            hoveredIndex = -1;
+    int localY = my - this->y;
+
+    // A thumb drag follows the pointer even after it leaves the list; the
+    // capture set on press keeps this callback coming.
+    if (isDraggingThumb) {
+        int visibleItems = GetVisibleItemCount();
+        if (visibleItems <= 0 || itemCount <= visibleItems) return;
+        int sbH = h - LISTVIEW_HEADER_HEIGHT - 2;
+        int thumbH = ScrollbarThumbHeight(visibleItems, sbH);
+        int travel = sbH - thumbH;
+        if (travel <= 0) return;
+
+        int64_t delta = (int64_t)localY - dragStartY;
+        if (delta > travel) delta = travel;
+        if (delta < -travel) delta = -travel;
+        int32_t range = itemCount - visibleItems;
+
+        int32_t deltaOff = GuiMulDivSigned((int32_t)delta, range, travel);
+        int64_t newOff = (int64_t)dragStartOffset + deltaOff;
+        if (newOff < 0) newOff = 0;
+        if (newOff > range) newOff = range;
+        if (newOff != scrollOffset) {
+            scrollOffset = (int)newOff;
+            MarkDirty();
+        }
+        return;
+    }
+
+    if (!isFocused) return;
+
+    int rowRight = NeedScrollbar() ? (w - LISTVIEW_SCROLLBAR_WIDTH - 1) : (w - 1);
+    int hovered = HitRow(localY);
+    if (hovered >= 0 && localX >= 0 && localX < rowRight) {
+        if (hovered != hoveredIndex) {
+            hoveredIndex = hovered;
             MarkDirty();
         }
     } else if (hoveredIndex >= 0) {

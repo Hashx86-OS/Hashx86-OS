@@ -29,6 +29,8 @@
 #include <core/settings.h>
 #include <gui/bootanim.h>
 #include <gui/desktop.h>
+#include <gui/fonts/fontKernel.h>
+#include <gui/widgetgallery.h>
 #include <kernel.h>
 
 #define DEBUG_ENABLED TRUE;
@@ -473,6 +475,11 @@ void pDesktop(void* arg) {
     VBE_font->setSize(MEDIUM);
 
     while (true) {
+        // Drivers queue decoded events; this is the single place where the
+        // GUI task turns them into widget mutations. It also drains deferred
+        // widget deletions from the previous frame.
+        desktop->ProcessInput();
+
         // Swap buffers only when something actually changed.
         uint32_t start = timerTicks;
 
@@ -619,6 +626,7 @@ void BootMain(void* arg) {
     if (!g_fManager) {
         HALT("CRITICAL: Failed to allocate FontManager!\n");
     }
+    FontManager::variantLoader = &KernelLoadFontFile;
 
     auto loadFontStyle = [&](const char* path, FontType style, bool critical) {
         File* f = g_bootPartition->Open(path);
@@ -633,7 +641,7 @@ void BootMain(void* arg) {
             }
             return;
         }
-        g_fManager->LoadFile(f, style, path);
+        LoadFontFromFile(g_fManager, f, style, path);
         f->Close();
         delete f;
         KDBG1("Loaded font style %d from %s", (int)style, path);
@@ -649,7 +657,7 @@ void BootMain(void* arg) {
     {
         File* f = g_bootPartition->Open(PATH_ICON_FONT);
         if (f && f->size > 0) {
-            g_fManager->LoadFile(f, REGULAR, PATH_ICON_FONT, 0xF000, 128);
+            LoadFontFromFile(g_fManager, f, REGULAR, PATH_ICON_FONT, 0xF000, 128);
             f->Close();
             delete f;
             KDBG1("Loaded icon font from %s", PATH_ICON_FONT);
@@ -703,6 +711,9 @@ void BootMain(void* arg) {
     if (!guiCalls) {
         HALT("CRITICAL: Failed to allocate HguiHandler!\n");
     }
+
+    // Open the widget gallery at boot so the full widget set can be inspected.
+    OpenWidgetGallery(desktop);
     // ---- Slow stage 5: PCI devices ------------------------------------------
     {
         // Keep the timer IRQ out of the command/ACK polling (an IRQ handler

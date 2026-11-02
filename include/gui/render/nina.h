@@ -31,11 +31,12 @@
 #include <types.h>
 
 /**
- * class NINA - Software rasterizer used by the graphics driver.
+ * class NINA - Low-level software rasterizer.
  *
  * Draws sprites, shapes, lines, and text into a 0xAARRGGBB pixel buffer.
- * All drawing operations take an explicit destination buffer and bounds; the
- * alpha table is precomputed once for per-pixel compositing.
+ * All drawing operations take an explicit destination buffer and bounds, so
+ * the same rasterizer serves RasterSurface and the per-widget offscreen
+ * caches. The alpha table is precomputed once for per-pixel compositing.
  */
 class NINA {
 protected:
@@ -86,22 +87,28 @@ public:
                     int32_t y, const uint32_t* bitmapData, int32_t bitmapWidth,
                     int32_t bitmapHeight);
 
-    /** FillRectangle() - Fill a clipped rectangle with a color. */
+    /**
+     * FillRectangle() - Fill a clipped rectangle with a color.
+     *
+     * Dimensions are signed: a non-positive width or height draws nothing.
+     * That matters because widgets routinely derive a size as `w - 2` for a
+     * border and must not turn a tiny widget into a huge unsigned rectangle.
+     */
     void FillRectangle(uint32_t* buffer, int32_t bufferWidth, int32_t bufferHeight, int32_t x,
-                       int32_t y, uint32_t w, uint32_t h, uint32_t colorIndex);
+                       int32_t y, int32_t w, int32_t h, uint32_t colorIndex);
 
     /** DrawRectangle() - Outline a clipped rectangle with a color. */
     void DrawRectangle(uint32_t* buffer, int32_t bufferWidth, int32_t bufferHeight, int32_t x,
-                       int32_t y, uint32_t w, uint32_t h, uint32_t colorIndex);
+                       int32_t y, int32_t w, int32_t h, uint32_t colorIndex);
 
     /** FillRoundedRectangle() - Fill a clipped rectangle with rounded corners. */
     void FillRoundedRectangle(uint32_t* buffer, int32_t bufferWidth, int32_t bufferHeight,
-                              int32_t x, int32_t y, uint32_t w, uint32_t h, uint32_t radius,
+                              int32_t x, int32_t y, int32_t w, int32_t h, uint32_t radius,
                               uint32_t colorIndex);
 
     /** DrawRoundedRectangle() - Outline a clipped rectangle with rounded corners. */
     void DrawRoundedRectangle(uint32_t* buffer, int32_t bufferWidth, int32_t bufferHeight,
-                              int32_t x, int32_t y, uint32_t w, uint32_t h, uint32_t radius,
+                              int32_t x, int32_t y, int32_t w, int32_t h, uint32_t radius,
                               uint32_t colorIndex);
 
     /** FillCircle() - Fill a clipped circle with a color. */

@@ -32,6 +32,11 @@ HListView::HListView(Widget* parent, int32_t x, int32_t y, uint32_t w, uint32_t 
 
 HListView::~HListView() {}
 
+void HListView::AddColumn(const char* title, int32_t width) {
+    WidgetData data = {this->ID, width, 0, 0, 0, title};
+    HguiAPI(LISTVIEW, ADD_COLUMN, (void*)&data);
+}
+
 void HListView::SetItems(ListViewItemData* items, int count) {
     WidgetData data = {this->ID, (uint32_t)count, 0, 0, 0, (const char*)items};
     HguiAPI(LISTVIEW, SET_ITEMS, (void*)&data);
@@ -50,9 +55,4 @@ int HListView::GetSelectedIndex() {
 bool HListView::SetSelectedIndex(int index) {
     WidgetData data = {this->ID, (int32_t)index, 0, 0, 0, nullptr};
     return (int32_t)HguiAPI(LISTVIEW, SET_SELECTED, (void*)&data) == 1;
-}
-
-void HListView::SetHeader(const char* text) {
-    WidgetData data = {this->ID, 0, 0, 0, 0, text};
-    HguiAPI(LISTVIEW, SET_TEXT, (void*)&data);
 }

@@ -88,10 +88,13 @@ public:
     void RedrawToCache() override;
 
     /** Draw() - Blit the input field to the screen. */
-    void Draw(GraphicsDriver* gc) override;
+    void Draw(RasterSurface* gc) override;
 
     /** OnKeyDown() - Insert the typed character and move the cursor. */
     void OnKeyDown(const char* key) override;
+
+    /** OnSpecialKeyDown() - Handle arrows, Home/End, Backspace and Delete. */
+    void OnSpecialKeyDown(uint8_t key) override;
 
     /** OnKeyUp() - Acknowledged key release. */
     void OnKeyUp(const char* key) override;

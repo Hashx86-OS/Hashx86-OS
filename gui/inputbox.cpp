@@ -41,10 +41,10 @@ static int isprint_local(char c) {
 
 InputBox::InputBox(Widget* parent, int32_t x, int32_t y, int32_t w, int32_t h, uint32_t capacity)
     : Widget(parent, x, y, w, h), capacity(capacity > 0 ? capacity : 1), length(0), cursorPos(0) {
-    this->font = FontManager::activeInstance->getNewFont();
+    this->font = FontManager::activeInstance ? FontManager::activeInstance->getNewFont() : nullptr;
     text = new char[this->capacity];
     if (!text) {
-        HALT("CRITICAL: Failed to allocate inputbox text buffer!\n");
+        guiplat::Abort("CRITICAL: Failed to allocate inputbox text buffer!\n");
     }
     text[0] = '\0';  // Start empty.
 }
@@ -54,9 +54,11 @@ InputBox::~InputBox() {
 }
 
 void InputBox::update() {
-    if (!cache) return;
-    // Clear the cache.
-    for (uint32_t i = 0; i < w * h; i++) cache[i] = 0;
+    if (!cache || w <= 0 || h <= 0) return;
+    // Clear the cache. The dimensions are signed; compute the count as size_t
+    // so a stale negative size can never wrap into a huge loop bound.
+    size_t count = (size_t)w * (size_t)h;
+    for (size_t i = 0; i < count; i++) cache[i] = 0;
     isDirty = true;
 }
 
@@ -75,6 +77,7 @@ void InputBox::setText(const char* newText) {
 }
 
 void InputBox::setSize(FontSize size) {
+    if (!this->font) return;
     this->font->setSize(size);
     update();
 }
@@ -85,6 +88,11 @@ void InputBox::setType(FontType type) {
 }
 
 void InputBox::RedrawToCache() {
+    if (!cache || !NINA::activeInstance) {
+        isDirty = false;
+        return;
+    }
+
     NINA::activeInstance->FillRoundedRectangle(cache, w, h, 0, 0, w, h, 3,
                                                isFocused ? INPUT_BG_ACTIVE : INPUT_BG_NORMAL);
     NINA::activeInstance->DrawRoundedRectangle(
@@ -95,7 +103,7 @@ void InputBox::RedrawToCache() {
     isDirty = false;
 }
 
-void InputBox::Draw(GraphicsDriver* gc) {
+void InputBox::Draw(RasterSurface* gc) {
     Widget::Draw(gc);
 }
 
@@ -121,6 +129,40 @@ void InputBox::OnKeyDown(const char* key) {
         length++;
         text[length] = '\0';
         update();
+    }
+}
+
+void InputBox::OnSpecialKeyDown(uint8_t key) {
+    switch (key) {
+        case 0x4B:  // Left.
+            if (cursorPos > 0) cursorPos--;
+            update();
+            break;
+        case 0x4D:  // Right.
+            if (cursorPos < length) cursorPos++;
+            update();
+            break;
+        case 0x47:  // Home.
+            cursorPos = 0;
+            update();
+            break;
+        case 0x4F:  // End.
+            cursorPos = length;
+            update();
+            break;
+        case 0x0E:  // Backspace.
+            OnKeyDown("Backspace");
+            break;
+        case 0x53:  // Delete.
+            if (cursorPos < length) {
+                memmove_local(&text[cursorPos], &text[cursorPos + 1], length - cursorPos);
+                length--;
+                text[length] = '\0';
+                update();
+            }
+            break;
+        default:
+            break;
     }
 }
 

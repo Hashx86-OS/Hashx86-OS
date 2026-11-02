@@ -35,6 +35,9 @@
 #define GUI_SCREEN_HEIGHT 768
 #define GUI_SCREEN_BPP 32
 
+// Icon font path, used by IconButton to resolve symbolic icon names.
+#define GUI_ICON_FONT_PATH "Hashx86/fonts/fa-solid-900.ttf"
+
 // All color constants below are packed as 0xAARRGGBB.
 #define DESKTOP_TASKBAR_BG 0xFF151515
 
@@ -90,6 +93,45 @@
 
 #define PROGRESSBAR_BG 0xFF373737
 #define PROGRESSBAR_BAR 0xFF0075D0
+
+// CheckBox / RadioButton.
+#define CHECKBOX_BOX_BG 0xFF373737
+#define CHECKBOX_BOX_BORDER 0xFFDDDDDD
+#define CHECKBOX_MARK 0xFF0075D0
+#define CHECKBOX_TEXT 0xFFFFFFFF
+
+// Toggle.
+#define TOGGLE_TRACK_OFF 0xFF373737
+#define TOGGLE_TRACK_ON 0xFF0075D0
+#define TOGGLE_KNOB 0xFFFFFFFF
+
+// Slider / ScrollBar.
+#define SLIDER_TRACK 0xFF373737
+#define SLIDER_THUMB 0xFF575757
+#define SCROLLBAR_BG 0xFF202020
+#define SCROLLBAR_THUMB 0xFF575757
+
+// Layout defaults.
+#define GUI_LAYOUT_SPACING 4
+#define GUI_LAYOUT_PADDING 4
+
+// Tabs.
+#define TABS_STRIP_BG 0xFF202020
+#define TABS_TAB_BG 0xFF2B2B2B
+#define TABS_TAB_ACTIVE_BG 0xFF373737
+#define TABS_TAB_TEXT 0xFFFFFFFF
+#define TABS_TAB_ACTIVE_TEXT 0xFFFFFFFF
+#define TABS_HEIGHT 24
+
+// Tooltip.
+#define TOOLTIP_BG 0xF0202020
+#define TOOLTIP_TEXT 0xFFFFFFFF
+
+// Context menu.
+#define MENU_BG 0xFF2B2B2B
+#define MENU_BORDER 0xFF474747
+#define MENU_TEXT 0xFFFFFFFF
+#define MENU_ITEM_HOVER 0xFF373737
 
 #define MSGBOXWIDTH 300
 #define MSGBOXHEIGHT 120

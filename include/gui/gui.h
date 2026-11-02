@@ -26,15 +26,30 @@
 #define GUI_H
 
 #include <gui/button.h>
+#include <gui/checkbox.h>
+#include <gui/combobox.h>
+#include <gui/contextmenu.h>
 #include <gui/desktop.h>
 #include <gui/iconbutton.h>
 #include <gui/icons.h>
+#include <gui/imageview.h>
 #include <gui/infodialog.h>
 #include <gui/inputbox.h>
 #include <gui/label.h>
+#include <gui/layout.h>
 #include <gui/progressbar.h>
+#include <gui/radiobutton.h>
+#include <gui/scrollbar.h>
+#include <gui/scrollcontainer.h>
+#include <gui/slider.h>
+#include <gui/spinbox.h>
+#include <gui/table.h>
+#include <gui/tabs.h>
 #include <gui/taskbar.h>
 #include <gui/terminalview.h>
+#include <gui/textbox.h>
+#include <gui/toggle.h>
+#include <gui/tooltip.h>
 #include <gui/widget.h>
 #include <gui/window.h>
 

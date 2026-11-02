@@ -23,7 +23,7 @@
  */
 
 #define KDBG_COMPONENT "GUI:ICONBTN"
-#include <core/filesystem/Paths.h>
+#include <debug.h>
 #include <gui/iconbutton.h>
 
 const IconMapping IconButton::iconTable[] = {
@@ -186,9 +186,9 @@ uint32_t IconButton::LookupIcon(const char* name) {
 
 static Font* loadIconFont() {
     if (!FontManager::activeInstance) return nullptr;
-    Font* f = FontManager::activeInstance->getFontByFilePath(PATH_ICON_FONT, SMALL, REGULAR);
+    Font* f = FontManager::activeInstance->getFontByFilePath(GUI_ICON_FONT_PATH, SMALL, REGULAR);
     if (!f) {
-        f = FontManager::activeInstance->getFontByFilePath(PATH_ICON_FONT, MEDIUM, REGULAR);
+        f = FontManager::activeInstance->getFontByFilePath(GUI_ICON_FONT_PATH, MEDIUM, REGULAR);
     }
     return f;
 }
@@ -239,7 +239,8 @@ void IconButton::SetIconMode(IconMode mode) {
 void IconButton::SetIconFontSize(int32_t px) {
     if (!FontManager::activeInstance) return;
     FontSize slot = Font::PixelToFontSlot(px);
-    Font* newFont = FontManager::activeInstance->getFontByFilePath(PATH_ICON_FONT, slot, REGULAR);
+    Font* newFont =
+        FontManager::activeInstance->getFontByFilePath(GUI_ICON_FONT_PATH, slot, REGULAR);
     if (!newFont) return;
     if (iconFont && iconFont != this->font) delete iconFont;
     iconFont = newFont;

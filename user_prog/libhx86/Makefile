@@ -4,7 +4,7 @@
 GPP = g++
 AR = ar
 
-INCLUDES = -Iinclude
+INCLUDES = -Iinclude -I../../include
 
 # Flags: Note the include path points to the local 'include' folder
 CPPFLAGS = -m32 -g -ffreestanding -fno-use-cxa-atexit -nostdlib -fno-builtin -fno-rtti -fno-exceptions -fno-common $(INCLUDES)

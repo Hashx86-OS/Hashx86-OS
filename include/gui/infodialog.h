@@ -85,7 +85,7 @@ public:
     void HideDialog();
 
     /** Draw() - Paint the dialog over its parent composite. */
-    void Draw(GraphicsDriver* gc) override;
+    void Draw(RasterSurface* gc) override;
 };
 
 #endif  // INFO_DIALOG_H

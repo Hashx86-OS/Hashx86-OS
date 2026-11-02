@@ -118,7 +118,8 @@ Scheduler::Scheduler(Paging* pager) {
     KDBG1("Scheduler initialized. Trampoline=0x%x", _trampolinePhys);
 }
 
-ProcessControlBlock* Scheduler::CreateProcess(bool isKernel, void (*entrypoint)(void*), void* arg) {
+ProcessControlBlock* Scheduler::CreateProcess(bool isKernel, void (*entrypoint)(void*), void* arg,
+                                              bool createMainThread) {
     InterruptGuard guard;
     ProcessControlBlock* pcb = new ProcessControlBlock();
     if (!pcb) {
@@ -126,6 +127,7 @@ ProcessControlBlock* Scheduler::CreateProcess(bool isKernel, void (*entrypoint)(
     }
     pcb->pid = _pidCounter++;
     pcb->isKernelProcess = isKernel;
+    pcb->mainEntry = entrypoint;
     pcb->appType = APP_BINARY_GUI;
     pcb->stdinHead = 0;
     pcb->stdinTail = 0;
@@ -164,35 +166,48 @@ ProcessControlBlock* Scheduler::CreateProcess(bool isKernel, void (*entrypoint)(
     // Register the PCB before CreateThread so the child is discoverable if scheduled.
     globalProcessList.PushBack(pcb);
 
-    // Create the main thread (stack setup).
-    ThreadControlBlock* mainThread = CreateThread(pcb, entrypoint, arg);
-    if (!mainThread) {
-        KDBG1("CreateProcess PID=%d Kernel=%d FAILED: CreateThread returned null", pcb->pid,
-              isKernel);
-        if (!isKernel && pcb->page_directory != _pager->KernelPageDirectory) {
-            for (uint32_t pd = 64; pd < 768; pd++) {
-                if (!(pcb->page_directory[pd] & PAGE_PRESENT)) continue;
-                uint32_t* pt = (uint32_t*)(pcb->page_directory[pd] & 0xFFFFF000);
-                for (uint32_t i = 0; i < 1024; i++) {
-                    if (!(pt[i] & PAGE_PRESENT)) continue;
-                    uint32_t phys = pt[i] & 0xFFFFF000;
-                    if (phys && phys != _trampolinePhys) {
-                        pmm_free_block((void*)phys);
+    // Create the main thread (stack setup). The ELF loader passes false so no
+    // runnable thread exists until its segments have been mapped.
+    if (createMainThread) {
+        ThreadControlBlock* mainThread = CreateThread(pcb, entrypoint, arg);
+        if (!mainThread) {
+            KDBG1("CreateProcess PID=%d Kernel=%d FAILED: CreateThread returned null", pcb->pid,
+                  isKernel);
+            if (!isKernel && pcb->page_directory != _pager->KernelPageDirectory) {
+                for (uint32_t pd = 64; pd < 768; pd++) {
+                    if (!(pcb->page_directory[pd] & PAGE_PRESENT)) continue;
+                    uint32_t* pt = (uint32_t*)(pcb->page_directory[pd] & 0xFFFFF000);
+                    for (uint32_t i = 0; i < 1024; i++) {
+                        if (!(pt[i] & PAGE_PRESENT)) continue;
+                        uint32_t phys = pt[i] & 0xFFFFF000;
+                        if (phys && phys != _trampolinePhys) {
+                            pmm_free_block((void*)phys);
+                        }
+                        pt[i] = 0;
                     }
-                    pt[i] = 0;
+                    pmm_free_block((void*)(pcb->page_directory[pd] & 0xFFFFF000));
+                    pcb->page_directory[pd] = 0;
                 }
-                pmm_free_block((void*)(pcb->page_directory[pd] & 0xFFFFF000));
-                pcb->page_directory[pd] = 0;
+                pmm_free_block(pcb->page_directory);
             }
-            pmm_free_block(pcb->page_directory);
+            globalProcessList.Remove([pcb](ProcessControlBlock* p) { return p == pcb; });
+            delete pcb;
+            return nullptr;
         }
-        globalProcessList.Remove([pcb](ProcessControlBlock* p) { return p == pcb; });
-        delete pcb;
-        return nullptr;
     }
 
     KDBG1("CreateProcess PID=%d Kernel=%d", pcb->pid, isKernel);
     return pcb;
+}
+
+bool Scheduler::StartProcess(ProcessControlBlock* pcb, void* arg) {
+    if (!pcb || !pcb->mainEntry) return false;
+
+    if (CreateThread(pcb, pcb->mainEntry, arg)) return true;
+
+    KDBG1("StartProcess PID=%d FAILED: could not create entry thread", pcb->pid);
+    KillProcess(pcb->pid);
+    return false;
 }
 
 ProcessControlBlock* Scheduler::FindProcess(uint32_t pid) {
@@ -592,6 +607,10 @@ ThreadControlBlock* Scheduler::CloneCurrentProcess(CPUState* parentContext, uint
 
     childProc->pid = _pidCounter++;
     childProc->isKernelProcess = false;
+    // A clone starts at the parent's cloned instruction pointer, not at a
+    // kernel entry function, so it has no mainEntry and cannot be passed to
+    // StartProcess().
+    childProc->mainEntry = nullptr;
     childProc->appType = parent->appType;
     childProc->parent = parent;
     // Inherit the working directory so sys_getcwd works in the child.

@@ -27,8 +27,20 @@ runs:
         sudo apt-get update
         sudo apt-get install -y --no-install-recommends \
           build-essential gcc-multilib g++-multilib nasm \
-          grub-common grub-pc-bin xorriso mtools \
-          clang-format
+          grub-common grub-pc-bin xorriso mtools
+
+    - name: Install pinned clang-format
+      shell: bash
+      run: |
+        # The tree is formatted with clang-format 18. Newer releases change
+        # spacing rules (for example around casts and empty function bodies),
+        # so pin the exact version the style check expects instead of taking
+        # whatever the runner image ships.
+        python3 -m pip install --user --disable-pip-version-check clang-format==18.1.3 || \
+          python3 -m pip install --user --disable-pip-version-check \
+            --break-system-packages clang-format==18.1.3
+        echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+        "$HOME/.local/bin/clang-format" --version
 
     - name: Run checks (style, license headers, EOF newlines)
       shell: bash
@@ -38,6 +50,11 @@ runs:
         make check-style
         ./check_headers.sh
         ./check_eof.sh
+        ./check_gui_boundary.sh
+
+    - name: Run host GUI tests (10k)
+      shell: bash
+      run: make gui-test
 
     - name: Clean build (kernel)
       shell: bash

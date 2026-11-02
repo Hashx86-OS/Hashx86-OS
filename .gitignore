@@ -9,3 +9,6 @@ kernel.map
 kernel.iso
 kernel.bin
 /build/
+tests/host/gui-test
+tests/host/gallery-preview
+tmp/*

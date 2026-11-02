@@ -55,7 +55,7 @@
 #include <gui/bmp.h>
 #include <gui/fonts/vga.h>
 #include <gui/gui.h>
-#include <gui/renderer/nina.h>
+#include <gui/render/nina.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <stdlib/fdlibm.h>

@@ -26,9 +26,68 @@
 #include <core/Iguard.h>
 #include <core/filesystem/Paths.h>
 #include <core/globals.h>
+#include <gui/contextmenu.h>
 #include <gui/desktop.h>
+#include <gui/widgetHost.h>
+#include <gui/widgetgallery.h>
 
 Desktop* Desktop::activeInstance = nullptr;
+
+// Defined below, next to the input routing that uses them.
+static bool TreeContainsWidget(Widget* root, Widget* target);
+static void ScreenToParentFrame(Widget* widget, int32_t& x, int32_t& y);
+
+/**
+ * LaunchProgram() - Load and run a userspace ELF from the boot partition.
+ * @binPath: Path relative to the filesystem root.
+ */
+static void LaunchProgram(const char* binPath) {
+    if (!g_bootPartition || !g_elfLoader || !g_scheduler || !binPath || binPath[0] == '\0') return;
+
+    File* file = g_bootPartition->Open(binPath);
+    if (!file || file->size == 0) {
+        KDBG1("Desktop: program not found: %s", binPath);
+        if (file) {
+            file->Close();
+            delete file;
+        }
+        return;
+    }
+
+    ProcessControlBlock* proc = g_elfLoader->loadELF(file, nullptr);
+    file->Close();
+    delete file;
+
+    if (!proc) {
+        KDBG1("Desktop: failed to load ELF: %s", binPath);
+    } else if (!g_scheduler->StartProcess(proc, nullptr)) {
+        KDBG1("Desktop: failed to start ELF: %s", binPath);
+    }
+}
+
+/**
+ * HandleDesktopMenu() - Run the action for a desktop context-menu item.
+ * @menu: The menu that fired (unused).
+ * @index: Selected item index.
+ * @user: The Desktop that owns the menu.
+ */
+static void HandleDesktopMenu(ContextMenu* menu, int32_t index, void* user) {
+    (void)menu;
+    Desktop* desktop = static_cast<Desktop*>(user);
+    switch (index) {
+        case 0:  // Widget Gallery.
+            if (desktop) OpenWidgetGallery(desktop);
+            break;
+        case 1:  // Display Settings.
+            LaunchProgram(PATH_SETTINGS);
+            break;
+        case 2:  // Terminal.
+            LaunchProgram(PATH_TERMINAL);
+            break;
+        default:
+            break;
+    }
+}
 
 Desktop::Desktop(int32_t w, int32_t h)
     : CompositeWidget(0, 0, 0, w, h), MouseEventHandler(), KeyboardEventHandler() {
@@ -71,6 +130,17 @@ Desktop::Desktop(int32_t w, int32_t h)
     // immediately on click with no confirmation.
     taskbar->AddPowerButton(START_MENU_ACTION_RESTART, "fa-restart");
     taskbar->AddPowerButton(START_MENU_ACTION_SHUTDOWN, "fa-power-off");
+
+    // Right-click menu over the wallpaper. It is a normal child (so it draws
+    // and receives events through the composite tree) but starts hidden.
+    contextMenu = new ContextMenu(this);
+    if (contextMenu) {
+        contextMenu->AddItem("Widget Gallery");
+        contextMenu->AddItem("Display Settings");
+        contextMenu->AddItem("Terminal");
+        contextMenu->SetClickHandler(&HandleDesktopMenu, this);
+        this->AddChild(contextMenu);
+    }
 
     // NOTE: Taskbar is NOT added to childrenList.
 }
@@ -126,6 +196,9 @@ void Desktop::OnResolutionChanged(uint32_t w, uint32_t h) {
 
     // Serialize against the GUI task, which draws from this same tree.
     InterruptGuard guard;
+
+    // A popup positioned for the old geometry is no longer meaningful.
+    if (contextMenu) contextMenu->Hide();
 
     // Release the cache Widget sized for the old geometry. CompositeWidget::Draw()
     // still runs Widget::Draw() here, so a stale cache would be memset to the new
@@ -201,7 +274,7 @@ EventHandler* Desktop::getHandler(uint32_t pid) {
     return _eventHandler;
 }
 
-void Desktop::Draw(GraphicsDriver* gc) {
+void Desktop::Draw(RasterSurface* gc) {
     // Serialize against concurrent tree mutation.
     InterruptGuard guard;
 
@@ -230,9 +303,11 @@ void Desktop::Draw(GraphicsDriver* gc) {
         gc->DrawBitmap(0, 0, (const uint32_t*)this->Wallpaper->GetBuffer(),
                        this->Wallpaper->GetWidth(), this->Wallpaper->GetHeight());
 
-        // Composite all children (windows) onto the screen; this calls
-        // CompositeWidget::Draw, which calls Window::Draw.
-        CompositeWidget::Draw(gc);
+        // Composite all children (windows) onto the screen. Draw them
+        // directly: the desktop is itself a CompositeWidget, and letting the
+        // base class run would first composite every window into the desktop's
+        // own cache (which is never presented) before blitting them again.
+        childrenList.ForEach([&](Widget* child) { child->Draw(gc); });
 
         // Draw the taskbar on top of everything.
         taskbar->Draw(gc);
@@ -328,6 +403,12 @@ void Desktop::RemoveAppByPID(uint32_t pid) {
     });
 
     if (result) {
+        // A drag that started inside the departing app must not outlive it.
+        if (dragTarget && TreeContainsWidget(result, dragTarget)) {
+            dragTarget = nullptr;
+            pointerDragging = false;
+        }
+
         this->RemoveChild(result);
         this->MarkDirty();  // Ensure the screen clears the removed window.
 
@@ -335,7 +416,7 @@ void Desktop::RemoveAppByPID(uint32_t pid) {
         // input continues to flow (e.g., Terminal that launched the app).
         Widget* topmost = nullptr;
         childrenList.ForEach([&](Widget* c) {
-            topmost = c;  // The last visited is the topmost in Z-order.
+            if (c->isVisible && c->IsWindow()) topmost = c;
         });
         if (topmost) {
             this->GetFocus(topmost);
@@ -378,7 +459,9 @@ void Desktop::FocusTopMostWindow() {
     // it, so this restores keyboard input to the window behind a closing dialog.
     Widget* topmost = nullptr;
     childrenList.ForEach([&](Widget* c) {
-        if (c->isVisible) topmost = c;
+        // Only real windows can take focus; the hidden context menu must not
+        // become the fallback owner of keyboard input.
+        if (c->isVisible && c->IsWindow()) topmost = c;
     });
     GetFocus(topmost);
 }
@@ -432,7 +515,219 @@ void Desktop::RunPostPresentAction() {
     if (action) action(instance);
 }
 
+bool Desktop::HitChildAt(int32_t x, int32_t y, Widget** out) {
+    bool found = false;
+    childrenList.ReverseForEach([&](Widget* child) {
+        if (!found && child->isVisible && child->ContainsCoordinate(x, y)) {
+            // Return the deepest visible widget, not just the top-level window:
+            // drag events have to reach sliders/lists nested inside a window.
+            Widget* deepest = child->HitTest(x, y);
+            *out = deepest ? deepest : child;
+            found = true;
+        }
+    });
+    return found;
+}
+
+/**
+ * TreeContainsWidget() - Test whether @target is still in @root's subtree.
+ * @root: Subtree root.
+ * @target: Widget to find by address.
+ *
+ * Only addresses are compared, so this is safe to call with a pointer that may
+ * point at freed memory: the target is never dereferenced unless it is found.
+ */
+static bool TreeContainsWidget(Widget* root, Widget* target) {
+    if (!root || !target) return false;
+    if (root == target) return true;
+
+    bool found = false;
+    root->childrenList.ForEach([&](Widget* child) {
+        if (!found) found = TreeContainsWidget(child, target);
+    });
+    return found;
+}
+
+/**
+ * ScreenToParentFrame() - Convert a screen point to @widget's parent frame.
+ * @widget: Target widget.
+ * @x: In/out screen X.
+ * @y: In/out screen Y.
+ *
+ * Widget mouse handlers receive coordinates in their parent's frame; drag
+ * callbacks follow the same contract.
+ */
+static void ScreenToParentFrame(Widget* widget, int32_t& x, int32_t& y) {
+    Widget* parent = widget ? widget->parent : nullptr;
+    if (!parent) return;
+    int32_t originX = 0;
+    int32_t originY = 0;
+    parent->ModelToScreen(originX, originY);
+    x -= originX;
+    y -= originY;
+}
+
+/**
+ * CopyKey() - Copy a driver key string into a fixed event field.
+ * @dst: Four-byte destination (three characters plus NUL).
+ * @src: Source string, possibly NULL.
+ */
+static void CopyKey(char (&dst)[4], const char* src) {
+    int i = 0;
+    if (src) {
+        while (src[i] != '\0' && i < 3) {
+            dst[i] = src[i];
+            i++;
+        }
+    }
+    dst[i] = '\0';
+}
+
+void Desktop::ProcessInput() {
+    InputEvent event;
+
+    while (true) {
+        {
+            // Drivers push from interrupt context. Only the ring indices are
+            // shared, so protect the pop and dispatch outside the guard.
+            InterruptGuard guard;
+            if (!inputQueue.Pop(event)) break;
+        }
+        DispatchInputEvent(event);
+    }
+
+    // Deferred widget destruction is safe here: every handler has returned and
+    // no widget code is on the stack, so a closed window can finally be freed.
+    DrainDeferredWidgetDeletes();
+}
+
+void Desktop::DispatchInputEvent(const InputEvent& event) {
+    switch (event.type) {
+        case IE_MOUSE_DOWN:
+            HandleMouseDown(event.button);
+            break;
+        case IE_MOUSE_UP:
+            HandleMouseUp(event.button);
+            break;
+        case IE_MOUSE_MOVE:
+            HandleMouseMove(event.x, event.y);
+            break;
+        case IE_MOUSE_WHEEL:
+            HandleMouseWheel(event.y);
+            break;
+        case IE_KEY_DOWN:
+            HandleKeyDown(event.key);
+            break;
+        case IE_KEY_UP:
+            HandleKeyUp(event.key);
+            break;
+        case IE_KEY_REPEAT:
+            CompositeWidget::OnKeyRepeat(event.key, event.repeatCount);
+            break;
+        case IE_SPECIAL_DOWN:
+            HandleSpecialKeyDown(event.special);
+            break;
+        case IE_SPECIAL_UP:
+            HandleSpecialKeyUp(event.special);
+            break;
+        case IE_FOCUS_TAB:
+            CompositeWidget::OnTabFocus((event.modifiers & MOD_SHIFT) != 0);
+            break;
+        default:
+            break;
+    }
+}
+
+// ---- Driver entry points: interrupt context, enqueue only. ----
+
 void Desktop::OnMouseDown(uint8_t button) {
+    InputEvent event{};
+    event.type = IE_MOUSE_DOWN;
+    event.button = button;
+    inputQueue.Push(event);
+}
+
+void Desktop::OnMouseUp(uint8_t button) {
+    InputEvent event{};
+    event.type = IE_MOUSE_UP;
+    event.button = button;
+    inputQueue.Push(event);
+}
+
+void Desktop::OnMouseMove(int32_t dx, int32_t dy) {
+    InputEvent event{};
+    event.type = IE_MOUSE_MOVE;
+    event.x = dx;
+    event.y = dy;
+    inputQueue.Push(event);
+}
+
+void Desktop::OnMouseWheel(int32_t delta) {
+    InputEvent event{};
+    event.type = IE_MOUSE_WHEEL;
+    event.y = delta;  // Wheel deltas ride in @y.
+    inputQueue.Push(event);
+}
+
+void Desktop::OnKeyDown(const char* key) {
+    InputEvent event{};
+    event.type = IE_KEY_DOWN;
+    CopyKey(event.key, key);
+    inputQueue.Push(event);
+}
+
+void Desktop::OnKeyUp(const char* key) {
+    InputEvent event{};
+    event.type = IE_KEY_UP;
+    CopyKey(event.key, key);
+    inputQueue.Push(event);
+}
+
+void Desktop::OnSpecialKeyDown(uint8_t key) {
+    InputEvent event{};
+    event.type = IE_SPECIAL_DOWN;
+    event.special = key;
+    inputQueue.Push(event);
+}
+
+void Desktop::OnSpecialKeyUp(uint8_t key) {
+    InputEvent event{};
+    event.type = IE_SPECIAL_UP;
+    event.special = key;
+    inputQueue.Push(event);
+}
+
+// ---- Desktop-task handlers. ----
+
+void Desktop::HandleMouseDown(uint8_t button) {
+    // Any press outside an open context menu dismisses it, wherever the menu
+    // lives in the tree.
+    ContextMenu::DismissActiveAt((int32_t)MouseX, (int32_t)MouseY);
+
+    // Track the press and detect a double-click (same button, within 400 ms and
+    // 4 px of the previous click).
+    uint64_t now = guiplat::MonotonicMillis();
+    int32_t dx = (int32_t)MouseX - lastClickX;
+    int32_t dy = (int32_t)MouseY - lastClickY;
+    if (dx < 0) dx = -dx;
+    if (dy < 0) dy = -dy;
+    bool doubleClick =
+        (button == lastClickButton) && (now - lastClickTime <= 400) && dx <= 4 && dy <= 4;
+
+    lastClickTime = now;
+    lastClickX = (int32_t)MouseX;
+    lastClickY = (int32_t)MouseY;
+    lastClickButton = button;
+    pointerDown = true;
+    pressX = (int32_t)MouseX;
+    pressY = (int32_t)MouseY;
+    pressButton = button;
+
+    if (doubleClick && !(modalWidget && modalWidget->isVisible) &&
+        !(taskbar && taskbar->ContainsCoordinate(MouseX, MouseY))) {
+        CompositeWidget::OnDoubleClick((int32_t)MouseX, (int32_t)MouseY, button);
+    }
+
     // A modal dialog owns the pointer until it is dismissed.
     if (modalWidget && modalWidget->isVisible) {
         modalWidget->OnMouseDown((int32_t)MouseX, (int32_t)MouseY, button);
@@ -455,13 +750,53 @@ void Desktop::OnMouseDown(uint8_t button) {
     if (taskbar && taskbar->IsStartMenuOpen()) {
         taskbar->CloseStartMenu();
     }
+
+    // Right-clicking the wallpaper opens the desktop menu. A right-click over
+    // a window is left to the window.
+    if (button == 3 && contextMenu) {
+        Widget* hit = nullptr;
+        if (!HitChildAt((int32_t)MouseX, (int32_t)MouseY, &hit)) {
+            contextMenu->ShowAt((int32_t)MouseX, (int32_t)MouseY);
+            return;
+        }
+    }
+
     CompositeWidget::OnMouseDown(MouseX, MouseY, button);
 }
 
-void Desktop::OnMouseUp(uint8_t button) {
+void Desktop::HandleMouseUp(uint8_t button) {
+    if (pointerDragging && dragTarget) {
+        // A widget can be destroyed mid-drag (its owner exits); only forward
+        // the end event if the target is still in the live tree.
+        if (TreeContainsWidget(this, dragTarget)) {
+            int32_t x = (int32_t)MouseX;
+            int32_t y = (int32_t)MouseY;
+            ScreenToParentFrame(dragTarget, x, y);
+            dragTarget->OnDragEnd(x, y, button);
+        }
+    }
+    pointerDown = false;
+    pointerDragging = false;
+    dragTarget = nullptr;
+
     // Route the release to the modal dialog that took the press.
     if (modalWidget && modalWidget->isVisible) {
         modalWidget->OnMouseUp((int32_t)MouseX, (int32_t)MouseY, button);
+        return;
+    }
+
+    // A window owning a drag (slider thumb, scrollbar, ...) must receive the
+    // release even if the cursor finishes over the taskbar or start menu;
+    // otherwise the widget stays captured and keeps tracking the pointer.
+    bool capturedWindow = false;
+    childrenList.ForEach([&](Widget* child) {
+        if (!capturedWindow && child->isVisible &&
+            (child->IsMouseCaptured() || child->IsPressed())) {
+            capturedWindow = true;
+        }
+    });
+    if (capturedWindow) {
+        CompositeWidget::OnMouseUp((int32_t)MouseX, (int32_t)MouseY, button);
         return;
     }
 
@@ -479,7 +814,7 @@ void Desktop::OnMouseUp(uint8_t button) {
     CompositeWidget::OnMouseUp(MouseX, MouseY, button);
 }
 
-void Desktop::OnMouseMove(int32_t dx, int32_t dy) {
+void Desktop::HandleMouseMove(int32_t dx, int32_t dy) {
     // Use signed arithmetic to prevent unsigned wrap when dx/dy are negative.
     int32_t newX = (int32_t)MouseX + dx;
     int32_t newY = (int32_t)MouseY + dy;
@@ -497,6 +832,35 @@ void Desktop::OnMouseMove(int32_t dx, int32_t dy) {
     MouseX = (uint32_t)newX;
     MouseY = (uint32_t)newY;
 
+    // Dispatch drag events once the pointer has moved past the threshold. The
+    // target is the deepest widget under the press point, so nested sliders and
+    // lists receive their own drag stream.
+    if (pointerDown) {
+        int32_t adx = (int32_t)MouseX - pressX;
+        int32_t ady = (int32_t)MouseY - pressY;
+        if (adx < 0) adx = -adx;
+        if (ady < 0) ady = -ady;
+        if (!pointerDragging && (adx + ady) > 4) {
+            Widget* target = nullptr;
+            if (HitChildAt(pressX, pressY, &target)) {
+                pointerDragging = true;
+                dragTarget = target;
+
+                int32_t sx = pressX;
+                int32_t sy = pressY;
+                ScreenToParentFrame(target, sx, sy);
+                target->OnDragStart(sx, sy, pressButton);
+            }
+        } else if (pointerDragging && dragTarget) {
+            if (!TreeContainsWidget(this, dragTarget)) {
+                dragTarget = nullptr;
+                pointerDragging = false;
+            } else {
+                dragTarget->OnDragMove(dx, dy);
+            }
+        }
+    }
+
     // A modal dialog consumes motion too, so hover states elsewhere do not
     // update behind it.
     if (modalWidget && modalWidget->isVisible) {
@@ -513,16 +877,35 @@ void Desktop::OnMouseMove(int32_t dx, int32_t dy) {
     }
 }
 
-void Desktop::OnKeyDown(const char* key) {
+void Desktop::HandleMouseWheel(int32_t delta) {
+    if (modalWidget && modalWidget->isVisible) {
+        modalWidget->OnMouseWheel(delta);
+        return;
+    }
+    if (taskbar && taskbar->ContainsCoordinate((int32_t)MouseX, (int32_t)MouseY)) {
+        taskbar->OnMouseWheel(delta);
+        return;
+    }
+    CompositeWidget::OnMouseWheel(delta);
+}
+
+void Desktop::HandleKeyDown(const char* key) {
     CompositeWidget::OnKeyDown(key);
 }
-void Desktop::OnKeyUp(const char* key) {
+
+void Desktop::HandleKeyUp(const char* key) {
     CompositeWidget::OnKeyUp(key);
 }
-void Desktop::OnSpecialKeyDown(uint8_t key) {
+
+void Desktop::HandleSpecialKeyDown(uint8_t key) {
+    // Escape dismisses an open context menu before any widget sees it.
+    if (key == 0x01) {
+        ContextMenu::HideActive();
+    }
     CompositeWidget::OnSpecialKeyDown(key);
 }
-void Desktop::OnSpecialKeyUp(uint8_t key) {
+
+void Desktop::HandleSpecialKeyUp(uint8_t key) {
     CompositeWidget::OnSpecialKeyUp(key);
 }
 

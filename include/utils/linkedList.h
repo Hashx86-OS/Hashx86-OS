@@ -23,8 +23,14 @@
  */
 
 #pragma once
+#if defined(GUI_HOST_BUILD)
+#include <stddef.h>
+#include <stdint.h>
+#include <new>
+#else
 #include <core/memory.h>
 #include <stdint.h>
+#endif
 
 /**
  * class LinkedList - A singly-linked list with head and tail tracking.

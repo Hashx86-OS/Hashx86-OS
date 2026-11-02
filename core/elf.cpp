@@ -186,15 +186,18 @@ ProcessControlBlock* ELFLoader::loadELF(File* elf, void* args) {
 
     uint16_t detectedType = DetectELFAppType(elf, header);
 
-    // Create the new process control block.
+    // Create the process address space, but do not start its entry thread yet:
+    // scheduling it before the PT_LOAD segments are mapped would fault at the
+    // first instruction. CreateThread() is called after the load completes.
     ProcessControlBlock* pELF =
-        scheduler->CreateProcess(false, (void (*)(void*))header.entry, args);
+        scheduler->CreateProcess(false, nullptr, args, /*createMainThread=*/false);
 
     if (!pELF) {
         KDBG1("Error: Failed to create process for ELF");
         return nullptr;
     }
     pELF->appType = detectedType;
+    pELF->mainEntry = (void (*)(void*))header.entry;
 
     auto cleanup_process = [&]() {
         if (pELF) {
@@ -344,6 +347,10 @@ ProcessControlBlock* ELFLoader::loadELF(File* elf, void* args) {
         pELF->heap.maxAddress = (uint32_t)maxAddr;
     }
 
+    // The address space is complete, but no thread exists yet. The caller
+    // finishes any post-load setup (argv, cwd, CLI attachment) and then calls
+    // Scheduler::StartProcess(), which creates the entry thread. Starting it
+    // here would let the app run before those fields are written.
     KDBG1("ELF Loaded. Entry: 0x%x Heap start: 0x%x Type: %s", header.entry, max_virt_end,
           (pELF->appType == APP_BINARY_CLI) ? "CLI" : "GUI");
 

@@ -32,7 +32,7 @@ Label::Label(Widget* parent, int32_t x, int32_t y, int32_t w, int32_t h, const c
     const char* t = text ? text : "";
     this->text = new char[strlen(t) + 1];
     if (!this->text) {
-        HALT("CRITICAL: Failed to allocate label text!\n");
+        guiplat::Abort("CRITICAL: Failed to allocate label text!\n");
     }
     strcpy(this->text, t);
 }
@@ -50,7 +50,7 @@ void Label::setText(const char* newText) {
     if (this->text) delete[] this->text;
     this->text = new char[strlen(safeText) + 1];
     if (!this->text) {
-        HALT("CRITICAL: Failed to allocate label text!\n");
+        guiplat::Abort("CRITICAL: Failed to allocate label text!\n");
     }
     strcpy(this->text, safeText);
     if (sizeMode == CONTENT) Recalc();
@@ -142,11 +142,11 @@ void Label::Recalc() {
                     size_t count = (size_t)w * (size_t)h;
                     if (count / (size_t)w != (size_t)h ||
                         count > (0xFFFFFFFFu / sizeof(uint32_t))) {
-                        HALT("CRITICAL: Label dimensions overflow in Recalc!\n");
+                        guiplat::Abort("CRITICAL: Label dimensions overflow in Recalc!\n");
                     }
                     cache = new uint32_t[count]();
                     if (!cache) {
-                        HALT("CRITICAL: Failed to allocate label cache in Recalc!\n");
+                        guiplat::Abort("CRITICAL: Failed to allocate label cache in Recalc!\n");
                     }
                 }
             }
@@ -165,11 +165,11 @@ void Label::Recalc() {
                     size_t count = (size_t)w * (size_t)h;
                     if (count / (size_t)w != (size_t)h ||
                         count > (0xFFFFFFFFu / sizeof(uint32_t))) {
-                        HALT("CRITICAL: Label dimensions overflow in Recalc!\n");
+                        guiplat::Abort("CRITICAL: Label dimensions overflow in Recalc!\n");
                     }
                     cache = new uint32_t[count]();
                     if (!cache) {
-                        HALT("CRITICAL: Failed to allocate label cache in Recalc!\n");
+                        guiplat::Abort("CRITICAL: Failed to allocate label cache in Recalc!\n");
                     }
                 }
             }
@@ -178,6 +178,10 @@ void Label::Recalc() {
         default:
             break;
     }
+
+    // A size change reallocates the cache; make sure the new surface is
+    // repainted and the parents know about it.
+    MarkDirty();
 }
 
 void Label::setFontSize(int32_t px) {

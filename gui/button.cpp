@@ -32,7 +32,7 @@ Button::Button(Widget* parent, int32_t x, int32_t y, int32_t w, int32_t h, const
     if (label == nullptr) label = "";
     this->label = new char[strlen(label) + 1];
     if (!this->label) {
-        HALT("CRITICAL: Failed to allocate button label!\n");
+        guiplat::Abort("CRITICAL: Failed to allocate button label!\n");
     }
     strcpy(this->label, label);
 
@@ -54,7 +54,7 @@ void Button::SetLabel(const char* newLabel) {
     if (this->label) delete[] this->label;
     this->label = new char[strlen(newLabel) + 1];
     if (!this->label) {
-        HALT("CRITICAL: Failed to allocate button label!\n");
+        guiplat::Abort("CRITICAL: Failed to allocate button label!\n");
     }
     strcpy(this->label, newLabel);
     MarkDirty();
@@ -130,7 +130,7 @@ void Button::RedrawToCache() {
 }
 
 void Button::OnMouseDown(int32_t x, int32_t y, uint8_t button) {
-    if (!isVisible) return;
+    if (!isVisible || !enabled || button != 1) return;
 
     Widget::OnMouseDown(x, y, button);
 
@@ -138,26 +138,29 @@ void Button::OnMouseDown(int32_t x, int32_t y, uint8_t button) {
     MarkDirty();
 }
 
-void Button::OnMouseUp(int32_t x, int32_t y, uint8_t) {
-    if (!isVisible) return;
+void Button::OnMouseUp(int32_t x, int32_t y, uint8_t button) {
+    if (!isVisible || button != 1) return;
+    if (!isPressed) return;
 
-    if (isPressed) {
-        isPressed = false;
-        MarkDirty();
+    isPressed = false;
+    MarkDirty();
 
-        // Emit the click only if the release is still inside the button bounds.
-        if (!ContainsCoordinate(x, y)) {
-            return;
-        }
-
-        EmitClickEvent();
+    // Emit the click only if the button is enabled and the release is still
+    // inside its bounds. A disabled button must never fire, even if it was
+    // disabled mid-press.
+    if (!enabled || !ContainsCoordinate(x, y)) {
+        return;
     }
+
+    EmitClickEvent();
 }
 
 void Button::OnMouseMove(int32_t x, int32_t y, int32_t newx, int32_t newy) {
+    (void)x;
+    (void)y;
     // newx and newy are parent-relative (window) coordinates; use
     // ContainsCoordinate for accurate hit testing.
-    bool inside = this->ContainsCoordinate(newx, newy);
+    bool inside = enabled && this->ContainsCoordinate(newx, newy);
 
     // Release the press visual if the mouse dragged outside the button.
     if (isPressed && !inside) {
@@ -190,23 +193,10 @@ void Button::OnKeyDown(const char* key) {
 }
 
 void Button::EmitClickEvent() {
-    Event* new_event = new Event{this->ID, ON_CLICK};
-    if (!new_event) return;
-    if (!Desktop::activeInstance) {
-        delete new_event;
-        return;
-    }
-    EventHandler* handler = Desktop::activeInstance->getHandler(this->PID);
-    if (!handler) {
-        delete new_event;
-        return;
-    }
-    handler->eventQueue.Add(new_event);
-    if (g_scheduler && handler->thread) {
-        g_scheduler->WakeThread(handler->thread);
-    }
+    if (!g_widgetHost) return;
+    g_widgetHost->PostEvent(this->PID, this->ID, ON_CLICK);
+    g_widgetHost->WakeProcess(this->PID);
 }
-
 bool Button::IsPressed() const {
     return isPressed;
 }

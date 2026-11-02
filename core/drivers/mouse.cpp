@@ -51,6 +51,15 @@ void MouseEventHandler::OnMouseDown(uint8_t button) {}
 void MouseEventHandler::OnMouseUp(uint8_t button) {}
 
 /**
+ * MouseEventHandler::OnMouseWheel() - Called when the wheel is scrolled.
+ * @delta: Positive when scrolling up (wheel away from the user), negative when
+ *         scrolling down.
+ */
+void MouseEventHandler::OnMouseWheel(int32_t delta) {
+    (void)delta;
+}
+
+/**
  * MouseDriver::MouseDriver() - Construct the mouse driver.
  * @manager: Interrupt manager owning IRQ 12.
  * @handler: Event handler receiving mouse events.
@@ -66,6 +75,7 @@ MouseDriver::MouseDriver(InterruptManager* manager, MouseEventHandler* handler)
     this->driverName = "Generic Mouse Driver     ";
     this->offset = 0;
     this->buttons = 0;
+    this->hasWheel = false;
     this->accumDX = 0;
     this->accumDY = 0;
     activeInstance = this;
@@ -138,22 +148,38 @@ void MouseDriver::Activate() {
     }
     dataPort.Write(status);
 
-    // Enable the mouse device.
-    if (!WaitForInputBufferClear(commandPort)) {
+    // Helper: send one byte to the mouse and consume its ACK.
+    auto sendMouseByte = [&](uint8_t value) -> bool {
+        if (!WaitForInputBufferClear(commandPort)) return false;
+        commandPort.Write(0xD4);  // Signal the mouse device.
+        if (!WaitForInputBufferClear(commandPort)) return false;
+        dataPort.Write(value);
+        if (!WaitForOutputBufferFull(commandPort)) return false;
+        dataPort.Read();  // ACK.
+        return true;
+    };
+    auto setSampleRate = [&](uint8_t rate) -> bool {
+        return sendMouseByte(0xF3) && sendMouseByte(rate);
+    };
+
+    // Probe for the scroll wheel: the IntelliMouse magic sample-rate sequence
+    // (200, 100, 80) followed by a device-id request. Id 3 (or 4) means the
+    // mouse sends a 4th packet byte carrying the wheel delta.
+    this->hasWheel = false;
+    if (setSampleRate(200) && setSampleRate(100) && setSampleRate(80)) {
+        if (sendMouseByte(0xF2)) {  // Get device id.
+            if (WaitForOutputBufferFull(commandPort)) {
+                uint8_t deviceId = dataPort.Read();
+                this->hasWheel = (deviceId == 3 || deviceId == 4);
+            }
+        }
+    }
+
+    // Enable packet streaming.
+    if (!sendMouseByte(0xF4)) {
         this->is_Active = false;
         return;
     }
-    commandPort.Write(0xD4);  // Signal the mouse device.
-    if (!WaitForInputBufferClear(commandPort)) {
-        this->is_Active = false;
-        return;
-    }
-    dataPort.Write(0xF4);  // Enable packet streaming.
-    if (!WaitForOutputBufferFull(commandPort)) {
-        this->is_Active = false;
-        return;
-    }
-    dataPort.Read();  // Ack response.
     this->is_Active = true;
 }
 
@@ -177,7 +203,9 @@ uint32_t MouseDriver::HandleInterrupt(uint32_t esp) {
     uint8_t data = dataPort.Read();
     if (eventHandler == 0) return esp;
 
-    // PS/2 3-byte packet sync: byte 0 must have bit 3 set (always 1).
+    uint8_t packetSize = hasWheel ? 4 : 3;
+
+    // PS/2 packet sync: byte 0 must have bit 3 set (always 1).
     if (offset == 0) {
         if (!(data & 0x08)) {
             // Lost sync: discard and stay at offset 0 awaiting a valid start byte.
@@ -186,7 +214,7 @@ uint32_t MouseDriver::HandleInterrupt(uint32_t esp) {
     }
 
     buffer[offset] = data;
-    offset = (offset + 1) % 3;
+    offset = (offset + 1) % packetSize;
 
     if (offset == 0) {
         if (buffer[1] != 0 || buffer[2] != 0) {
@@ -207,6 +235,15 @@ uint32_t MouseDriver::HandleInterrupt(uint32_t esp) {
             }
         }
         buttons = btn_state;
+
+        if (hasWheel) {
+            // The wheel delta is the low nibble of byte 3, sign-extended.
+            // The PS/2 convention is positive = away from the user (scroll
+            // up); the widget layer uses negative = scroll down, so forward
+            // the sign as-is rather than inverting it a second time.
+            int8_t z = (int8_t)(buffer[3] << 4) >> 4;
+            if (z != 0) eventHandler->OnMouseWheel(z);
+        }
     }
 
     return esp;

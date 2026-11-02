@@ -4,7 +4,7 @@ GPP = g++
 LD = ld
 
 # Includes: Look in local include AND libhx86 include
-INCLUDES = -Iinclude -I../libhx86/include
+INCLUDES = -Iinclude -I../libhx86/include -I../../include
 
 # Compiler Flags
 CPPFLAGS = -m32 -O2 -g -ffreestanding -fno-use-cxa-atexit -nostdlib -fno-builtin -fno-rtti -fno-exceptions -fno-common $(INCLUDES)

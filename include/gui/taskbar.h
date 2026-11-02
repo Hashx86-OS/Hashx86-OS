@@ -177,6 +177,9 @@ public:
     void OnMouseDown(int32_t x, int32_t y, uint8_t button) override;
     void OnMouseUp(int32_t x, int32_t y, uint8_t button) override;
     void OnMouseMove(int32_t oldx, int32_t oldy, int32_t newx, int32_t newy) override;
+
+    /** IsPressed() - True while the button is held down. */
+    bool IsPressed() const override;
 };
 
 /**
@@ -220,6 +223,9 @@ public:
     void OnMouseDown(int32_t x, int32_t y, uint8_t button) override;
     void OnMouseUp(int32_t x, int32_t y, uint8_t button) override;
     void OnMouseMove(int32_t oldx, int32_t oldy, int32_t newx, int32_t newy) override;
+
+    /** IsPressed() - True while the entry is held down. */
+    bool IsPressed() const override;
 
     /** LaunchProgram() - Load and run the configured program. */
     void LaunchProgram();
@@ -342,7 +348,7 @@ public:
     void AddPowerButton(StartMenuAction action, const char* iconName);
 
     /** Draw() - Paint the menu with its entries. */
-    void Draw(GraphicsDriver* gc) override;
+    void Draw(RasterSurface* gc) override;
 
     /** RedrawToCache() - Paint the menu background and border. */
     void RedrawToCache() override;
@@ -389,6 +395,9 @@ public:
     void OnMouseDown(int32_t x, int32_t y, uint8_t button) override;
     void OnMouseUp(int32_t x, int32_t y, uint8_t button) override;
     void OnMouseMove(int32_t oldx, int32_t oldy, int32_t newx, int32_t newy) override;
+
+    /** IsPressed() - True while the Start button is held down. */
+    bool IsPressed() const override;
 };
 
 /**
@@ -507,7 +516,7 @@ public:
     }
 
     /** Draw() - Paint the taskbar and raise the open start menu. */
-    void Draw(GraphicsDriver* gc) override;
+    void Draw(RasterSurface* gc) override;
 
     /** RedrawToCache() - Paint the background, segments, and separators. */
     void RedrawToCache() override;

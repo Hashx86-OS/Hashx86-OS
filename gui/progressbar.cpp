@@ -43,11 +43,11 @@ ProgressBar::ProgressBar(Widget* parent, int32_t x, int32_t y, int32_t w, int32_
     if (w > 0 && h > 0) {
         size_t pixels = (size_t)w * (size_t)h;
         if (pixels > (size_t)-1 / sizeof(uint32_t)) {
-            HALT("CRITICAL: ProgressBar cache size overflow!\n");
+            guiplat::Abort("CRITICAL: ProgressBar cache size overflow!\n");
         }
         cache = new uint32_t[pixels]();
         if (!cache) {
-            HALT("CRITICAL: Failed to allocate progressbar cache!\n");
+            guiplat::Abort("CRITICAL: Failed to allocate progressbar cache!\n");
         }
     }
 
@@ -87,7 +87,7 @@ void ProgressBar::SetBackgroundColor(uint32_t color) {
 }
 
 void ProgressBar::RedrawToCache() {
-    if (!cache || w <= 0 || h <= 0) {
+    if (!cache || w <= 0 || h <= 0 || !NINA::activeInstance) {
         isDirty = false;
         return;
     }

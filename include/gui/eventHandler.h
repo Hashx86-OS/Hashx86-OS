@@ -26,30 +26,8 @@
 #define EVENT_HANDLER_H
 
 #include <core/process_types.h>
+#include <gui/event.h>
 #include <utils/linkedList.h>
-
-/**
- * enum EVENT_TYPE - Event kinds queued for the owning process.
- */
-typedef enum {
-    ON_CLICK = 0x0,
-    ON_KEYPRESS = 0x1,
-    ON_WINDOW_CLOSE = 0x2,
-} EVENT_TYPE;
-
-/**
- * struct Event - A single queued GUI notification for a process.
- * @widgetID: Widget instance ID that produced the event.
- * @eventType: Kind of event (click, keypress, window close).
- * @param1: Event-specific payload.
- * @param2: Event-specific payload.
- */
-struct Event {
-    uint32_t widgetID;
-    EVENT_TYPE eventType;
-    uint32_t param1;
-    uint32_t param2;
-};
 
 /**
  * struct EventHandler - Per-process queue of pending GUI events.

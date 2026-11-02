@@ -24,6 +24,7 @@
 
 #define KDBG_COMPONENT "GUI:WINDOW.ACBTN.RN"
 #include <gui/elements/window_action_button_round.h>
+#include <gui/guiplat.h>
 
 ACRButton::ACRButton(Widget* parent, int32_t x, int32_t y, const char* label)
     : ACButton(parent, x, y, label) {
@@ -51,7 +52,7 @@ ACRButton::ACRButton(Widget* parent, int32_t x, int32_t y, const char* label)
     if (w > 0 && h > 0) {
         cache = new uint32_t[w * h]();
         if (!cache) {
-            HALT("CRITICAL: Failed to allocate action button cache!\n");
+            guiplat::Abort("CRITICAL: Failed to allocate action button cache!\n");
         }
     }
 }

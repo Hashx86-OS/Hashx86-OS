@@ -25,14 +25,12 @@
 #ifndef WIDGET_H
 #define WIDGET_H
 
-#include <core/drivers/keyboard.h>
-#include <core/memory.h>
-#include <debug.h>
 #include <gui/config/config.h>
-#include <gui/eventHandler.h>
+#include <gui/event.h>
 #include <gui/fonts/font.h>
+#include <gui/guiplat.h>
 #include <gui/icons.h>
-#include <gui/renderer/nina.h>
+#include <gui/render/raster.h>
 #include <string.h>
 #include <types.h>
 #include <utils/linkedList.h>
@@ -63,6 +61,10 @@ protected:
     bool isFocussable = true;
     bool isFocused = false;
     bool enabled = true;
+    // True while this widget owns the pointer (a drag started here and has not
+    // been released yet). Composites use it to route the release even when the
+    // cursor leaves the widget.
+    bool mouseCaptured = false;
 
 public:
     // Hierarchy.
@@ -101,6 +103,14 @@ public:
      */
     virtual ~Widget();
 
+    /**
+     * destructorNotify() - Environment hook invoked as each widget is destroyed.
+     *
+     * The kernel GUI installs this to keep its global widget registry in sync;
+     * host tests leave it null. Set once by the environment, never by widgets.
+     */
+    static void (*destructorNotify)(Widget* w);
+
     // -- Drawing & Updates --
 
     /**
@@ -134,9 +144,9 @@ public:
 
     /**
      * Draw() - Blit the cache to the screen if the widget is dirty.
-     * @gc: Target graphics driver.
+     * @gc: Target raster surface.
      */
-    virtual void Draw(GraphicsDriver* gc);
+    virtual void Draw(RasterSurface* gc);
 
     /**
      * Recalc() - Recompute dimensions from the size mode.
@@ -168,6 +178,40 @@ public:
      * @focussable: True to allow focus.
      */
     virtual void SetFocussable(bool focussable);
+
+    /**
+     * SetEnabled() - Enable or disable interaction.
+     * @value: False to make the widget ignore input.
+     *
+     * A disabled widget still paints its disabled appearance but must not
+     * receive clicks, keys, or drags. Disabling drops any pointer capture and
+     * keyboard focus so a drag cannot outlive the state change.
+     */
+    virtual void SetEnabled(bool value);
+
+    /** IsEnabled() - Report whether the widget accepts input. */
+    bool IsEnabled() const {
+        return enabled;
+    }
+
+    /**
+     * RequestTopmostFocus() - Ask the environment to focus and raise this widget.
+     *
+     * Used when a window is dragged by its title bar. The default does nothing;
+     * a CompositeWidget raises and focuses the widget in its container, and the
+     * kernel desktop adds real keyboard focus on top.
+     */
+    virtual void RequestTopmostFocus();
+
+    /** IsFocused() - Report whether this widget currently holds focus. */
+    bool IsFocused() const {
+        return isFocused;
+    }
+
+    /** IsFocussable() - Report whether this widget may take focus. */
+    bool IsFocussable() const {
+        return isFocussable;
+    }
 
     // -- Hierarchy Management --
 
@@ -206,6 +250,15 @@ public:
      */
     virtual bool ContainsCoordinate(int32_t x, int32_t y);
 
+    /**
+     * HitTest() - Find the deepest visible widget under a point.
+     * @parentX: X in this widget's parent frame.
+     * @parentY: Y in this widget's parent frame.
+     *
+     * Return: The deepest hit widget, or NULL when the point is outside.
+     */
+    virtual Widget* HitTest(int32_t parentX, int32_t parentY);
+
     // -- Identification --
 
     /**
@@ -237,6 +290,12 @@ public:
     virtual Widget* FindWidgetByPID(uint32_t PID);
 
     // -- Event Handlers --
+    //
+    // Coordinate contract: every mouse callback receives coordinates in this
+    // widget's *parent* frame — the same frame as this->x / this->y. A widget
+    // that needs its own local coordinates subtracts x/y (or uses
+    // ContainsCoordinate(), which expects parent-frame coordinates).
+    // CompositeWidget converts between frames once while routing.
     virtual void OnMouseDown(int32_t x, int32_t y, uint8_t button);
     virtual void OnMouseUp(int32_t x, int32_t y, uint8_t button);
     virtual void OnMouseMove(int32_t oldx, int32_t oldy, int32_t newx, int32_t newy);
@@ -249,6 +308,44 @@ public:
     virtual void OnSpecialKeyDown(uint8_t key);
     virtual void OnKeyUp(const char* key);
     virtual void OnSpecialKeyUp(uint8_t key);
+
+    // -- Extended input events (default: no-op) --
+
+    /** OnMouseWheel() - Scroll by @delta notches at the current cursor. */
+    virtual void OnMouseWheel(int32_t delta);
+
+    /** OnDoubleClick() - A second press landed within the double-click window. */
+    virtual void OnDoubleClick(int32_t x, int32_t y, uint8_t button);
+
+    /** OnDragStart() - A press moved past the drag threshold. */
+    virtual void OnDragStart(int32_t x, int32_t y, uint8_t button);
+
+    /** OnDragMove() - The pointer moved while dragging (delta in pixels). */
+    virtual void OnDragMove(int32_t dx, int32_t dy);
+
+    /** OnDragEnd() - The drag was released. */
+    virtual void OnDragEnd(int32_t x, int32_t y, uint8_t button);
+
+    /** OnKeyRepeat() - A held key repeated; @count is the repeat index. */
+    virtual void OnKeyRepeat(const char* key, uint32_t count);
+
+    /** OnKeyDownMod() - Key press with the current modifier mask. */
+    virtual void OnKeyDownMod(const char* key, uint8_t modifiers);
+
+    /** OnTabFocus() - Tab traversal; @backwards selects the previous widget. */
+    virtual void OnTabFocus(bool backwards);
+
+    /**
+     * SetMouseCaptured() - Claim or release the pointer while dragging.
+     * @captured: True on drag start, false on release.
+     *
+     * A composite forwards mouse-up (and moves) to a capturing descendant even
+     * when the cursor has left its bounds, so a drag released outside the
+     * widget still terminates cleanly instead of sticking.
+     */
+    void SetMouseCaptured(bool captured) {
+        mouseCaptured = captured;
+    }
 
     virtual bool IsComposite() const;
     virtual bool IsMouseCaptured() const;
@@ -272,6 +369,9 @@ public:
         return false;
     }
     virtual bool IsIconButton() const {
+        return false;
+    }
+    virtual bool IsRadioButton() const {
         return false;
     }
 
@@ -301,6 +401,10 @@ public:
 class CompositeWidget : public Widget {
 private:
     Widget* focusedChild = nullptr;
+    // Last pointer position in this composite's local coordinates, used to
+    // route wheel events, which carry no position of their own.
+    int32_t lastMouseX = 0;
+    int32_t lastMouseY = 0;
 
 public:
     /**
@@ -322,10 +426,39 @@ public:
     bool IsComposite() const override;
 
     /**
+     * IsMouseCaptured() - Report capture by this composite or any descendant.
+     *
+     * A container reports capture when a child is dragging or pressed, so the
+     * root can deliver the terminating mouse-up even if it lands outside.
+     */
+    bool IsMouseCaptured() const override;
+
+    /** IsPressed() - Report a press in this composite or any descendant. */
+    bool IsPressed() const override;
+
+    /**
+     * RedrawToCache() - Clear the cache and composite every visible child.
+     *
+     * Containers without custom chrome (Tabs, ScrollContainer, ...) get their
+     * subtree rendered by this default, so a nested composite is not invisible
+     * just because its parent only knows how to blit child caches.
+     */
+    void RedrawToCache() override;
+
+    /**
      * GetFocus() - Track @widget as the focused child.
      * @widget: Child widget receiving focus.
      */
     virtual void GetFocus(Widget* widget) override;
+
+    /**
+     * SetFocus() - Set focus and apply the same state to the focused child.
+     * @result: True to gain focus, false to lose it.
+     *
+     * Keeps a nested focus chain consistent when a container gains or loses
+     * focus as a whole.
+     */
+    virtual void SetFocus(bool result) override;
 
     /**
      * RemoveChild() - Detach and destroy @child, clearing focus if needed.
@@ -337,9 +470,12 @@ public:
 
     /**
      * Draw() - Raise the focused child and redraw all children back-to-front.
-     * @gc: Target graphics driver.
+     * @gc: Target raster surface.
      */
-    virtual void Draw(GraphicsDriver* gc) override;
+    virtual void Draw(RasterSurface* gc) override;
+
+    /** HitTest() - Return the deepest visible descendant under a parent-frame point. */
+    Widget* HitTest(int32_t parentX, int32_t parentY) override;
 
     // Event routing.
     virtual void OnMouseDown(int32_t x, int32_t y, uint8_t button) override;
@@ -350,6 +486,12 @@ public:
     virtual void OnSpecialKeyDown(uint8_t key) override;
     virtual void OnKeyUp(const char* key) override;
     virtual void OnSpecialKeyUp(uint8_t key) override;
+
+    virtual void OnMouseWheel(int32_t delta) override;
+    virtual void OnDoubleClick(int32_t x, int32_t y, uint8_t button) override;
+    virtual void OnKeyRepeat(const char* key, uint32_t count) override;
+    virtual void OnKeyDownMod(const char* key, uint8_t modifiers) override;
+    virtual void OnTabFocus(bool backwards) override;
 };
 
 #endif  // WIDGET_H

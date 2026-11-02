@@ -51,19 +51,41 @@ objects = \
 	$(BUILD_DIR)/obj/gui/bmp.o \
 	$(BUILD_DIR)/obj/gui/bootanim.o \
 	$(BUILD_DIR)/obj/gui/button.o \
+	$(BUILD_DIR)/obj/gui/checkbox.o \
+	$(BUILD_DIR)/obj/gui/combobox.o \
+	$(BUILD_DIR)/obj/gui/contextmenu.o \
 	$(BUILD_DIR)/obj/gui/iconbutton.o \
+	$(BUILD_DIR)/obj/gui/imageview.o \
+	$(BUILD_DIR)/obj/gui/input/inputQueue.o \
 	$(BUILD_DIR)/obj/gui/desktop.o \
+	$(BUILD_DIR)/obj/gui/layout.o \
+	$(BUILD_DIR)/obj/gui/radiobutton.o \
+	$(BUILD_DIR)/obj/gui/scrollbar.o \
+	$(BUILD_DIR)/obj/gui/scrollcontainer.o \
+	$(BUILD_DIR)/obj/gui/slider.o \
+	$(BUILD_DIR)/obj/gui/spinbox.o \
+	$(BUILD_DIR)/obj/gui/table.o \
+	$(BUILD_DIR)/obj/gui/tabs.o \
+	$(BUILD_DIR)/obj/gui/textbox.o \
+	$(BUILD_DIR)/obj/gui/toggle.o \
+	$(BUILD_DIR)/obj/gui/tooltip.o \
+	$(BUILD_DIR)/obj/gui/widgetgallery.o \
 	$(BUILD_DIR)/obj/gui/elements/window_action_button.o \
 	$(BUILD_DIR)/obj/gui/elements/window_action_button_round.o \
 	$(BUILD_DIR)/obj/gui/fonts/font.o \
+	$(BUILD_DIR)/obj/gui/fonts/fontKernel.o \
 	$(BUILD_DIR)/obj/core/fonts/ttf_render.o \
+	$(BUILD_DIR)/obj/gui/guiplat_kernel.o \
+	$(BUILD_DIR)/obj/gui/widgetHostKernel.o \
 	$(BUILD_DIR)/obj/gui/Hgui.o \
 	$(BUILD_DIR)/obj/gui/infodialog.o \
+	$(BUILD_DIR)/obj/gui/inputbox.o \
 	$(BUILD_DIR)/obj/gui/label.o \
 	$(BUILD_DIR)/obj/gui/listview.o \
 	$(BUILD_DIR)/obj/gui/messagebox.o \
 	$(BUILD_DIR)/obj/gui/progressbar.o \
-	$(BUILD_DIR)/obj/gui/renderer/nina.o \
+	$(BUILD_DIR)/obj/gui/render/raster.o \
+	$(BUILD_DIR)/obj/gui/render/nina.o \
 	$(BUILD_DIR)/obj/gui/terminalview.o \
 	$(BUILD_DIR)/obj/gui/taskbar.o \
 	$(BUILD_DIR)/obj/gui/widget.o \
@@ -517,7 +539,7 @@ prog:
 	@sleep $(RUNQ_DELAY)
 	make runq
 
-.PHONY: clean build build-run hdd hddinit check runq run prog runvb iso build-installer run-installer check-style check-bugs check-headers check-eof fix-style add-license-headers install newapp FORCE user drivers
+.PHONY: clean build build-run hdd hddinit check runq run prog runvb iso build-installer run-installer check-style check-bugs check-headers check-eof check-gui fix-style add-license-headers install newapp FORCE user drivers gui-test
 
 # -----------------------------------
 # CODE QUALITY TOOLS
@@ -580,8 +602,17 @@ check-headers:
 check-eof:
 	@./check_eof.sh
 
+# Check the GUI portability boundary
+check-gui:
+	@./check_gui_boundary.sh
+
+# Host-side GUI test harness (native 64-bit, ASan/UBSan)
+gui-test:
+	@$(MAKE) -C tests/host all
+	@./tests/host/gui-test
+
 # Master Check
-check: check-style check-bugs check-eof check-headers
+check: check-style check-bugs check-eof check-headers check-gui
 
 # Apply the project license header to every first-party file (Report Only)
 add-license-headers:

@@ -782,6 +782,14 @@ int32_t SyscallHandlers::Handle_sys_execve(const char* path, char* const argv[],
                     KDBG1("sys_execve: Attached CLI PID %d to host PID %d (view %d)", child->pid,
                           current_process->pid, current_process->cliHostViewId);
                 }
+
+                // Everything the app can observe before its first instruction
+                // (argv, cwd, CLI attachment) is set, so it is safe to start.
+                if (!g_scheduler->StartProcess(child, args)) {
+                    // StartProcess killed the child; KillProcess freed @args
+                    // through child->programArgs.
+                    return -1;
+                }
                 return child->pid;
             }
             FreeProgramArguments(args);

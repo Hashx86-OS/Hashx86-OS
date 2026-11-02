@@ -41,64 +41,92 @@ void buffer_char(char* buffer, int* pIndex, int maxLen, char c) {
     }
 }
 
+/**
+ * append_uint() - Append an unsigned number in @base to the output buffer.
+ * @output: Destination buffer.
+ * @idx: In/out write index.
+ * @maxLen: Capacity of @output.
+ * @value: Value to render.
+ * @base: 10 or 16.
+ * @upper: True to use uppercase hex digits.
+ */
+static void append_uint(char* output, int* idx, int maxLen, uint32_t value, uint32_t base,
+                        bool upper) {
+    const char* digits = upper ? "0123456789ABCDEF" : "0123456789abcdef";
+    char tmp[33];
+    int n = 0;
+
+    if (value == 0) {
+        tmp[n++] = '0';
+    } else {
+        while (value > 0) {
+            tmp[n++] = digits[value % base];
+            value /= base;
+        }
+    }
+
+    while (n > 0) buffer_char(output, idx, maxLen, tmp[--n]);
+}
+
 void vprintf(const char* format, va_list args) {
     char output[256];  // Stack buffer.
     int idx = 0;
 
     for (int i = 0; format[i] != '\0'; i++) {
-        if (format[i] == '%') {
-            i++;
-            switch (format[i]) {
-                case 'd': {
-                    int num = va_arg(args, int);
-                    char tmp[12];
-                    int tIdx = 11;
-                    tmp[tIdx] = '\0';
-                    bool neg = (num < 0);
-                    if (neg) num = -num;
-
-                    if (num == 0)
-                        tmp[--tIdx] = '0';
-                    else {
-                        while (num > 0) {
-                            tmp[--tIdx] = (num % 10) + '0';
-                            num /= 10;
-                        }
-                    }
-                    if (neg) tmp[--tIdx] = '-';
-
-                    // Copy tmp to the main buffer.
-                    for (int k = tIdx; tmp[k]; k++) buffer_char(output, &idx, 256, tmp[k]);
-                    break;
-                }
-                case 's': {
-                    const char* s = va_arg(args, const char*);
-                    for (int k = 0; s[k]; k++) buffer_char(output, &idx, 256, s[k]);
-                    break;
-                }
-                case 'x': {
-                    uint32_t num = va_arg(args, uint32_t);
-                    char tmp[9];
-                    int tIdx = 8;
-                    tmp[tIdx] = '\0';
-                    const char* hex = "0123456789ABCDEF";
-                    if (num == 0)
-                        tmp[--tIdx] = '0';
-                    else {
-                        while (num > 0) {
-                            tmp[--tIdx] = hex[num % 16];
-                            num /= 16;
-                        }
-                    }
-                    for (int k = tIdx; tmp[k]; k++) buffer_char(output, &idx, 256, tmp[k]);
-                    break;
-                }
-                // Add other cases (u, c, etc.) here.
-                default:
-                    break;
-            }
-        } else {
+        if (format[i] != '%') {
             buffer_char(output, &idx, 256, format[i]);
+            continue;
+        }
+
+        i++;
+        char spec = format[i];
+        if (spec == '\0') break;  // Trailing '%'.
+
+        switch (spec) {
+            case 'd':
+            case 'i': {
+                int num = va_arg(args, int);
+                bool neg = (num < 0);
+                uint32_t magnitude = (uint32_t)num;
+                if (neg) {
+                    buffer_char(output, &idx, 256, '-');
+                    // Two's-complement magnitude also handles INT_MIN.
+                    magnitude = 0u - magnitude;
+                }
+                append_uint(output, &idx, 256, magnitude, 10, false);
+                break;
+            }
+            case 'u': {
+                uint32_t num = va_arg(args, uint32_t);
+                append_uint(output, &idx, 256, num, 10, false);
+                break;
+            }
+            case 'x':
+            case 'X': {
+                uint32_t num = va_arg(args, uint32_t);
+                append_uint(output, &idx, 256, num, 16, true);
+                break;
+            }
+            case 'c': {
+                int ch = va_arg(args, int);
+                buffer_char(output, &idx, 256, (char)ch);
+                break;
+            }
+            case 's': {
+                const char* s = va_arg(args, const char*);
+                if (!s) s = "(null)";
+                for (int k = 0; s[k] != '\0'; k++) buffer_char(output, &idx, 256, s[k]);
+                break;
+            }
+            case '%': {
+                buffer_char(output, &idx, 256, '%');
+                break;
+            }
+            default:
+                // Unknown conversion: emit it literally instead of dropping it.
+                buffer_char(output, &idx, 256, '%');
+                buffer_char(output, &idx, 256, spec);
+                break;
         }
     }
 

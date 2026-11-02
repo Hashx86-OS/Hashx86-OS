@@ -25,10 +25,10 @@
 #ifndef WINDOW_H
 #define WINDOW_H
 
-#include <core/scheduler.h>
-#include <gui/desktop.h>
 #include <gui/elements/window_action_button_round.h>
+#include <gui/event.h>
 #include <gui/widget.h>
+#include <gui/widgetHost.h>
 
 /**
  * class Window - A draggable container window with a title bar and close button.
@@ -42,6 +42,9 @@ protected:
     bool isDragging;
     char* windowTitle;
     ACRButton* closeButton;
+    // True when closing without an owning handler should destroy the window.
+    // Cached kernel dialogs clear this so closing only hides them for reuse.
+    bool deleteOnClose = true;
 
 public:
     /**
@@ -61,8 +64,26 @@ public:
 
     // Core Lifecycle.
 
-    /** OnClose() - Request window teardown through the GUI event handler. */
+    /**
+     * OnClose() - Request window teardown through the GUI event handler.
+     *
+     * An owning process is asked first (ON_WINDOW_CLOSE) and decides how to
+     * dispose of the window. With no handler, the window is hidden and then
+     * destroyed later on the desktop task, unless SetDeleteOnClose(false) was
+     * set (cached system dialogs, which only hide).
+     */
     void OnClose();
+
+    /**
+     * SetDeleteOnClose() - Control fallback destruction when closed.
+     * @value: False to keep a handler-less window attached but hidden.
+     *
+     * Used by reusable kernel dialogs: their close button hides the dialog and
+     * a later Show() simply makes it visible again.
+     */
+    void SetDeleteOnClose(bool value) {
+        deleteOnClose = value;
+    }
 
     /**
      * setVisible() - Show or hide the window.
@@ -90,7 +111,7 @@ public:
     // Drawing.
 
     /** Draw() - Raise the window in the Z-order and paint it with children. */
-    void Draw(GraphicsDriver* gc) override;
+    void Draw(RasterSurface* gc) override;
 
     /** RedrawToCache() - Paint the window frame, title bar, and close button. */
     void RedrawToCache() override;

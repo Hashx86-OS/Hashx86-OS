@@ -27,6 +27,10 @@
 #include <core/globals.h>
 #include <gui/Hgui.h>
 #include <gui/desktop.h>
+#include <gui/widgetHost.h>
+
+// Install the kernel implementation of the portable widget host interface.
+extern void InstallKernelWidgetHost();
 
 namespace {
 constexpr uint32_t USER_LOWER_BOUND = 0x10000000;
@@ -126,6 +130,11 @@ HguiHandler* HguiHandler::activeInstance = nullptr;
 HguiHandler::HguiHandler(uint8_t InterruptNumber, InterruptManager* interruptManager)
     : InterruptHandler(InterruptNumber + 0x20, interruptManager) {
     this->activeInstance = this;
+
+    // Keep the widget layer decoupled from the syscall handler: it reaches the
+    // kernel only through these two hooks.
+    Widget::destructorNotify = &HguiHandler::RemoveWidget;
+    InstallKernelWidgetHost();
 
     if (Desktop::activeInstance) {
         HguiWidgets.Add(Desktop::activeInstance);
@@ -264,6 +273,14 @@ int32_t HguiHandler::HandleWidget(CPUState* cpu, const WidgetData* _data) {
             target->parent->RemoveChild(target);
         }
         delete target;
+        return 1;
+    } else if ((uint32_t)cpu->ebx == SET_ENABLED) {
+        // libhx86::Widget::setEnabled() reaches every widget kind through the
+        // generic WIDGET request; param1 is nonzero to enable.
+        Widget* target = this->FindWidgetByID(_data->param0);
+        if (!target) return -1;
+        if (target->PID != proc->pid) return -1;
+        target->SetEnabled(_data->param1 != 0);
         return 1;
     }
 
@@ -617,28 +634,32 @@ int32_t HguiHandler::HandleListView(CPUState* cpu, const WidgetData* _data) {
         ListView* widget = FindOwnedWidget<ListView>(_data->param0, proc->pid, &Widget::IsListView);
         if (!widget) return -1;
 
-        struct ListViewItemData {
-            char name[64];
-            uint32_t size;
-            uint8_t type;
-        };
-
         widget->Clear();
         int count = (int)_data->param1;
         if (count < 0) return -1;
         if (count > LISTVIEW_MAX_ITEMS) count = LISTVIEW_MAX_ITEMS;
 
-        ListViewItemData items[LISTVIEW_MAX_ITEMS];
         size_t bytes = (size_t)count * sizeof(ListViewItemData);
-        if (bytes > 0 && (!ValidateUserPointer(proc, _data->param5, bytes) ||
-                          !CopyFromUser(proc, items, _data->param5, bytes))) {
-            return -1;
+        ListViewItemData* items = nullptr;
+        if (bytes > 0) {
+            items = (ListViewItemData*)kmalloc(bytes);
+            if (!items) return -1;
+            if (!ValidateUserPointer(proc, _data->param5, bytes) ||
+                !CopyFromUser(proc, items, _data->param5, bytes)) {
+                kfree(items);
+                return -1;
+            }
         }
 
         for (int i = 0; i < count; i++) {
-            items[i].name[63] = 0;
-            widget->AddItem(items[i].name, items[i].size, items[i].type);
+            // Force-terminate every cell so a hostile sender cannot leave a
+            // string unterminated inside the cell buffer.
+            for (int c = 0; c < GUI_LISTVIEW_MAX_COLUMNS; c++) {
+                items[i].cells[c][GUI_LISTVIEW_CELL - 1] = 0;
+            }
+            widget->AddItemData(items[i]);
         }
+        if (items) kfree(items);
         return count;
     } else if ((uint32_t)cpu->ebx == CLEAR_ITEMS) {
         ListView* widget = FindOwnedWidget<ListView>(_data->param0, proc->pid, &Widget::IsListView);
@@ -654,14 +675,14 @@ int32_t HguiHandler::HandleListView(CPUState* cpu, const WidgetData* _data) {
         ListView* widget = FindOwnedWidget<ListView>(_data->param0, proc->pid, &Widget::IsListView);
         if (!widget) return -1;
         return widget->SetSelectedIndex(_data->param1) ? 1 : -1;
-    } else if ((uint32_t)cpu->ebx == SET_TEXT) {
+    } else if ((uint32_t)cpu->ebx == ADD_COLUMN) {
+        // param0 = widgetID, param5 = column title, param1 = fixed width (0 = auto).
         ListView* widget = FindOwnedWidget<ListView>(_data->param0, proc->pid, &Widget::IsListView);
         if (!widget) return -1;
         if (!CopyUserString(proc, _data->param5, headerBuf, sizeof(headerBuf))) {
             return -1;
         }
-        widget->SetHeader(headerBuf);
-        return 1;
+        return widget->AddColumn(headerBuf, _data->param1) ? 1 : -1;
     }
 
     return -1;

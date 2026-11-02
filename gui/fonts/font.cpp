@@ -23,12 +23,15 @@
  */
 
 #define KDBG_COMPONENT "GUI:FONT"
-#include <core/filesystem/FileSystem.h>
+#include <debug.h>
 #include <gui/fonts/font.h>
+#include <gui/guiplat.h>
+#include <string.h>
 
 #define FONT_MAGIC 0x464E5432  // "FNT2".
 
 FontManager* FontManager::activeInstance = nullptr;
+FontFileLoader FontManager::variantLoader = nullptr;
 
 FontFile::FontFile(){};
 
@@ -170,7 +173,7 @@ FontManager::FontManager() {
     activeInstance = this;
     font_list = new LinkedList<FontFile*>();
     if (!font_list) {
-        HALT("CRITICAL: Failed to allocate font list!\n");
+        guiplat::Abort("CRITICAL: Failed to allocate font list!\n");
     }
 }
 
@@ -207,7 +210,7 @@ void FontManager::LoadFile(uint32_t mod_start, uint32_t mod_end) {
 
     FontFile* new_font_file = new FontFile();
     if (!new_font_file) {
-        HALT("CRITICAL: Failed to allocate font file!\n");
+        guiplat::Abort("CRITICAL: Failed to allocate font file!\n");
     }
 
     for (int s = 0; s < 10; s++) {
@@ -339,7 +342,7 @@ void FontManager::LoadFile(uint32_t mod_start, uint32_t mod_end) {
 
         FontData* new_font = new FontData{};
         if (!new_font) {
-            HALT("CRITICAL: Failed to allocate font data!\n");
+            guiplat::Abort("CRITICAL: Failed to allocate font data!\n");
         }
         new_font->magic = magic;
         new_font->size = size;
@@ -354,7 +357,7 @@ void FontManager::LoadFile(uint32_t mod_start, uint32_t mod_end) {
         size_t atlasSize = (size_t)atlas_elems;
         new_font->atlas = new uint32_t[atlasSize];
         if (!new_font->atlas) {
-            HALT("CRITICAL: Failed to allocate font atlas!\n");
+            guiplat::Abort("CRITICAL: Failed to allocate font atlas!\n");
         }
         memcpy(new_font->atlas, ptr, atlas_bytes);
         ptr += atlas_bytes;
@@ -363,7 +366,7 @@ void FontManager::LoadFile(uint32_t mod_start, uint32_t mod_end) {
         size_t glyphSize = (size_t)glyph_elems;
         new_font->glyphs = new int16_t[glyphSize];
         if (!new_font->glyphs) {
-            HALT("CRITICAL: Failed to allocate font glyphs!\n");
+            guiplat::Abort("CRITICAL: Failed to allocate font glyphs!\n");
         }
         memcpy(new_font->glyphs, ptr, glyph_bytes);
         ptr += glyph_bytes;
@@ -372,7 +375,7 @@ void FontManager::LoadFile(uint32_t mod_start, uint32_t mod_end) {
         size_t kerningSize = (size_t)kerning_elems;
         new_font->kernings = new int16_t[kerningSize];
         if (!new_font->kernings) {
-            HALT("CRITICAL: Failed to allocate font kernings!\n");
+            guiplat::Abort("CRITICAL: Failed to allocate font kernings!\n");
         }
         memcpy(new_font->kernings, ptr, kerning_bytes);
         ptr += kerning_bytes;
@@ -386,37 +389,21 @@ void FontManager::LoadFile(uint32_t mod_start, uint32_t mod_end) {
     font_list->Add(new_font_file);
 }
 
-void FontManager::LoadFile(File* file, FontType style, const char* ttfPath, int firstChar,
-                           int numChars) {
-    if (!file || file->size == 0) {
-        KDBG1("Font error: file is null or empty");
+void FontManager::LoadMemory(const uint8_t* data, size_t len, FontType style, const char* ttfPath,
+                             int firstChar, int numChars) {
+    if (!data || len == 0) {
+        KDBG1("Font error: buffer is null or empty");
         return;
     }
 
-    if (file->size > 10 * 1024 * 1024) {
-        KDBG1("Font error: file too large (%u bytes, max 10MB)", file->size);
+    if (len > 10 * 1024 * 1024) {
+        KDBG1("Font error: font too large (%u bytes, max 10MB)", (uint32_t)len);
         return;
-    }
-    uint8_t* buffer = new uint8_t[file->size];
-    if (!buffer) {
-        HALT("CRITICAL: Failed to allocate TTF file buffer!\n");
-    }
-
-    file->Seek(0);
-    uint32_t bytesRead = 0;
-    while (bytesRead < file->size) {
-        int32_t result = file->Read(buffer + bytesRead, file->size - bytesRead);
-        if (result <= 0) {
-            KDBG1("Font error: failed to read file (got %d bytes)", result);
-            delete[] buffer;
-            return;
-        }
-        bytesRead += (uint32_t)result;
     }
 
     FontFile* new_font_file = new FontFile();
     if (!new_font_file) {
-        HALT("CRITICAL: Failed to allocate font file!\n");
+        guiplat::Abort("CRITICAL: Failed to allocate font file!\n");
     }
     for (int s = 0; s < 10; s++) {
         for (int t = 0; t < 4; t++) {
@@ -428,29 +415,30 @@ void FontManager::LoadFile(File* file, FontType style, const char* ttfPath, int 
 
     // Store the source path so on-demand loading can find the variant files.
     if (ttfPath) {
-        size_t len = strlen(ttfPath);
-        if (len >= sizeof(new_font_file->filePath)) len = sizeof(new_font_file->filePath) - 1;
-        memcpy(new_font_file->filePath, ttfPath, len);
-        new_font_file->filePath[len] = '\0';
+        size_t pathLen = strlen(ttfPath);
+        if (pathLen >= sizeof(new_font_file->filePath)) {
+            pathLen = sizeof(new_font_file->filePath) - 1;
+        }
+        memcpy(new_font_file->filePath, ttfPath, pathLen);
+        new_font_file->filePath[pathLen] = '\0';
     }
 
     // Rasterize each size slot (TINY..XLARGE) for the requested style.
     for (int slot = 0; slot < 5; slot++) {
-        FontData* data = new FontData{};
-        if (!data) {
-            HALT("CRITICAL: Failed to allocate FontData!\n");
+        FontData* fd = new FontData{};
+        if (!fd) {
+            guiplat::Abort("CRITICAL: Failed to allocate FontData!\n");
         }
-        if (TTF_RasterizeFont(buffer, file->size, slot, (int)style, data, firstChar, numChars)) {
-            new_font_file->font_data_list[slot][(int)style] = data;
+        if (TTF_RasterizeFont(data, (uint32_t)len, slot, (int)style, fd, firstChar, numChars)) {
+            new_font_file->font_data_list[slot][(int)style] = fd;
             KDBG1("TTF font loaded: slot=%d, style=%d, atlas=%dx%d, glyphs=%d, kernings=%d", slot,
-                  (int)style, data->atlas_width, data->atlas_height, data->glyph_count,
-                  data->kerning_count);
+                  (int)style, fd->atlas_width, fd->atlas_height, fd->glyph_count,
+                  fd->kerning_count);
         } else {
-            delete data;
+            delete fd;
         }
     }
 
-    delete[] buffer;
     font_list->PushBack(new_font_file);
 }
 
@@ -492,44 +480,18 @@ bool FontManager::LazyLoadStyle(FontFile* ff, FontType style) {
         strcpy(variantPath + baseLen + 1, dot);
     }
 
-    // Open the variant file.
-    extern FileSystem* g_bootPartition;
-    if (!g_bootPartition) return false;
-    File* f = g_bootPartition->Open(variantPath);
-    if (!f || f->size == 0) {
-        if (f) {
-            f->Close();
-            delete f;
-        }
-        KDBG1("LazyLoad: %s not found", variantPath);
+    // Ask the environment to read the variant file. Without a loader (host
+    // tests with no filesystem), lazy loading is simply unavailable.
+    if (!variantLoader) return false;
+
+    uint8_t* buffer = nullptr;
+    size_t fileSz = 0;
+    if (!variantLoader(variantPath, &buffer, &fileSz) || !buffer || fileSz == 0) {
+        KDBG1("LazyLoad: %s not available", variantPath);
         return false;
     }
-
-    // Read the entire TTF into the buffer.
-    uint32_t fileSz = f->size;
     if (fileSz > 10 * 1024 * 1024) {
-        KDBG1("LazyLoad: font too large (%u bytes, max 10MB)", fileSz);
-        f->Close();
-        delete f;
-        return false;
-    }
-    uint8_t* buffer = new uint8_t[fileSz];
-    if (!buffer) {
-        f->Close();
-        delete f;
-        return false;
-    }
-    f->Seek(0);
-    uint32_t totalRead = 0;
-    while (totalRead < fileSz) {
-        int32_t r = f->Read(buffer + totalRead, fileSz - totalRead);
-        if (r <= 0) break;
-        totalRead += (uint32_t)r;
-    }
-    f->Close();
-    delete f;
-
-    if (totalRead != fileSz) {
+        KDBG1("LazyLoad: font too large (%u bytes, max 10MB)", (uint32_t)fileSz);
         delete[] buffer;
         return false;
     }
@@ -538,7 +500,7 @@ bool FontManager::LazyLoadStyle(FontFile* ff, FontType style) {
     bool anyRasterized = false;
     for (int slot = 0; slot < 5; slot++) {
         FontData* data = new FontData{};
-        if (TTF_RasterizeFont(buffer, fileSz, slot, (int)style, data, ff->firstChar,
+        if (TTF_RasterizeFont(buffer, (uint32_t)fileSz, slot, (int)style, data, ff->firstChar,
                               ff->numChars)) {
             ff->font_data_list[slot][(int)style] = data;
             anyRasterized = true;
@@ -563,7 +525,7 @@ Font* FontManager::getNewFont(FontSize size, FontType type) {
         if (ff && ff->font_data_list[size][type]) {
             Font* sysFont = new Font(ff, size, type);
             if (!sysFont) {
-                HALT("CRITICAL: Failed to allocate Font object!\n");
+                guiplat::Abort("CRITICAL: Failed to allocate Font object!\n");
             }
             return sysFont;
         }
@@ -580,7 +542,7 @@ Font* FontManager::getNewFont(FontSize size, FontType type) {
                 if (LazyLoadStyle(ff, type) && ff->font_data_list[size][type]) {
                     Font* sysFont = new Font(ff, size, type);
                     if (!sysFont) {
-                        HALT("CRITICAL: Failed to allocate Font object!\n");
+                        guiplat::Abort("CRITICAL: Failed to allocate Font object!\n");
                     }
                     return sysFont;
                 }
