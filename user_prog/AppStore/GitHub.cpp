@@ -46,9 +46,9 @@ constexpr uint32_t kMaxTokens = 4096;
 const GitHubRelease kCatalogFallback = {
     "v0.1.0",
     "https://github.com/Hashx86-OS/Quake-Hx86/releases/download/v0.1.0/Quake.bin",
-    "https://api.github.com/repos/Hashx86-OS/Quake-Hx86/releases/assets/502319207",
-    "e27db0b59450c58542697d2646433429cf5c741b65eef03a127d05b95b227b7a",
-    1625648,
+    "https://api.github.com/repos/Hashx86-OS/Quake-Hx86/releases/assets/768968019",
+    "4e0751da9ce6b29e1f7d2e22448400caca996b0e4c3113eb33b2ff23256b788b",
+    3564760,
     true,
 };
 

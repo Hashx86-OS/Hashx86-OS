@@ -72,9 +72,9 @@ Still missing:
 Quake-Hx86 facts (checked at planning time):
 
 - Latest release: `v0.1.0`.
-- Asset: `Quake.bin`, 1,625,648 bytes.
+- Asset: `Quake.bin`, 3,564,760 bytes.
 - GitHub API provides asset digest
-  `sha256:e27db0b59450c58542697d2646433429cf5c741b65eef03a127d05b95b227b7a`.
+  `sha256:4e0751da9ce6b29e1f7d2e22448400caca996b0e4c3113eb33b2ff23256b788b`.
 - Asset download redirects:
   `github.com/.../releases/download/...` → `github.com/...` →
   `release-assets.githubusercontent.com/...` (signed, expiring URL).
@@ -453,7 +453,7 @@ bool HttpDownload(const DownloadRequest& request, DownloadProgress* progress);
   "source": "https://github.com/Hashx86-OS/Quake-Hx86",
   "release": "v0.1.0",
   "installed_files": [
-    {"path": "Quake.bin", "size": 1625648, "sha256": "..."}
+    {"path": "Quake.bin", "size": 3564760, "sha256": "..."}
   ],
   "data_files": [
     {"path": "id1/pak0.pak", "source": "user-supplied"}
