@@ -11,8 +11,9 @@ CPPFLAGS = -m32 -O2 -g -ffreestanding -fno-use-cxa-atexit -nostdlib -fno-builtin
 
 LDFLAGS = -melf_i386 -L$(LIBHX86_BUILD_DIR) -lhx86
 
+APP_NAME = CLIHello
 SRCS = prog.cpp
-OBJS = $(patsubst %.cpp,$(BUILD_DIR)/%.o,$(SRCS))
+OBJS = $(addprefix $(BUILD_DIR)/obj/$(APP_NAME)/, $(SRCS:.cpp=.o))
 TARGET = $(BUILD_DIR)/CLIHello.bin
 
 all: $(TARGET)
@@ -22,10 +23,10 @@ $(TARGET): $(OBJS)
 	@mkdir -p $(dir $@)
 	@$(LD) -T linker.ld -o $@ $(OBJS) $(LDFLAGS)
 
-$(BUILD_DIR)/%.o: %.cpp
+$(BUILD_DIR)/obj/$(APP_NAME)/%.o: %.cpp
 	@echo "[APP] Compiling $<"
 	@mkdir -p $(dir $@)
 	@$(GPP) $(CPPFLAGS) -c $< -o $@
 
 clean:
-	rm -rf $(BUILD_DIR)
+	rm -rf $(BUILD_DIR)/obj/$(APP_NAME) $(TARGET)

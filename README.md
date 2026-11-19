@@ -34,6 +34,9 @@ This project focuses on low-level system development, implementing core operatin
 - Support for dynamic resolution switching via dynamic drivers
 - HDD driver implementation
 - FAT32 filesystem support (via FatFs R0.16)
+- IPv4 networking via lwIP over RTL8139 and Intel 82540EM/e1000 (ARP, ICMP, DHCP, DNS, UDP, TCP)
+- User-space BSD-style socket API (`libhx86/Hx86/Hnet`)
+- User-space DNS resolution and certificate-validated TLS 1.2 (mbedTLS)
 - DMA / PCI driver framework
 - Audio driver support
 - Task State Segment (TSS) integration
@@ -82,7 +85,6 @@ Hashx86 is currently under active development. Upcoming improvements include:
 - Desktop taskbar implementation with smooth animations
 - Expanded system call library
 - Thread-safe process management
-- Networking support
 - USB driver support
 
 **Stay tuned for future updates!**
@@ -189,6 +191,12 @@ This project wouldn’t have been possible without the help, guidance and inspir
 * **Sun fdlibm:** Freely Distributable LIBM by **Sun Microsystems** (public domain) — [netlib.org/fdlibm](https://www.netlib.org/fdlibm/)
 
 * **PDCLib:** Public Domain C Library by **the PDCLib contributors** (CC0) — [github.com/DevSolar/pdclib](https://github.com/DevSolar/pdclib)
+
+* **lwIP 2.1.3:** Lightweight TCP/IP stack by **the lwIP contributors** (BSD 3-Clause) — [savannah.nongnu.org/projects/lwip](https://savannah.nongnu.org/projects/lwip/)
+
+* **Mbed TLS 2.28.8:** TLS library by **The Mbed TLS Contributors** (Apache-2.0) — [github.com/Mbed-TLS/mbedtls](https://github.com/Mbed-TLS/mbedtls)
+
+* **Mozilla CA Bundle:** Root certificate bundle distributed by **curl** (MPL-2.0) — [curl.se/ca/cacert.pem](https://curl.se/ca/cacert.pem)
 
 * **BootUp Sound:** "New Notification 09" by **Universfield** on [Pixabay](https://pixabay.com/sound-effects/film-special-effects-new-notification-09-352705/)
 

@@ -132,7 +132,7 @@ void File::Close() {
 int32_t AllocateFd(ProcessControlBlock* pcb, File* file) {
     if (!pcb || !file) return -1;
     for (uint32_t fd = FD_MIN; fd < FD_MAX; fd++) {
-        if (!pcb->fdTable[fd]) {
+        if (!pcb->fdTable[fd] && pcb->socketTable[fd] < 0) {
             pcb->fdTable[fd] = file;
             return (int32_t)fd;
         }

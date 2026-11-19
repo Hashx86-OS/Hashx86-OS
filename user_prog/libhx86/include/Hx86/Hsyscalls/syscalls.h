@@ -86,10 +86,15 @@ int32_t syscall_close(uint32_t fd);
 int32_t syscall_execve(const char* path, char* const argv[], char* const envp[]);
 int32_t syscall_brk(int32_t increment);
 int32_t syscall_stat(const char* path, struct stat* statbuf);
+int32_t syscall_mkdir(const char* path, uint32_t mode);
+int32_t syscall_unlink(const char* path);
+int32_t syscall_rmdir(const char* path);
+int32_t syscall_rename(const char* oldPath, const char* newPath);
 int32_t syscall_clone(uint32_t clone_flags, void* child_stack, void* parent_tid, void* tls,
                       void* child_tid);
 int32_t syscall_getdents(uint32_t fd, struct linux_dirent* dirp, uint32_t count);
 void syscall_nanosleep(struct timespec* req, struct timespec* rem);
+int32_t syscall_time(int32_t* tloc);
 int32_t syscall_getcwd(char* buf, uint32_t bufSize);
 void syscall_debug(const char* str);
 uint32_t syscall_peek_memory(uint32_t address, uint32_t size);

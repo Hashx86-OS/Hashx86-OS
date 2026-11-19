@@ -25,6 +25,7 @@
 #define KDBG_COMPONENT "SCHEDULER"
 #include <core/elf.h>
 #include <core/kstack.h>
+#include <core/net/net_socket.h>
 #include <core/scheduler.h>
 
 extern TaskStateSegment g_tss;
@@ -141,6 +142,7 @@ ProcessControlBlock* Scheduler::CreateProcess(bool isKernel, void (*entrypoint)(
     pcb->cwd[1] = '\0';
     for (uint32_t fd = FD_MIN; fd < FD_MAX; fd++) {
         pcb->fdTable[fd] = nullptr;
+        pcb->socketTable[fd] = -1;
     }
 
     // Memory space setup.
@@ -628,6 +630,8 @@ ThreadControlBlock* Scheduler::CloneCurrentProcess(CPUState* parentContext, uint
     childProc->cliAttachedViewId = 0;
     for (uint32_t fd = FD_MIN; fd < FD_MAX; fd++) {
         childProc->fdTable[fd] = nullptr;
+        // Sockets are not inherited across fork; the child starts clean.
+        childProc->socketTable[fd] = -1;
     }
 
     if (!childProc->page_directory) {
@@ -837,13 +841,17 @@ bool Scheduler::KillProcess(uint32_t pid) {
         // individual frames.
         for (int i = 0; i < 64; i++) {
             if (!(target->page_directory[i] & PAGE_PRESENT)) continue;
-            if (target->page_directory[i] == _pager->KernelPageDirectory[i]) continue;
+            if ((target->page_directory[i] & 0xFFFFF000) ==
+                (_pager->KernelPageDirectory[i] & 0xFFFFF000))
+                continue;
             pmm_free_block((void*)(target->page_directory[i] & 0xFFFFF000));
             target->page_directory[i] = 0;
         }
         for (int i = 768; i < 1024; i++) {
             if (!(target->page_directory[i] & PAGE_PRESENT)) continue;
-            if (target->page_directory[i] == _pager->KernelPageDirectory[i]) continue;
+            if ((target->page_directory[i] & 0xFFFFF000) ==
+                (_pager->KernelPageDirectory[i] & 0xFFFFF000))
+                continue;
             pmm_free_block((void*)(target->page_directory[i] & 0xFFFFF000));
             target->page_directory[i] = 0;
         }
@@ -864,6 +872,10 @@ bool Scheduler::KillProcess(uint32_t pid) {
     // Free program arguments (kmalloc'd strings and struct).
     FreeProgramArguments(target->programArgs);
     target->programArgs = nullptr;
+
+    // Hand any still-open sockets to the network reaper. This only enqueues
+    // descriptors; lwIP is never called from the scheduler's IRQ-masked path.
+    NetCloseProcessSockets(target);
 
     // Remove from the global process list.
     globalProcessList.Remove([target](ProcessControlBlock* p) { return p == target; });

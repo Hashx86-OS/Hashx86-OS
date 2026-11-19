@@ -86,6 +86,9 @@ public:
     void ReadFile(char* path, uint8_t* buffer, uint32_t length) override;
     void WriteFile(char* path, uint8_t* buffer, uint32_t length) override;
     uint32_t GetFileSize(char* path) override;
+    int32_t CreateDirectory(const char* path) override;
+    int32_t Remove(const char* path) override;
+    int32_t Rename(const char* oldPath, const char* newPath) override;
     void Format() override;
 
 private:

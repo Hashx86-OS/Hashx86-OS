@@ -175,6 +175,10 @@ struct ProcessControlBlock {
     uint16_t appType;
     HeapSegment heap;
     File* fdTable[FD_MAX];
+    // Per-process mapping from user-visible descriptors to lwIP socket
+    // descriptors. -1 marks a free slot; an entry is only valid while the
+    // matching fdTable[fd] is null.
+    int socketTable[FD_MAX];
     ProgramArguments* programArgs;  // Owned by the PCB, freed in KillProcess.
     char cwd[256];                  // Current working directory of the process.
 

@@ -38,6 +38,7 @@
 #define PATH_SETTINGS "Hashx86/apps/Settings.bin"
 #define PATH_TERMINAL "Hashx86/apps/Terminal.bin"
 #define PATH_CLIHELLO "Hashx86/apps/CLIHello.bin"
+#define PATH_APPSTORE "Hashx86/apps/AppStore.bin"
 
 // User applications.
 #define PATH_APPS "Hashx86/apps/"

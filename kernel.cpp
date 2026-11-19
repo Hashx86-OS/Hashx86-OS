@@ -26,6 +26,7 @@
 #include <core/drivers/vbe.h>
 #include <core/filesystem/Paths.h>
 #include <core/kstack.h>
+#include <core/net/net.h>
 #include <core/settings.h>
 #include <gui/bootanim.h>
 #include <gui/desktop.h>
@@ -820,6 +821,9 @@ void BootMain(void* arg) {
     if (!process1) {
         HALT("CRITICAL: Failed to create desktop process!\n");
     }
+
+    // Bring up lwIP, probe the NIC and start the kernel network thread.
+    NetworkInit();
 
     delete bootArgs;
 }

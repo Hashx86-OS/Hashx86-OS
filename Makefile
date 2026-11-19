@@ -1,10 +1,46 @@
 KDBG_ENABLE ?= 1
 KDBG_LEVEL ?= 1
 
-GPP_PARAMS = -m32 -g -ffreestanding -Iinclude -I. -fno-use-cxa-atexit -nostdlib -fno-builtin -fno-rtti -fno-exceptions -fno-common -fno-omit-frame-pointer -DKDBG_ENABLE=$(KDBG_ENABLE) -DKDBG_LEVEL=$(KDBG_LEVEL) -MMD -MP
+GPP_PARAMS = -m32 -g -ffreestanding -Icore/net -Ithird_party/lwip/src/include -Iinclude -I. -fno-use-cxa-atexit -nostdlib -fno-builtin -fno-rtti -fno-exceptions -fno-common -fno-omit-frame-pointer -DKDBG_ENABLE=$(KDBG_ENABLE) -DKDBG_LEVEL=$(KDBG_LEVEL) -MMD -MP
 ASM_PARAMS = --32 -g
 ASM_NASM_PARAMS = -f elf32
 BUILD_DIR = build
+
+# lwIP is vendored under third_party/ and compiled with the kernel flags.
+# Only the IPv4 core needed by the current milestones is listed; TCP objects
+# are added when the socket API lands.
+LWIP_DIR = third_party/lwip/src
+LWIP_OBJS = \
+	$(BUILD_DIR)/obj/$(LWIP_DIR)/api/api_lib.o \
+	$(BUILD_DIR)/obj/$(LWIP_DIR)/api/api_msg.o \
+	$(BUILD_DIR)/obj/$(LWIP_DIR)/api/err.o \
+	$(BUILD_DIR)/obj/$(LWIP_DIR)/api/netbuf.o \
+	$(BUILD_DIR)/obj/$(LWIP_DIR)/api/netdb.o \
+	$(BUILD_DIR)/obj/$(LWIP_DIR)/api/sockets.o \
+	$(BUILD_DIR)/obj/$(LWIP_DIR)/api/tcpip.o \
+	$(BUILD_DIR)/obj/$(LWIP_DIR)/core/init.o \
+	$(BUILD_DIR)/obj/$(LWIP_DIR)/core/def.o \
+	$(BUILD_DIR)/obj/$(LWIP_DIR)/core/dns.o \
+	$(BUILD_DIR)/obj/$(LWIP_DIR)/core/inet_chksum.o \
+	$(BUILD_DIR)/obj/$(LWIP_DIR)/core/ip.o \
+	$(BUILD_DIR)/obj/$(LWIP_DIR)/core/mem.o \
+	$(BUILD_DIR)/obj/$(LWIP_DIR)/core/memp.o \
+	$(BUILD_DIR)/obj/$(LWIP_DIR)/core/netif.o \
+	$(BUILD_DIR)/obj/$(LWIP_DIR)/core/pbuf.o \
+	$(BUILD_DIR)/obj/$(LWIP_DIR)/core/raw.o \
+	$(BUILD_DIR)/obj/$(LWIP_DIR)/core/stats.o \
+	$(BUILD_DIR)/obj/$(LWIP_DIR)/core/sys.o \
+	$(BUILD_DIR)/obj/$(LWIP_DIR)/core/tcp.o \
+	$(BUILD_DIR)/obj/$(LWIP_DIR)/core/tcp_in.o \
+	$(BUILD_DIR)/obj/$(LWIP_DIR)/core/tcp_out.o \
+	$(BUILD_DIR)/obj/$(LWIP_DIR)/core/timeouts.o \
+	$(BUILD_DIR)/obj/$(LWIP_DIR)/core/udp.o \
+	$(BUILD_DIR)/obj/$(LWIP_DIR)/core/ipv4/dhcp.o \
+	$(BUILD_DIR)/obj/$(LWIP_DIR)/core/ipv4/etharp.o \
+	$(BUILD_DIR)/obj/$(LWIP_DIR)/core/ipv4/icmp.o \
+	$(BUILD_DIR)/obj/$(LWIP_DIR)/core/ipv4/ip4.o \
+	$(BUILD_DIR)/obj/$(LWIP_DIR)/core/ipv4/ip4_addr.o \
+	$(BUILD_DIR)/obj/$(LWIP_DIR)/netif/ethernet.o
 
 # Source-relative .o paths under build/obj/
 objects = \
@@ -16,10 +52,13 @@ objects = \
 	$(BUILD_DIR)/obj/core/driver.o \
 	$(BUILD_DIR)/obj/core/drivers/ata.o \
 	$(BUILD_DIR)/obj/core/drivers/AudioMixer.o \
+	$(BUILD_DIR)/obj/core/drivers/e1000.o \
 	$(BUILD_DIR)/obj/core/drivers/GraphicsDriver.o \
 	$(BUILD_DIR)/obj/core/drivers/keyboard.o \
 	$(BUILD_DIR)/obj/core/drivers/ModuleLoader.o \
 	$(BUILD_DIR)/obj/core/drivers/mouse.o \
+	$(BUILD_DIR)/obj/core/drivers/rtl8139.o \
+	$(BUILD_DIR)/obj/core/drivers/rtc.o \
 	$(BUILD_DIR)/obj/core/drivers/SymbolTable.o \
 	$(BUILD_DIR)/obj/core/drivers/vbe.o \
 	$(BUILD_DIR)/obj/core/power.o \
@@ -38,6 +77,11 @@ objects = \
 	$(BUILD_DIR)/obj/core/KernelSymbolResolver.o \
 	$(BUILD_DIR)/obj/core/kstack.o \
 	$(BUILD_DIR)/obj/core/memory.o \
+	$(BUILD_DIR)/obj/core/net/lwip_port.o \
+	$(BUILD_DIR)/obj/core/net/net_glue.o \
+	$(BUILD_DIR)/obj/core/net/net_socket.o \
+	$(BUILD_DIR)/obj/core/net/netif_eth.o \
+	$(BUILD_DIR)/obj/core/net/sys_arch.o \
 	$(BUILD_DIR)/obj/core/tlsf/tlsf.o \
 	$(BUILD_DIR)/obj/core/paging.o \
 	$(BUILD_DIR)/obj/core/pci.o \
@@ -90,6 +134,7 @@ objects = \
 	$(BUILD_DIR)/obj/gui/taskbar.o \
 	$(BUILD_DIR)/obj/gui/widget.o \
 	$(BUILD_DIR)/obj/gui/window.o \
+	$(LWIP_OBJS) \
 	$(BUILD_DIR)/obj/kernel.o \
 	$(BUILD_DIR)/obj/stdlib.o \
 	$(BUILD_DIR)/obj/stdlib/math/w_sqrt.o \
@@ -258,12 +303,16 @@ build-run:
 # to port 0xF4 and QEMU exits. Without the device the guest just halts.
 runq: iso
 	qemu-system-i386 -cdrom $(KERNEL_ISO) -boot d -vga std -serial stdio -m 1G \
-	-drive file=$(QEMU_DISK),format=vdi -device isa-debug-exit,iobase=0xf4,iosize=0x04
+	-drive file=$(QEMU_DISK),format=vdi \
+	-netdev user,id=net0 -device rtl8139,netdev=net0,mac=52:54:00:12:34:56 \
+	-device isa-debug-exit,iobase=0xf4,iosize=0x04
 
 # Run with GDB debug
 rungdb: iso
 	qemu-system-i386 -cdrom $(KERNEL_ISO) -boot d -vga std -serial stdio -m 1G \
-	-drive file=$(QEMU_DISK),format=vdi -s -S -device isa-debug-exit,iobase=0xf4,iosize=0x04
+	-drive file=$(QEMU_DISK),format=vdi \
+	-netdev user,id=net0 -device rtl8139,netdev=net0,mac=52:54:00:12:34:56 \
+	-s -S -device isa-debug-exit,iobase=0xf4,iosize=0x04
 
 # Connect GDB to the running QEMU instance
 gdb:
@@ -337,6 +386,7 @@ hdd:
 	-sudo cp $(BUILD_DIR)/drivers/bga.sys /mnt/vdi_p1/Hashx86/drivers/bga.sys
 	-sudo cp $(BUILD_DIR)/drivers/ac97.sys /mnt/vdi_p1/Hashx86/drivers/ac97.sys
 
+	-sudo cp bin/cacert.pem /mnt/vdi_p1/Hashx86/cacert.pem
 	-sudo cp bin/fonts/segoeui.ttf /mnt/vdi_p1/Hashx86/fonts/segoeui.ttf
 	-sudo cp bin/fonts/segoeuib.ttf /mnt/vdi_p1/Hashx86/fonts/segoeuib.ttf
 	-sudo cp bin/fonts/segoeuii.ttf /mnt/vdi_p1/Hashx86/fonts/segoeuii.ttf
@@ -353,6 +403,7 @@ hdd:
 	-sudo cp $(BUILD_DIR)/user/Settings.bin /mnt/vdi_p1/Hashx86/apps/Settings.bin
 	-sudo cp $(BUILD_DIR)/user/Terminal.bin /mnt/vdi_p1/Hashx86/apps/Terminal.bin
 	-sudo cp $(BUILD_DIR)/user/CLIHello.bin /mnt/vdi_p1/Hashx86/apps/CLIHello.bin
+	-sudo cp $(BUILD_DIR)/user/AppStore.bin /mnt/vdi_p1/Hashx86/apps/AppStore.bin
 	-sudo cp $(BUILD_DIR)/user/Game3D.bin /mnt/vdi_p1/Apps/Game3D/Game3D.bin
 
 # 	5. Cleanup
@@ -399,7 +450,7 @@ FORCE:
 # build/drivers. Declared output lists mirror user_prog/Makefile (SUBDIRS) and
 # drivers/Makefile (DRIVERS); stale binaries not on those lists are pruned
 # before the incremental sub-make runs so obsolete files never reach the package.
-USER_APPS = MeMView test Explorer Settings Terminal Game3D CLIHello
+USER_APPS = MeMView test Explorer Settings Terminal Game3D CLIHello AppStore
 USER_BINS = $(addprefix $(BUILD_DIR)/user/,$(addsuffix .bin,$(USER_APPS)))
 DRIVER_SYS = $(addprefix $(BUILD_DIR)/drivers/,bga.sys ac97.sys)
 
@@ -437,7 +488,7 @@ INSTALLER_PAK_STAMP = $(BUILD_DIR)/.installer_data.stamp
 INSTALLER_PAK_MANIFEST = $(BUILD_DIR)/.installer_pak.manifest
 $(INSTALLER_PAK_MANIFEST): FORCE $(KERNEL_BIN) $(INSTALLER_CORE_IMG) $(KERNEL_MAP) user drivers
 	@find $(KERNEL_BIN) $(INSTALLER_CORE_IMG) $(KERNEL_MAP) Makefile \
-	  $(BUILD_DIR)/user $(BUILD_DIR)/drivers bin/fonts bin/bitmaps bin/audio \
+	  $(BUILD_DIR)/user $(BUILD_DIR)/drivers bin/fonts bin/bitmaps bin/audio bin/cacert.pem \
 	  bin/ProgFile/Game3D $(INSTALLER_GRUB_PLATFORM_DIR) -type f -printf '%p %s %T@\n' 2>/dev/null | sort > $@.tmp
 	@cmp -s $@.tmp $@ || cp $@.tmp $@
 	@rm -f $@.tmp
@@ -496,6 +547,8 @@ $(INSTALLER_PAK_STAMP): $(INSTALLER_PAK_MANIFEST) $(KERNEL_BIN) $(INSTALLER_CORE
 	# Audio
 	mkdir -p $(INSTALLER_PAK_DIR)/Hashx86/audio
 	cp bin/audio/boot.wav $(INSTALLER_PAK_DIR)/Hashx86/audio/
+	# TLS trust store
+	cp bin/cacert.pem $(INSTALLER_PAK_DIR)/Hashx86/cacert.pem
 	# Drivers
 	mkdir -p $(INSTALLER_PAK_DIR)/Hashx86/drivers
 	cp $(BUILD_DIR)/drivers/*.sys $(INSTALLER_PAK_DIR)/Hashx86/drivers/
@@ -552,7 +605,8 @@ prog:
 #   - core/tlsf/, include/core/tlsf/  : TLSF allocator (Matthew Conte)
 #   - stdlib/math/                    : fdlibm math routines (Sun Microsystems)
 #   - stdlib/string/                  : PDCLib string routines (public domain)
-#   - third_party/jsmn/               : jsmn JSON parser (Serge A. Zaitsev, MIT)
+#   - third_party/                     : all vendored third-party code
+#                                       (jsmn, lwIP, mbedTLS, ...)
 #   - include/ctype.h, include/string.h, include/stdlib/fdlibm.h :
 #                                     standalone PDCLib / fdlibm headers
 #   - core/filesystem/FatFs/ff.c, ffunicode.c, and
@@ -564,7 +618,7 @@ prog:
 # EXCLUDE_PATHS list in check_headers.sh and tools/license_headers.sh.
 # ------------------------------------------------------------------- #
 FORMAT_EXCLUDE_DIRS := build tools include/stb core/tlsf include/core/tlsf \
-	stdlib/math stdlib/string third_party/jsmn
+	stdlib/math stdlib/string third_party
 FORMAT_EXCLUDE_FILES := include/ctype.h include/string.h include/stdlib/fdlibm.h \
 	core/filesystem/FatFs/ff.c core/filesystem/FatFs/ffunicode.c \
 	include/core/filesystem/FatFs/ff.h include/core/filesystem/FatFs/ffconf.h \
@@ -592,6 +646,7 @@ check-bugs:
 		--suppress=missingIncludeSystem \
 		--inline-suppr \
 		--quiet \
+		-i third_party \
 		.
 
 # Check Headers (Report Only)

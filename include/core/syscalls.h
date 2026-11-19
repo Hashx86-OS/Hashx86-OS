@@ -152,7 +152,12 @@ public:
                                     void* child_tid);
     static int32_t Handle_sys_getdents(uint32_t fd, struct linux_dirent* dirp, uint32_t count);
     static int32_t Handle_sys_nanosleep(struct timespec* req, struct timespec* rem);
+    static int32_t Handle_sys_time(int32_t* tloc);
     static int32_t Handle_sys_getcwd(char* buf, uint32_t size);
+    static int32_t Handle_sys_mkdir(const char* path, uint32_t mode);
+    static int32_t Handle_sys_unlink(const char* path);
+    static int32_t Handle_sys_rmdir(const char* path);
+    static int32_t Handle_sys_rename(const char* oldPath, const char* newPath);
 
     static int32_t Handle_sys_debug(char* str);
     static int32_t Handle_sys_peek_memory(uint32_t address, uint32_t size, int32_t* return_data);

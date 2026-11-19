@@ -110,6 +110,33 @@ int32_t syscall_stat(const char* path, struct stat* statbuf) {
     return return_data;
 }
 
+int32_t syscall_mkdir(const char* path, uint32_t mode) {
+    int32_t return_data = -1;
+    asm volatile("int $0x80" : "=a"(return_data) : "a"(sys_mkdir), "b"(path), "c"(mode) : "memory");
+    return return_data;
+}
+
+int32_t syscall_unlink(const char* path) {
+    int32_t return_data = -1;
+    asm volatile("int $0x80" : "=a"(return_data) : "a"(sys_unlink), "b"(path) : "memory");
+    return return_data;
+}
+
+int32_t syscall_rmdir(const char* path) {
+    int32_t return_data = -1;
+    asm volatile("int $0x80" : "=a"(return_data) : "a"(sys_rmdir), "b"(path) : "memory");
+    return return_data;
+}
+
+int32_t syscall_rename(const char* oldPath, const char* newPath) {
+    int32_t return_data = -1;
+    asm volatile("int $0x80"
+                 : "=a"(return_data)
+                 : "a"(sys_rename), "b"(oldPath), "c"(newPath)
+                 : "memory");
+    return return_data;
+}
+
 int32_t syscall_clone(uint32_t clone_flags, void* child_stack, void* parent_tid, void* tls,
                       void* child_tid) {
     int32_t return_data = -1;
@@ -133,6 +160,12 @@ int32_t syscall_getdents(uint32_t fd, struct linux_dirent* dirp, uint32_t count)
 
 void syscall_nanosleep(struct timespec* req, struct timespec* rem) {
     asm volatile("int $0x80" : : "a"(sys_nanosleep), "b"(req), "c"(rem) : "memory");
+}
+
+int32_t syscall_time(int32_t* tloc) {
+    int32_t result = -1;
+    asm volatile("int $0x80" : "=a"(result) : "a"(sys_time), "b"(tloc) : "memory");
+    return result;
 }
 
 int32_t syscall_getcwd(char* buf, uint32_t bufSize) {
