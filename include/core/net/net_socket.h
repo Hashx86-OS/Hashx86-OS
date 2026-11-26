@@ -61,7 +61,7 @@ int32_t NetSocketCall(uint32_t call, uint32_t userArgs);
 bool NetSocketFdValid(ProcessControlBlock* process, uint32_t fd);
 
 /**
- * NetCloseSocketFd() - Close a user-visible socket descriptor.
+ * NetCloseSocketFd() - Detach a descriptor and defer close until active calls finish.
  *
  * Return: 0 on success, -1 when @fd is not a valid socket.
  */
@@ -71,12 +71,12 @@ int32_t NetCloseSocketFd(ProcessControlBlock* process, uint32_t fd);
  * NetCloseProcessSockets() - Enqueue all of a dying process's sockets for close.
  *
  * Called from KillProcess with interrupts disabled; it must not call lwIP or
- * block. The RX thread drains the queue via NetReapClosedSockets().
+ * block. The socket cleanup worker drains the queue via NetReapClosedSockets().
  */
 void NetCloseProcessSockets(ProcessControlBlock* process);
 
 /**
- * NetReapClosedSockets() - Close queued sockets; called from the RX thread.
+ * NetReapClosedSockets() - Close queued sockets; called from the socket cleanup worker.
  */
 void NetReapClosedSockets();
 

@@ -549,14 +549,21 @@ int32_t HguiHandler::HandleImageView(CPUState* cpu, const WidgetData* _data) {
             (uint64_t)(uint32_t)width * (uint32_t)height > 0xFFFFFFFFu / sizeof(uint32_t))
             return -1;
 
-        uint32_t newID = this->getNewID();
-        Widget* widget = new ImageView(parentWidget, _data->param1, _data->param2, _data->param3,
-                                       _data->param4, nullptr, 0, 0);
-        if (!widget) {
-            HALT("CRITICAL: Failed to allocate ImageView widget!\n");
+        // A zero-sized constructor skips Widget's fatal cache allocation.
+        Widget* widget = new ImageView(nullptr, _data->param1, _data->param2, 0, 0, nullptr, 0, 0);
+        if (!widget) return -1;
+        if (!widget->Resize(width, height)) {
+            delete widget;
+            return -1;
         }
-        widget->SetPID(Scheduler::activeInstance->GetCurrentProcess()->pid);
+        widget->SetPID(proc->pid);
+        uint32_t newID = this->getNewID();
         widget->SetID(newID);
+        // The dispatch IRQ guard makes adoption and registration atomic.
+        if (!parentWidget->AddChild(widget)) {
+            delete widget;
+            return -1;
+        }
         HguiWidgets.Add(widget);
         return (int32_t)newID;
     }

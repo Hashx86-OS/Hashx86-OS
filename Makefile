@@ -305,14 +305,14 @@ build-run:
 # isa-debug-exit provides a shutdown fallback when ACPI is unavailable.
 # Normal start-menu shutdown uses the firmware's ACPI power-off port first.
 runq: iso
-	qemu-system-i386 -cdrom $(KERNEL_ISO) -boot d -vga std -serial stdio -m 1G \
+	qemu-system-i386 -cpu max -cdrom $(KERNEL_ISO) -boot d -vga std -serial stdio -m 1G \
 	-drive file=$(QEMU_DISK),format=vdi \
 	-netdev user,id=net0 -device rtl8139,netdev=net0,mac=52:54:00:12:34:56 \
 	-device isa-debug-exit,iobase=0xf4,iosize=0x04
 
 # Run with GDB debug
 rungdb: iso
-	qemu-system-i386 -cdrom $(KERNEL_ISO) -boot d -vga std -serial stdio -m 1G \
+	qemu-system-i386 -cpu max -cdrom $(KERNEL_ISO) -boot d -vga std -serial stdio -m 1G \
 	-drive file=$(QEMU_DISK),format=vdi \
 	-netdev user,id=net0 -device rtl8139,netdev=net0,mac=52:54:00:12:34:56 \
 	-s -S -device isa-debug-exit,iobase=0xf4,iosize=0x04

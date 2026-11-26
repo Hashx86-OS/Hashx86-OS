@@ -91,12 +91,57 @@ bool CancelRequested() {
 
 constexpr int kDeferredCloseCapacity = 256;
 
-int g_deferredCloseFds[kDeferredCloseCapacity];
+struct SocketState;
+SocketState* g_deferredCloseStates[kDeferredCloseCapacity];
 volatile int g_deferredCloseHead = 0;
 volatile int g_deferredCloseTail = 0;
 volatile int g_deferredCloseCount = 0;
 volatile bool g_deferredCloseOverflow = false;
 bool g_overflowLogged = false;
+
+// Records outlive user descriptors, which can be reused while a close is pending.
+struct SocketState {
+    int fd = -1;
+    uint32_t inFlight = 0;
+    bool closing = false;
+    bool closeQueued = false;
+};
+SocketState g_socketStates[MEMP_NUM_NETCONN * 2];
+void QueueDeferredClose(SocketState* state);
+
+SocketState* FindOpenSocket(int fd) {
+    for (SocketState& state : g_socketStates) {
+        if (state.fd == fd && !state.closing) return &state;
+    }
+    return nullptr;
+}
+
+class SocketReference {
+    SocketState* state = nullptr;
+
+public:
+    SocketReference(ProcessControlBlock* process, uint32_t fd) {
+        InterruptGuard guard;
+        if (!process || fd < FD_MIN || fd >= FD_MAX) return;
+        int raw = process->socketTable[fd];
+        if (raw < 0) return;
+        state = FindOpenSocket(raw);
+        if (state) state->inFlight++;
+    }
+    ~SocketReference() {
+        InterruptGuard guard;
+        if (state && --state->inFlight == 0 && state->closing) QueueDeferredClose(state);
+    }
+    int Fd() const {
+        return state ? state->fd : -1;
+    }
+    bool Closing() const {
+        InterruptGuard guard;
+        return !state || state->closing;
+    }
+    SocketReference(const SocketReference&) = delete;
+    SocketReference& operator=(const SocketReference&) = delete;
+};
 
 /**
  * AllocateSocketFd() - Reserve a user-visible descriptor for an lwIP socket.
@@ -109,8 +154,16 @@ int32_t AllocateSocketFd(ProcessControlBlock* process, int lwipFd) {
     InterruptGuard guard;
     for (uint32_t fd = FD_MIN; fd < FD_MAX; fd++) {
         if (process->socketTable[fd] < 0 && process->fdTable[fd] == nullptr) {
-            process->socketTable[fd] = lwipFd;
-            return (int32_t)fd;
+            for (SocketState& state : g_socketStates) {
+                if (state.fd < 0) {
+                    state.fd = lwipFd;
+                    state.inFlight = 0;
+                    state.closing = state.closeQueued = false;
+                    process->socketTable[fd] = lwipFd;
+                    return (int32_t)fd;
+                }
+            }
+            return -1;
         }
     }
     return -1;
@@ -198,7 +251,8 @@ int32_t SocketCreate(ProcessControlBlock* process, const uint32_t* args) {
  * SocketBind() - Bind a user socket to a local address.
  */
 int32_t SocketBind(ProcessControlBlock* process, const uint32_t* args) {
-    int lwipFd = GetSocketFd(process, args[0]);
+    SocketReference socket(process, args[0]);
+    int lwipFd = socket.Fd();
     if (lwipFd < 0) return -1;
 
     struct sockaddr_in address;
@@ -214,7 +268,8 @@ int32_t SocketBind(ProcessControlBlock* process, const uint32_t* args) {
  * tcpip thread while the handshake completes.
  */
 int32_t SocketConnect(ProcessControlBlock* process, const uint32_t* args) {
-    int lwipFd = GetSocketFd(process, args[0]);
+    SocketReference socket(process, args[0]);
+    int lwipFd = socket.Fd();
     if (lwipFd < 0) return -1;
 
     struct sockaddr_in address;
@@ -227,7 +282,8 @@ int32_t SocketConnect(ProcessControlBlock* process, const uint32_t* args) {
  * SocketSend() - Send bytes on a connected stream socket.
  */
 int32_t SocketSend(ProcessControlBlock* process, const uint32_t* args) {
-    int lwipFd = GetSocketFd(process, args[0]);
+    SocketReference socket(process, args[0]);
+    int lwipFd = socket.Fd();
     if (lwipFd < 0) return -1;
 
     uint32_t length = args[2];
@@ -252,7 +308,8 @@ int32_t SocketSend(ProcessControlBlock* process, const uint32_t* args) {
  * this blocks on the netconn receive mailbox through sys_arch.
  */
 int32_t SocketRecv(ProcessControlBlock* process, const uint32_t* args) {
-    int lwipFd = GetSocketFd(process, args[0]);
+    SocketReference socket(process, args[0]);
+    int lwipFd = socket.Fd();
     if (lwipFd < 0) return -1;
 
     uint32_t length = args[2];
@@ -263,9 +320,14 @@ int32_t SocketRecv(ProcessControlBlock* process, const uint32_t* args) {
 
     int32_t result;
     do {
+        if (socket.Closing()) {
+            result = -1;
+            break;
+        }
         result = (int32_t)lwip_recv(lwipFd, buffer, length, (int)args[3]);
-    } while (result < 0 && errno == EWOULDBLOCK && !(args[3] & MSG_DONTWAIT) && !CancelRequested());
-    if (result < 0 && errno == EWOULDBLOCK) result = -2;
+    } while (result < 0 && errno == EWOULDBLOCK && !(args[3] & MSG_DONTWAIT) &&
+             !CancelRequested() && !socket.Closing());
+    if (result < 0 && errno == EWOULDBLOCK && !socket.Closing()) result = -2;
     if (result > 0) {
         if (!CopyToUser(process, (void*)args[1], buffer, (size_t)result)) {
             kfree(buffer);
@@ -281,7 +343,8 @@ int32_t SocketRecv(ProcessControlBlock* process, const uint32_t* args) {
  * SocketShutdown() - Shut down one or both directions of a stream socket.
  */
 int32_t SocketShutdown(ProcessControlBlock* process, const uint32_t* args) {
-    int lwipFd = GetSocketFd(process, args[0]);
+    SocketReference socket(process, args[0]);
+    int lwipFd = socket.Fd();
     if (lwipFd < 0) return -1;
     return lwip_shutdown(lwipFd, (int)args[1]) == 0 ? 0 : -1;
 }
@@ -310,7 +373,8 @@ int32_t SocketResolve(ProcessControlBlock* process, const uint32_t* args) {
  * SocketSendTo() - Send a datagram from a user socket.
  */
 int32_t SocketSendTo(ProcessControlBlock* process, const uint32_t* args) {
-    int lwipFd = GetSocketFd(process, args[0]);
+    SocketReference socket(process, args[0]);
+    int lwipFd = socket.Fd();
     if (lwipFd < 0) return -1;
 
     uint32_t length = args[2];
@@ -348,7 +412,8 @@ int32_t SocketSendTo(ProcessControlBlock* process, const uint32_t* args) {
  * yields through the scheduler so the tcpip thread can deliver the packet.
  */
 int32_t SocketRecvFrom(ProcessControlBlock* process, const uint32_t* args) {
-    int lwipFd = GetSocketFd(process, args[0]);
+    SocketReference socket(process, args[0]);
+    int lwipFd = socket.Fd();
     if (lwipFd < 0) return -1;
 
     uint32_t length = args[2];
@@ -363,10 +428,15 @@ int32_t SocketRecvFrom(ProcessControlBlock* process, const uint32_t* args) {
 
     int32_t result;
     do {
+        if (socket.Closing()) {
+            result = -1;
+            break;
+        }
         result = (int32_t)lwip_recvfrom(lwipFd, buffer, length, (int)args[3],
                                         args[4] != 0 ? (struct sockaddr*)&from : nullptr,
                                         args[4] != 0 ? &fromLength : nullptr);
-    } while (result < 0 && errno == EWOULDBLOCK && !(args[3] & MSG_DONTWAIT) && !CancelRequested());
+    } while (result < 0 && errno == EWOULDBLOCK && !(args[3] & MSG_DONTWAIT) &&
+             !CancelRequested() && !socket.Closing());
     if (result > 0) {
         if (!CopyToUser(process, (void*)args[1], buffer, (size_t)result)) {
             kfree(buffer);
@@ -383,12 +453,14 @@ int32_t SocketRecvFrom(ProcessControlBlock* process, const uint32_t* args) {
 }
 
 /** Enqueue one lwIP descriptor for deferred close. Caller must hold IRQs off. */
-void QueueDeferredClose(int lwipFd) {
+void QueueDeferredClose(SocketState* state) {
+    if (state->closeQueued || state->inFlight != 0) return;
     if (g_deferredCloseCount >= kDeferredCloseCapacity) {
         g_deferredCloseOverflow = true;
         return;
     }
-    g_deferredCloseFds[g_deferredCloseTail] = lwipFd;
+    state->closeQueued = true;
+    g_deferredCloseStates[g_deferredCloseTail] = state;
     g_deferredCloseTail++;
     if (g_deferredCloseTail >= kDeferredCloseCapacity) g_deferredCloseTail = 0;
     g_deferredCloseCount++;
@@ -441,15 +513,15 @@ int32_t NetCloseSocketFd(ProcessControlBlock* process, uint32_t fd) {
     NetworkCallGuard pin;
     if (process == nullptr || fd < FD_MIN || fd >= FD_MAX) return -1;
 
-    int lwipFd;
-    {
-        InterruptGuard guard;
-        lwipFd = process->socketTable[fd];
-        if (lwipFd < 0) return -1;
-        process->socketTable[fd] = -1;
-    }
-
-    return lwip_close(lwipFd) == 0 ? 0 : -1;
+    InterruptGuard guard;
+    int lwipFd = process->socketTable[fd];
+    if (lwipFd < 0) return -1;
+    SocketState* state = FindOpenSocket(lwipFd);
+    if (!state) return -1;
+    process->socketTable[fd] = -1;
+    state->closing = true;
+    QueueDeferredClose(state);
+    return 0;
 }
 
 void NetCloseProcessSockets(ProcessControlBlock* process) {
@@ -460,23 +532,29 @@ void NetCloseProcessSockets(ProcessControlBlock* process) {
         int lwipFd = process->socketTable[fd];
         if (lwipFd < 0) continue;
         process->socketTable[fd] = -1;
-        QueueDeferredClose(lwipFd);
+        SocketState* state = FindOpenSocket(lwipFd);
+        if (state) {
+            state->closing = true;
+            QueueDeferredClose(state);
+        }
     }
 }
 
 void NetReapClosedSockets() {
     for (;;) {
-        int lwipFd;
+        SocketState* state;
         {
             InterruptGuard guard;
             if (g_deferredCloseCount == 0) break;
-            lwipFd = g_deferredCloseFds[g_deferredCloseHead];
+            state = g_deferredCloseStates[g_deferredCloseHead];
             g_deferredCloseHead++;
             if (g_deferredCloseHead >= kDeferredCloseCapacity) g_deferredCloseHead = 0;
             g_deferredCloseCount--;
         }
-        printf("[NET] process exit closed socket fd=%d\n", lwipFd);
-        lwip_close(lwipFd);
+        lwip_close(state->fd);
+        InterruptGuard guard;
+        state->fd = -1;
+        state->closeQueued = false;
     }
 
     if (g_deferredCloseOverflow && !g_overflowLogged) {
