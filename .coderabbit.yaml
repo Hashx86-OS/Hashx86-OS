@@ -10,3 +10,4 @@ reviews:
     - "!include/core/tlsf/**"
     - "!core/filesystem/FatFs/**/*.c"
     - "!include/core/filesystem/FatFs/**"
+    - "!third_party/**"
