@@ -83,18 +83,17 @@ class MouseDriver : public InterruptHandler, public Driver {
     uint8_t buttons;                  // Current state of the mouse buttons.
     bool hasWheel;                    // True when the device reports a 4th (Z) byte.
     int8_t x = 40, y = 12;            // Cursor position.
-    int32_t accumDX;                  // Accumulated mouse X delta for polling.
-    int32_t accumDY;                  // Accumulated mouse Y delta for polling.
+    uint32_t totalDX;                 // Wrapping X total; callers keep baselines.
+    uint32_t totalDY;                 // Wrapping Y total; callers keep baselines.
 
 public:
     static MouseDriver* activeInstance;
 
-    // Get and reset accumulated mouse delta since last poll.
-    void GetMouseDelta(int32_t& dx, int32_t& dy) {
-        dx = accumDX;
-        dy = accumDY;
-        accumDX = 0;
-        accumDY = 0;
+    // Movement totals modulo 2^32. Consumers subtract their own saved baseline
+    // so that polling from one thread never consumes another thread's deltas.
+    void GetMouseTotals(uint32_t& dx, uint32_t& dy) {
+        dx = totalDX;
+        dy = totalDY;
     }
     // Get the current button state (bit 0=left, 1=right, 2=middle).
     uint8_t GetButtons() {

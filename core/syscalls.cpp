@@ -1468,12 +1468,30 @@ int32_t SyscallHandlers::Handle_sys_Hcall(uint32_t hcall_id, uint32_t arg1, uint
                     tmp.keyStates[i] = keys[i];
                 }
             }
-            // Copy and reset mouse state.
+            // Mouse deltas are reported per thread: each caller subtracts its
+            // own last-seen total. A second input poller in the same process
+            // (the GUI event-handler thread) can then never steal movement
+            // from the application's own thread.
             if (MouseDriver::activeInstance) {
-                int32_t dx, dy;
-                MouseDriver::activeInstance->GetMouseDelta(dx, dy);
-                tmp.mouseDX = dx;
-                tmp.mouseDY = dy;
+                uint32_t totalX = 0;
+                uint32_t totalY = 0;
+                ThreadControlBlock* thread = Scheduler::activeInstance
+                                                 ? Scheduler::activeInstance->GetCurrentThread()
+                                                 : nullptr;
+                MouseDriver::activeInstance->GetMouseTotals(totalX, totalY);
+                if (thread) {
+                    if (!thread->mouseSeenValid) {
+                        // First poll from this thread: start from the current
+                        // totals so movement from before it started is ignored.
+                        thread->mouseSeenDX = totalX;
+                        thread->mouseSeenDY = totalY;
+                        thread->mouseSeenValid = true;
+                    }
+                    tmp.mouseDX = (int32_t)(totalX - thread->mouseSeenDX);
+                    tmp.mouseDY = (int32_t)(totalY - thread->mouseSeenDY);
+                    thread->mouseSeenDX = totalX;
+                    thread->mouseSeenDY = totalY;
+                }
                 tmp.mouseButtons = MouseDriver::activeInstance->GetButtons();
             }
             if (!CopyToUser(current_process, userState, &tmp, sizeof(InputState))) {
