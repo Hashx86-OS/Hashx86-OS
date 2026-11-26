@@ -220,7 +220,7 @@ public:
      * @child: Child widget to add.
      *
      * Return: True on success; false if the child is already owned elsewhere
-     *         or already present in the list.
+     *         or already present in the list, or if list allocation fails.
      */
     virtual bool AddChild(Widget* child);
 

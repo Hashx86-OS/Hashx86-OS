@@ -564,7 +564,11 @@ int32_t HguiHandler::HandleImageView(CPUState* cpu, const WidgetData* _data) {
             delete widget;
             return -1;
         }
-        HguiWidgets.Add(widget);
+        if (!HguiWidgets.TryAdd(widget)) {
+            parentWidget->RemoveChild(widget);
+            delete widget;
+            return -1;
+        }
         return (int32_t)newID;
     }
 

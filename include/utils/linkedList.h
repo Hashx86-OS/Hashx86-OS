@@ -50,11 +50,30 @@ private:
         T data;
         Node* next;
         Node(const T& _data) : data(_data), next(nullptr) {}
+#if !defined(GUI_HOST_BUILD)
+        // Freestanding placement construction without a hosted <new> header.
+        struct Storage {
+            void* address;
+        };
+        static void* operator new(size_t, Storage storage) noexcept {
+            return storage.address;
+        }
+#endif
     };
 
     Node* head;
     Node* tail;
     uint32_t size;
+
+    static Node* TryCreateNode(const T& item) {
+#if defined(GUI_HOST_BUILD)
+        return new (std::nothrow) Node(item);
+#else
+        void* storage = kmalloc(sizeof(Node));
+        if (!storage) return nullptr;
+        return new (typename Node::Storage{storage}) Node(item);
+#endif
+    }
 
     void CopyFrom(const LinkedList& other) {
         Node* current = other.head;
@@ -104,11 +123,36 @@ public:
      * @item: Element to insert.
      */
     void Add(const T& item) {
-        Node* newNode = new Node(item);
+        Node* newNode = ::new Node(item);
         newNode->next = head;
         head = newNode;
         if (!tail) tail = head;
         size++;
+    }
+
+    /** TryAdd() - Prepend an element; leave the list unchanged on allocation failure. */
+    bool TryAdd(const T& item) {
+        Node* newNode = TryCreateNode(item);
+        if (!newNode) return false;
+        newNode->next = head;
+        head = newNode;
+        if (!tail) tail = newNode;
+        size++;
+        return true;
+    }
+
+    /** TryPushBack() - Append an element; leave the list unchanged on allocation failure. */
+    bool TryPushBack(const T& item) {
+        Node* newNode = TryCreateNode(item);
+        if (!newNode) return false;
+        if (!tail) {
+            head = tail = newNode;
+        } else {
+            tail->next = newNode;
+            tail = newNode;
+        }
+        size++;
+        return true;
     }
 
     /**
@@ -116,7 +160,7 @@ public:
      * @item: Element to insert.
      */
     void PushBack(const T& item) {
-        Node* newNode = new Node(item);
+        Node* newNode = ::new Node(item);
         if (!tail) {
             head = tail = newNode;
         } else {
