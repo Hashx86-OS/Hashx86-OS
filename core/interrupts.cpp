@@ -45,7 +45,21 @@ uint32_t audioTickCounter = 0;
 InterruptHandler::InterruptHandler(uint8_t InterruptNumber, InterruptManager* interruptManager) {
     this->InterruptNumber = InterruptNumber;
     this->interruptManager = interruptManager;
+    if (interruptManager == nullptr) return;
     interruptManager->handlers[InterruptNumber] = this;
+
+    // A vector may have been masked after an earlier unhandled interrupt.
+    // Unmask it now that a driver owns it.
+    if (InterruptNumber >= HWInterruptOffset && InterruptNumber < HWInterruptOffset + 16) {
+        uint8_t irq = (uint8_t)(InterruptNumber - HWInterruptOffset);
+        if (irq < 8) {
+            interruptManager->picMasterData.Write(interruptManager->picMasterData.Read() &
+                                                  (uint8_t) ~(1u << irq));
+        } else {
+            interruptManager->picSlaveData.Write(interruptManager->picSlaveData.Read() &
+                                                 (uint8_t) ~(1u << (irq - 8)));
+        }
+    }
 }
 
 InterruptHandler::~InterruptHandler() {
@@ -298,9 +312,10 @@ uint32_t InterruptManager::DoHandleInterrupt(uint8_t interruptNumber, uint32_t e
             picSlaveCommand.Write(0x20);  // Send EOI to the slave PIC.
     }
 
-    // Handle the timer tick.
+    // Handle the timer tick. timerTicks is expressed in milliseconds so the
+    // scheduler, lwIP and GUI clocks do not depend on the PIT frequency.
     if (interruptNumber == HWInterruptOffset) {
-        timerTicks++;
+        timerTicks += TIMER_MS_PER_TICK;
     }
 
     // Invoke the registered handler for the vector.
@@ -308,14 +323,34 @@ uint32_t InterruptManager::DoHandleInterrupt(uint8_t interruptNumber, uint32_t e
         esp = handlers[interruptNumber]->HandleInterrupt(esp);
     } else if (interruptNumber != HWInterruptOffset && interruptNumber != 0x2E &&
                interruptNumber != 0x2F) {
-        KDBG1("UNHANDLED INTERRUPT: 0x%x\n", interruptNumber);
+        if (interruptNumber >= HWInterruptOffset && interruptNumber < HWInterruptOffset + 16) {
+            // No driver owns this IRQ. Mask it at the PIC: an unacknowledged
+            // level-triggered device (for example the USB controller in
+            // VirtualBox) otherwise re-enters this path forever. The line can
+            // be unmasked when a handler is eventually registered.
+            uint8_t irq = (uint8_t)(interruptNumber - HWInterruptOffset);
+            if (irq != 2) {  // Never mask the master-to-slave cascade.
+                if (irq < 8) {
+                    picMasterData.Write(picMasterData.Read() | (uint8_t)(1u << irq));
+                } else {
+                    picSlaveData.Write(picSlaveData.Read() | (uint8_t)(1u << (irq - 8)));
+                }
+            }
+            KDBG1("MASKED UNHANDLED INTERRUPT: 0x%x (IRQ %u)\n", interruptNumber, irq);
+        } else {
+            KDBG1("UNHANDLED INTERRUPT: 0x%x\n", interruptNumber);
+        }
     }
 
     // After a syscall (int 0x80 arrives as 0xA0 because the ASM adds IRQ_BASE=0x20),
-    // check if the current thread was terminated or killed.
+    // check if the current thread was terminated, killed, or just blocked by
+    // the syscall (nanosleep/semaphore waits). A blocked thread must be
+    // switched out right here: returning to its user code would let it keep
+    // running until the next timer tick, so sleep() would not actually sleep.
     if (interruptNumber == HWInterruptOffset + 0x80) {
         if (!scheduler->currentThread ||
-            scheduler->currentThread->state == THREAD_STATE_TERMINATED) {
+            scheduler->currentThread->state == THREAD_STATE_TERMINATED ||
+            scheduler->currentThread->state == THREAD_STATE_BLOCKED) {
             // Thread was killed (currentThread == null) or terminated.
             // Schedule to switch to a living thread.
             return (uint32_t)scheduler->Schedule((CPUState*)esp);
@@ -325,9 +360,9 @@ uint32_t InterruptManager::DoHandleInterrupt(uint8_t interruptNumber, uint32_t e
 
     // Timer interrupt: drive the audio mixer every 10ms and schedule.
     if (interruptNumber == HWInterruptOffset) {
-        audioTickCounter++;
+        audioTickCounter += TIMER_MS_PER_TICK;
         if (audioTickCounter >= 10) {
-            audioTickCounter = 0;
+            audioTickCounter -= 10;
             if (g_AudioMixer) g_AudioMixer->Update();
         }
 

@@ -371,6 +371,9 @@ public:
     virtual bool IsIconButton() const {
         return false;
     }
+    virtual bool IsImageView() const {
+        return false;
+    }
     virtual bool IsRadioButton() const {
         return false;
     }

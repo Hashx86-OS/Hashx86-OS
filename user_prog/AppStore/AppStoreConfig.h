@@ -22,30 +22,26 @@
  * SOFTWARE.
  */
 
-#ifndef APPSTORE_GITHUB_H
-#define APPSTORE_GITHUB_H
+#ifndef APPSTORE_CONFIG_H
+#define APPSTORE_CONFIG_H
 
-#include <stdint.h>
+// The latest release of this repository is used as the catalog source. Its
+// assets must contain APPSTORE_CATALOG_ASSET and the JPEG artwork referenced
+// by that catalog; application binaries come from each app's own repository.
+// Only the catalog repository location is fixed here; release tags, asset IDs,
+// URLs, sizes and hashes all come from GitHub metadata or the catalog itself.
+#ifndef APPSTORE_CATALOG_REPO
+#define APPSTORE_CATALOG_REPO "Hashx86-OS/AppStore-Hx86"
+#endif
 
-/** struct GitHubRelease - The Quake.bin asset of the latest Quake release. */
-struct GitHubRelease {
-    char tag[64];
-    char downloadUrl[512];
-    char apiUrl[512];
-    char sha256[65];
-    uint32_t size;
-    bool fromCatalogFallback;
-};
+#ifndef APPSTORE_CATALOG_ASSET
+#define APPSTORE_CATALOG_ASSET "catalog.json"
+#endif
 
-/**
- * GitHubResolveLatest() - Resolve the latest Quake-Hx86 release asset.
- *
- * Queries the GitHub Releases API, finds the Quake.bin asset and returns its
- * download URL, size and SHA-256 digest. The digest is required; older
- * releases without one are rejected rather than installed unverified.
- *
- * Return: true on success, false with @error filled on failure.
- */
-bool GitHubResolveLatest(GitHubRelease* release, char* error, uint32_t errorCapacity);
+// The OS version exposed to the catalog's minOsVersion checks. Update this
+// when releasing a new OS image.
+#ifndef APPSTORE_OS_VERSION
+#define APPSTORE_OS_VERSION "0.1.0"
+#endif
 
-#endif  // APPSTORE_GITHUB_H
+#endif  // APPSTORE_CONFIG_H

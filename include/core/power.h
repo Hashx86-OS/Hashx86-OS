@@ -45,9 +45,9 @@
 /**
  * PowerShutdown() - Stop the machine.
  *
- * Asks the emulator's debug-exit port to power the machine off, which is the
- * only shutdown path available without ACPI. On bare hardware that port is
- * unmapped, so the CPU is simply halted with interrupts disabled and the
- * machine has to be reset from outside. Does not return.
+ * Requests S5 through the default VirtualBox/QEMU/Bochs ACPI control ports,
+ * then tries QEMU's optional debug-exit device. If no device responds, halts
+ * with interrupts disabled. General physical-PC shutdown still requires ACPI
+ * table discovery; these fixed VM ports do not provide that. Does not return.
  */
 [[noreturn]] void PowerShutdown();

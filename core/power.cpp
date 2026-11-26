@@ -92,21 +92,25 @@ namespace {
 [[noreturn]] void PowerShutdown() {
     KDBG1("PowerShutdown: requesting emulator power off\n");
 
-    // Emulators expose a debug-exit port that terminates the VM on any write.
-    // This project's run targets attach QEMU's isa-debug-exit, which defaults
-    // to 0xF4; 0x604 and 0xB004 are the other common choices. On real hardware
-    // all three are unmapped, the writes are discarded, and we fall through to
-    // halting.
-    //
-    // The value doubles as QEMU's exit status as (value << 1) | 1, so 0x10
-    // exits 33 and a shutdown is distinguishable from a crash exit.
-    Port8Bit debugExitQemu(0xF4);
-    Port8Bit debugExitQemuAlt(0x604);
-    Port8Bit debugExitBochs(0xB004);
+    // Stop scheduling while requesting power-off.
+    asm volatile("cli" ::: "memory");
 
+    // Default PC firmware PM1 control ports. These are 16-bit ACPI sleep
+    // registers, NOT debug-exit ports: SLP_EN is bit 13. A byte write of
+    // 0x10 never sets it, leaving the VM running when we halt below.
+    // VirtualBox uses sleep type 5; QEMU/Bochs use sleep type 0 for S5.
+    // This is a VM fallback, not general ACPI table discovery for physical PCs.
+    Port16Bit virtualBoxPower(0x4004);
+    Port16Bit qemuPower(0x604);
+    Port16Bit bochsPower(0xB004);
+    virtualBoxPower.Write((5u << 10) | (1u << 13));
+    qemuPower.Write(1u << 13);
+    bochsPower.Write(1u << 13);
+
+    // Retain isa-debug-exit for QEMU configurations without ACPI. Prefer
+    // normal power-off above, which exits QEMU successfully instead of 33.
+    Port8Bit debugExitQemu(0xF4);
     debugExitQemu.Write(0x10);
-    debugExitQemuAlt.Write(0x10);
-    debugExitBochs.Write(0x10);
 
     KDBG1("PowerShutdown: no power-off device responded, halting the CPU\n");
     haltForever();

@@ -39,6 +39,7 @@
 extern "C" {
 #include <lwip/def.h>
 #include <lwip/dhcp.h>
+#include <lwip/dns.h>
 #include <lwip/err.h>
 #include <lwip/etharp.h>
 #include <lwip/ip4_addr.h>
@@ -55,6 +56,7 @@ constexpr uint16_t kMaxFrameLength = 1600;
 struct netif g_netif;
 bool g_netifReady = false;
 uint32_t g_lastLoggedAddress = 0;
+uint32_t g_lastLoggedDns = 0;
 
 // Only the tcpip thread calls linkoutput, so one scratch frame is enough.
 // Keeping it static avoids a 1.5 KiB stack allocation per transmit.
@@ -86,6 +88,55 @@ void NetifStatusCallback(struct netif* netif) {
            (uint32_t)ip4_addr3_16(address), (uint32_t)ip4_addr4_16(address),
            (uint32_t)ip4_addr1_16(gateway), (uint32_t)ip4_addr2_16(gateway),
            (uint32_t)ip4_addr3_16(gateway), (uint32_t)ip4_addr4_16(gateway));
+
+    // Some routers only advertise DNS over DHCPv6 when a dual-stack (IPv4 +
+    // IPv6) APN is active and omit DHCPv4 option 6. Do not leave the resolver
+    // pointing at the QEMU/VBox fallback: use the gateway, which normally
+    // proxies DNS, and remember 10.0.2.3 only for user-mode networking.
+    uint32_t gatewayValue = ip4_addr_get_u32(gateway);
+    ip4_addr_t vmGateway;
+    IP4_ADDR(&vmGateway, 10, 0, 2, 2);
+    bool userModeNetwork = (gatewayValue == ip4_addr_get_u32(&vmGateway));
+
+    const ip_addr_t* currentDns = dns_getserver(0);
+    if (ip_addr_isany(currentDns)) {
+        ip_addr_t fallback;
+        bool haveFallback = false;
+        if (userModeNetwork) {
+            IP4_ADDR(&fallback, 10, 0, 2, 3);
+            haveFallback = true;
+        } else if (gatewayValue != 0) {
+            ip_addr_set_ip4_u32(&fallback, gatewayValue);
+            haveFallback = true;
+        }
+        if (haveFallback) {
+            dns_setserver(0, &fallback);
+            printf("[NET] dns: no DHCPv4 option 6, using %u.%u.%u.%u\n",
+                   (uint32_t)ip4_addr1_16(ip_2_ip4(&fallback)),
+                   (uint32_t)ip4_addr2_16(ip_2_ip4(&fallback)),
+                   (uint32_t)ip4_addr3_16(ip_2_ip4(&fallback)),
+                   (uint32_t)ip4_addr4_16(ip_2_ip4(&fallback)));
+        }
+    } else if (ip_addr_isany(dns_getserver(1)) && gatewayValue != 0 && !userModeNetwork) {
+        // Keep the router as a second resolver so a stale or unreachable
+        // primary DNS handed out by the carrier still has a fallback.
+        ip_addr_t backup;
+        ip_addr_set_ip4_u32(&backup, gatewayValue);
+        if (!ip_addr_cmp(&backup, dns_getserver(0))) {
+            dns_setserver(1, &backup);
+        }
+    }
+
+    const ip_addr_t* dns0 = dns_getserver(0);
+    if (dns0 != nullptr && !ip_addr_isany(dns0)) {
+        uint32_t dnsValue = ip4_addr_get_u32(ip_2_ip4(dns0));
+        if (dnsValue != g_lastLoggedDns) {
+            g_lastLoggedDns = dnsValue;
+            printf("[NET] dns: %u.%u.%u.%u\n", (uint32_t)ip4_addr1_16(ip_2_ip4(dns0)),
+                   (uint32_t)ip4_addr2_16(ip_2_ip4(dns0)), (uint32_t)ip4_addr3_16(ip_2_ip4(dns0)),
+                   (uint32_t)ip4_addr4_16(ip_2_ip4(dns0)));
+        }
+    }
 }
 
 /**
@@ -177,6 +228,10 @@ bool NetifEthernetBringUp(NetworkDevice* device) {
     g_netifReady = true;
     printf("[NET] netif en%u: DHCP\n", (uint32_t)g_netif.num);
 
+    // No resolver is installed here: DHCP option 6 sets it when the lease
+    // arrives, and NetifStatusCallback() falls back to the gateway if the
+    // server omits it (dual-stack routers often advertise DNS over DHCPv6).
+
     err_t err = dhcp_start(&g_netif);
     if (err != ERR_OK) {
         printf("[NET] dhcp: start failed (%d)\n", (int)err);
@@ -200,6 +255,11 @@ void NetifEthernetUseStaticConfig() {
     IP4_ADDR(&netmask, 255, 255, 255, 0);
     IP4_ADDR(&gateway, 10, 0, 2, 2);
     netif_set_addr(&g_netif, &address, &netmask, &gateway);
+
+    // User-mode networking (QEMU slirp/VirtualBox NAT) resolves on 10.0.2.3.
+    ip_addr_t fallbackDns;
+    IP4_ADDR(&fallbackDns, 10, 0, 2, 3);
+    dns_setserver(0, &fallbackDns);
 
     printf("[NET] netif static 10.0.2.15/24 gw 10.0.2.2\n");
 }

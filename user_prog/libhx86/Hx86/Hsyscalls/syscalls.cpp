@@ -285,3 +285,39 @@ FramebufferInfo syscall_get_framebuffer() {
     info.height = height;
     return info;
 }
+
+int32_t syscall_audio_open(uint32_t sampleRate, uint32_t channels, uint32_t bits) {
+    int32_t return_data = -1;
+    asm volatile("int $0x80"
+                 : "=a"(return_data)
+                 : "a"(sys_Hcall), "b"(Hsys_audioOpen), "c"(sampleRate), "d"(channels), "S"(bits)
+                 : "memory");
+    return return_data;
+}
+
+int32_t syscall_audio_write(int32_t stream, const void* data, uint32_t length) {
+    int32_t return_data = -1;
+    asm volatile("int $0x80"
+                 : "=a"(return_data)
+                 : "a"(sys_Hcall), "b"(Hsys_audioWrite), "c"(stream), "d"(data), "S"(length)
+                 : "memory");
+    return return_data;
+}
+
+int32_t syscall_audio_get_position(int32_t stream) {
+    int32_t return_data = -1;
+    asm volatile("int $0x80"
+                 : "=a"(return_data)
+                 : "a"(sys_Hcall), "b"(Hsys_audioGetPos), "c"(stream)
+                 : "memory");
+    return return_data;
+}
+
+int32_t syscall_audio_close(int32_t stream) {
+    int32_t return_data = -1;
+    asm volatile("int $0x80"
+                 : "=a"(return_data)
+                 : "a"(sys_Hcall), "b"(Hsys_audioClose), "c"(stream)
+                 : "memory");
+    return return_data;
+}

@@ -359,10 +359,13 @@ bool E1000Device::Initialize() {
     uint16_t function = dev->function;
     uint8_t irqLine = (uint8_t)(dev->interrupt & 0xFF);
 
-    // Memory decoding and bus mastering are both required.
+    // Memory decoding and bus mastering are required. The driver polls its
+    // rings and never installs an IRQ handler, so disable PCI INTx as well;
+    // the line may be shared with devices the kernel has no driver for.
+    constexpr uint32_t kPciCommandInterruptDisable = 1u << 10;
     uint32_t command = pci.Read(bus, deviceNumber, function, 0x04);
     pci.Write(bus, deviceNumber, function, 0x04,
-              (command & 0xFFFF0000) | ((command & 0xFFFF) | 0x0007));
+              (command & 0xFFFF0000) | ((command & 0xFFFF) | 0x0007 | kPciCommandInterruptDisable));
 
     uint32_t rawBar = pci.Read(bus, deviceNumber, function, 0x10);
     uint32_t barType = (rawBar >> 1) & 0x03;

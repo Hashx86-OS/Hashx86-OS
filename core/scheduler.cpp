@@ -23,7 +23,9 @@
  */
 
 #define KDBG_COMPONENT "SCHEDULER"
+#include <core/drivers/AudioMixer.h>
 #include <core/elf.h>
+#include <core/globals.h>
 #include <core/kstack.h>
 #include <core/net/net_socket.h>
 #include <core/scheduler.h>
@@ -876,6 +878,9 @@ bool Scheduler::KillProcess(uint32_t pid) {
     // Hand any still-open sockets to the network reaper. This only enqueues
     // descriptors; lwIP is never called from the scheduler's IRQ-masked path.
     NetCloseProcessSockets(target);
+
+    // Release any streaming audio ring the process still owns.
+    if (g_AudioMixer) g_AudioMixer->CloseStreamsForPid((int32_t)target->pid);
 
     // Remove from the global process list.
     globalProcessList.Remove([target](ProcessControlBlock* p) { return p == target; });

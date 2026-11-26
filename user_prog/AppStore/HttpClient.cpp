@@ -50,7 +50,10 @@ constexpr uint32_t kMaxPath = 2816;
 constexpr uint32_t kHnetChunk = 4096;
 constexpr uint32_t kReadBuffer = 4096;
 constexpr uint32_t kMaxRedirects = 6;
-constexpr const char* kCaPath = "/Hashx86/cacert.pem";
+// Keep the App Store on a small GitHub-focused trust store. The full Mozilla
+// bundle makes mbedTLS verify the chain against ~118 roots; on TCG-emulated
+// QEMU that takes longer than GitHub's 10-second TLS handshake timeout.
+constexpr const char* kCaPath = "/Hashx86/appstore-cacert.pem";
 
 struct ParsedUrl {
     char host[kMaxHost];
@@ -68,6 +71,70 @@ static bool g_tlsReady = false;
 static bool g_tlsInitTried = false;
 static bool g_sslInitialized = false;
 static bool g_sslActive = false;
+
+// TLS 1.2 session tickets let later connections to the same host skip the
+// expensive ECDHE exchange and certificate verification. GitHub assets come
+// from a handful of hosts, so four slots cover the catalog and app downloads.
+constexpr uint32_t kMaxTlsSessions = 4;
+struct TlsSessionEntry {
+    char host[kMaxHost];
+    mbedtls_ssl_session session;
+    bool used;
+};
+static TlsSessionEntry g_tlsSessions[kMaxTlsSessions];
+
+TlsSessionEntry* FindTlsSession(const char* host) {
+    for (uint32_t i = 0; i < kMaxTlsSessions; i++) {
+        if (g_tlsSessions[i].used && StoreStrEqual(g_tlsSessions[i].host, host)) {
+            return &g_tlsSessions[i];
+        }
+    }
+    return nullptr;
+}
+
+TlsSessionEntry* AllocateTlsSession(const char* host) {
+    TlsSessionEntry* existing = FindTlsSession(host);
+    if (existing != nullptr) return existing;
+
+    TlsSessionEntry* entry = nullptr;
+    for (uint32_t i = 0; i < kMaxTlsSessions; i++) {
+        if (!g_tlsSessions[i].used) {
+            entry = &g_tlsSessions[i];
+            break;
+        }
+    }
+    if (entry == nullptr) entry = &g_tlsSessions[0];
+
+    if (entry->used) {
+        mbedtls_ssl_session_free(&entry->session);
+    } else {
+        mbedtls_ssl_session_init(&entry->session);
+    }
+    StoreStrCopy(entry->host, sizeof(entry->host), host);
+    entry->used = true;
+    return entry;
+}
+
+void ForgetTlsSession(const char* host) {
+    TlsSessionEntry* entry = FindTlsSession(host);
+    if (entry == nullptr) return;
+    mbedtls_ssl_session_free(&entry->session);
+    entry->used = false;
+    entry->host[0] = '\0';
+}
+
+void RememberTlsSession(const char* host) {
+    mbedtls_ssl_session fresh;
+    mbedtls_ssl_session_init(&fresh);
+    if (mbedtls_ssl_get_session(&g_ssl, &fresh) != 0) {
+        mbedtls_ssl_session_free(&fresh);
+        return;
+    }
+
+    TlsSessionEntry* entry = AllocateTlsSession(host);
+    mbedtls_ssl_session_free(&entry->session);
+    entry->session = fresh;
+}
 
 void SetError(char* error, uint32_t capacity, const char* message) {
     StoreStrCopy(error, capacity, message);
@@ -334,6 +401,18 @@ bool TlsOpen(const ParsedUrl& url, char* error, uint32_t errorCapacity) {
     mbedtls_ssl_set_bio(&g_ssl, &g_socketFd, TlsSend, TlsRecv, nullptr);
     g_sslActive = true;
 
+    TlsSessionEntry* cachedSession = FindTlsSession(url.host);
+    bool resumeAttempt = false;
+    if (cachedSession != nullptr) {
+        int resume = mbedtls_ssl_set_session(&g_ssl, &cachedSession->session);
+        if (resume == 0) {
+            resumeAttempt = true;
+        } else {
+            printf("[HTTP] TLS session for %s was not reusable: %d\n", url.host, resume);
+            ForgetTlsSession(url.host);
+        }
+    }
+
     for (;;) {
         ret = mbedtls_ssl_handshake(&g_ssl);
         if (ret == 0) break;
@@ -342,6 +421,9 @@ bool TlsOpen(const ParsedUrl& url, char* error, uint32_t errorCapacity) {
             continue;
         }
         printf("[HTTP] TLS handshake %s:%u failed: %d\n", url.host, url.port, ret);
+        // A stale ticket must not poison every later connection to this host.
+        // Drop it so the retry performs a full handshake.
+        if (resumeAttempt) ForgetTlsSession(url.host);
         SetErrorCode(error, errorCapacity, "TLS handshake failed:", ret);
         TlsClose();
         return false;
@@ -349,11 +431,13 @@ bool TlsOpen(const ParsedUrl& url, char* error, uint32_t errorCapacity) {
 
     uint32_t verify = mbedtls_ssl_get_verify_result(&g_ssl);
     if (verify != 0) {
+        if (resumeAttempt) ForgetTlsSession(url.host);
         SetErrorCode(error, errorCapacity, "Certificate verify failed:", (int32_t)verify);
         TlsClose();
         return false;
     }
 
+    RememberTlsSession(url.host);
     return true;
 }
 
@@ -782,15 +866,21 @@ bool StoreHttpGet(const char* url, const char* accept, StoreBodySink sink, void*
                   StoreHttpResponse* response, char* error, uint32_t errorCapacity) {
     // Retry connection/handshake failures, but never replay a request once the
     // body sink has seen bytes: that would corrupt the file or SHA-256 state.
-    for (int attempt = 0; attempt < 8; attempt++) {
+    //
+    // The App Store can start before DHCP has bound the interface (e1000 link
+    // establishment is asynchronous), so a DNS failure often just means the
+    // network is not up yet. Keep retrying for ~10 seconds so the first
+    // catalog fetch survives boot instead of failing in a couple of seconds.
+    constexpr int kAttempts = 20;
+    for (int attempt = 0; attempt < kAttempts; attempt++) {
         RetrySinkContext retry = {sink, context, false};
         if (StoreHttpGetOnce(url, accept, RetrySink, &retry, response, error, errorCapacity)) {
             return true;
         }
         if (retry.received) return false;
-        if (attempt < 7) {
+        if (attempt + 1 < kAttempts) {
             printf("[HTTP] retry %d after: %s\n", attempt + 1, error);
-            syscall_sleep(300);
+            syscall_sleep(500);
         }
     }
     return false;

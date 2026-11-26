@@ -111,6 +111,11 @@ typedef enum {
     Hsys_getCliAttachedView = 8,
     Hsys_isProcessAlive = 9,
     Hsys_getProcessAppMode = 10,
+    Hsys_audioOpen = 11,
+    Hsys_audioWrite = 12,
+    Hsys_audioGetPos = 13,
+    Hsys_audioClose = 14,
+    Hsys_getTimeMs = 15,
 } HSYSCALL;
 
 /** struct InputState - Input snapshot returned by syscall_get_input().
@@ -142,6 +147,33 @@ int32_t syscall_set_cli_host_view(uint32_t viewId);
 int32_t syscall_get_cli_attached_view();
 int32_t syscall_is_process_alive(uint32_t pid);
 int32_t syscall_get_process_app_mode(uint32_t pid);
+
+/**
+ * syscall_audio_open() - Open a 16-bit stereo streaming audio ring.
+ * @sampleRate: Output rate in Hz.
+ * @channels: Channel count; must be 2.
+ * @bits: Sample width; must be 16.
+ *
+ * Return: A non-negative stream handle, or -1 when audio is unavailable.
+ */
+int32_t syscall_audio_open(uint32_t sampleRate, uint32_t channels, uint32_t bits);
+
+/**
+ * syscall_audio_write() - Append stereo PCM frames to an audio ring.
+ *
+ * Return: Bytes accepted (possibly short), or -1 for a bad handle.
+ */
+int32_t syscall_audio_write(int32_t stream, const void* data, uint32_t length);
+
+/**
+ * syscall_audio_get_position() - Bytes consumed by the audio mixer.
+ *
+ * Return: Monotonic byte position, or -1 for a bad handle.
+ */
+int32_t syscall_audio_get_position(int32_t stream);
+
+/** syscall_audio_close() - Close an audio ring. */
+int32_t syscall_audio_close(int32_t stream);
 void syscall_get_input(InputState* state);
 FramebufferInfo syscall_get_framebuffer();
 #endif  // SYSCALLS_H

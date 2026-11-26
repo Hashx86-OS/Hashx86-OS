@@ -94,6 +94,11 @@ struct linux_dirent {
  * @Hsys_getCliAttachedView: Get the view attached to a CLI host.
  * @Hsys_isProcessAlive: Test whether a process is still running.
  * @Hsys_getProcessAppMode: Get the app mode of another process.
+ * @Hsys_audioOpen: Open a 16-bit stereo streaming audio ring.
+ * @Hsys_audioWrite: Append PCM frames to an audio ring.
+ * @Hsys_audioGetPos: Read the ring's consumed byte position.
+ * @Hsys_audioClose: Close an audio ring.
+ * @Hsys_getTimeMs: Get milliseconds since boot.
  */
 typedef enum {
     Hsys_regEventH = 1,
@@ -106,6 +111,11 @@ typedef enum {
     Hsys_getCliAttachedView = 8,
     Hsys_isProcessAlive = 9,
     Hsys_getProcessAppMode = 10,
+    Hsys_audioOpen = 11,
+    Hsys_audioWrite = 12,
+    Hsys_audioGetPos = 13,
+    Hsys_audioClose = 14,
+    Hsys_getTimeMs = 15,
 } HSYSCALL;
 
 /**

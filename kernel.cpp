@@ -488,6 +488,7 @@ void pDesktop(void* arg) {
         if (g_stop_gui_rendering) {
             screen->Flush();
             Scheduler::activeInstance->Sleep(16);
+            asm volatile("int $0x2E" ::: "memory");
             continue;
         }
 
@@ -516,6 +517,7 @@ void pDesktop(void* arg) {
             desktop->RunPostPresentAction();
         } else {
             Scheduler::activeInstance->Sleep(16);
+            asm volatile("int $0x2E" ::: "memory");
         }
     }
 }
@@ -713,8 +715,9 @@ void BootMain(void* arg) {
         HALT("CRITICAL: Failed to allocate HguiHandler!\n");
     }
 
-    // Open the widget gallery at boot so the full widget set can be inspected.
-    OpenWidgetGallery(desktop);
+    // Widget Gallery auto-open is disabled. It remains available from the
+    // desktop context menu.
+    // OpenWidgetGallery(desktop);
     // ---- Slow stage 5: PCI devices ------------------------------------------
     {
         // Keep the timer IRQ out of the command/ACK polling (an IRQ handler
@@ -856,7 +859,7 @@ extern "C" void kernelMain(void* multiboot_structure, uint32_t magicnumber) {
 
     // Initialize the PMM and kernel heap.
     init_memory(mbinfo);
-    InitializePIT(1000);
+    InitializePIT(TIMER_HZ);
 
     // ---- VBE graphics self-initialization --------------------------------
     // The multiboot header carries no video-mode request (no VIDINFO), so the

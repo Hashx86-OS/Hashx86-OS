@@ -178,6 +178,9 @@ uint32_t HguiHandler::HandleInterrupt(uint32_t esp) {
         case ICON_BUTTON:
             ret = HandleIconButton(cpu, data_ptr);
             break;
+        case IMAGEVIEW:
+            ret = HandleImageView(cpu, data_ptr);
+            break;
         case LABEL:
             ret = HandleLabel(cpu, data_ptr);
             break;
@@ -525,6 +528,64 @@ int32_t HguiHandler::HandleIconButton(CPUState* cpu, const WidgetData* _data) {
             FindOwnedWidget<IconButton>(_data->param0, proc->pid, &Widget::IsIconButton);
         if (!widget) return -1;
         widget->SetIconHeight((int32_t)_data->param1);
+        return 1;
+    }
+
+    return -1;
+}
+
+int32_t HguiHandler::HandleImageView(CPUState* cpu, const WidgetData* _data) {
+    if (!cpu || !_data) return -1;
+    ProcessControlBlock* proc = GetCurrentProcSafe();
+    if (!proc) return -1;
+
+    if ((uint32_t)cpu->ebx == CREATE) {
+        Widget* parentBase = this->FindWidgetByID(_data->param0);
+        if (!parentBase || !parentBase->IsComposite()) return -1;
+        CompositeWidget* parentWidget = static_cast<CompositeWidget*>(parentBase);
+        if (parentWidget->ID == 0) return -1;
+
+        uint32_t newID = this->getNewID();
+        Widget* widget = new ImageView(parentWidget, _data->param1, _data->param2, _data->param3,
+                                       _data->param4, nullptr, 0, 0);
+        if (!widget) {
+            HALT("CRITICAL: Failed to allocate ImageView widget!\n");
+        }
+        widget->SetPID(Scheduler::activeInstance->GetCurrentProcess()->pid);
+        widget->SetID(newID);
+        HguiWidgets.Add(widget);
+        return (int32_t)newID;
+    }
+
+    if ((uint32_t)cpu->ebx == SET_IMAGE) {
+        ImageView* widget =
+            FindOwnedWidget<ImageView>(_data->param0, proc->pid, &Widget::IsImageView);
+        if (!widget) return -1;
+
+        // param1 = source width, param2 = source height, param5 = ARGB pixels.
+        if (_data->param5 == nullptr) {
+            widget->SetImage(nullptr, 0, 0);
+            return 1;
+        }
+
+        int32_t srcW = _data->param1;
+        int32_t srcH = _data->param2;
+        if (srcW <= 0 || srcH <= 0 || srcW > 4096 || srcH > 4096) return -1;
+
+        uint64_t count = (uint64_t)(uint32_t)srcW * (uint64_t)(uint32_t)srcH;
+        constexpr uint64_t kMaxImagePixels = 4u * 1024u * 1024u;
+        if (count == 0 || count > kMaxImagePixels) return -1;
+        size_t bytes = (size_t)(count * sizeof(uint32_t));
+        if (!ValidateUserPointer(proc, _data->param5, bytes)) return -1;
+
+        uint32_t* pixels = (uint32_t*)kmalloc((int)bytes);
+        if (!pixels) return -1;
+        if (!CopyFromUser(proc, pixels, _data->param5, bytes)) {
+            kfree(pixels);
+            return -1;
+        }
+        widget->SetImage(pixels, srcW, srcH);
+        kfree(pixels);
         return 1;
     }
 

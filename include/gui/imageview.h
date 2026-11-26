@@ -66,6 +66,11 @@ public:
      */
     void SetImage(const uint32_t* source, int32_t srcW, int32_t srcH);
 
+    /** IsImageView() - Return true for image view widget types. */
+    bool IsImageView() const override {
+        return true;
+    }
+
     void RedrawToCache() override;
 };
 

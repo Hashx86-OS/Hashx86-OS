@@ -34,13 +34,18 @@
 class AudioDriver;
 
 /**
- * struct AudioStream - A single loop/one-shot audio source mixed by AudioMixer.
+ * struct AudioStream - A single loop/one-shot or streaming audio source.
  * @data: PCM sample data.
  * @length: Length of the data in bytes.
- * @position: Current read offset into the data.
+ * @position: Current read offset into one-shot data.
  * @active: Whether the stream is playing.
- * @looping: Whether the stream restarts at the end.
+ * @looping: Whether a one-shot stream restarts at the end.
  * @ownsData: Whether the mixer owns (and will free) the buffer.
+ * @streaming: Whether this slot reads from a user-fed ring buffer.
+ * @capacity: Ring buffer size in bytes for a streaming slot.
+ * @writePos: Monotonic bytes written by the user program.
+ * @readPos: Monotonic bytes consumed by the mixer.
+ * @ownerPid: PID allowed to write/query the streaming slot, or -1.
  */
 struct AudioStream {
     uint8_t* data;
@@ -49,6 +54,12 @@ struct AudioStream {
     bool active;
     bool looping;
     bool ownsData;
+    bool streaming;
+    bool primed;  // Initial streaming prebuffer has been collected.
+    uint32_t capacity;
+    volatile uint32_t writePos;
+    volatile uint32_t readPos;
+    int32_t ownerPid;
 };
 
 /**
@@ -76,12 +87,12 @@ private:
     // Disable interrupts and return the previous EFLAGS (bit 9 = IF).
     static inline uint32_t lock() {
         uint32_t eflags;
-        asm volatile("pushf; pop %0; cli" : "=r"(eflags));
+        asm volatile("pushf; pop %0; cli" : "=r"(eflags)::"memory");
         return eflags;
     }
     // Restore interrupts if they were enabled.
     static inline void unlock(uint32_t eflags) {
-        if (eflags & 0x200) asm volatile("sti");
+        if (eflags & 0x200) asm volatile("sti" ::: "memory");
     }
 
 public:
@@ -106,17 +117,56 @@ public:
     void SetOutputSampleRate(uint32_t rate);
 
     /**
+     * CreateStream() - Allocate a 16-bit stereo streaming ring.
+     * @sampleRate: Requested output rate in Hz.
+     * @channels: Channel count; must be 2.
+     * @bits: Sample width; must be 16.
+     * @ownerPid: Process that owns the stream.
+     *
+     * Return: Slot index in [0, 8), or -1 when audio is unavailable.
+     */
+    int32_t CreateStream(uint32_t sampleRate, uint32_t channels, uint32_t bits, int32_t ownerPid);
+
+    /**
+     * WriteStream() - Copy PCM frames into a streaming ring.
+     *
+     * The write is short when the ring is full; callers should retry later.
+     *
+     * Return: Bytes accepted, or -1 for a bad handle/owner.
+     */
+    int32_t WriteStream(int32_t streamId, const uint8_t* data, uint32_t length, int32_t ownerPid);
+
+    /**
+     * GetStreamPosition() - Bytes consumed from a streaming ring.
+     *
+     * Return: Monotonic byte position, or -1 for a bad handle/owner.
+     */
+    int32_t GetStreamPosition(int32_t streamId, int32_t ownerPid);
+
+    /**
+     * CloseStream() - Release a streaming ring owned by @ownerPid.
+     *
+     * Return: 0 on success, -1 for a bad handle/owner.
+     */
+    int32_t CloseStream(int32_t streamId, int32_t ownerPid);
+
+    /**
+     * CloseStreamsForPid() - Release every stream owned by a dying process.
+     */
+    void CloseStreamsForPid(int32_t ownerPid);
+
+    /**
      * Update() - Mix one output chunk and push it to the driver.
      *
-     * Must be called from task context with interrupts enabled.
+     * Called by the timer IRQ or task context; preserves interrupt state.
      */
     void Update();
 
 private:
     /**
-     * ProcessAudio() - Mix active streams into the output buffer.
+     * ProcessAudio() - Queue available samples; false when no progress is possible.
      */
-    void ProcessAudio();
+    bool ProcessAudio();
 };
 
 #endif  // AUDIO_MIXER_H

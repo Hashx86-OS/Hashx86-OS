@@ -57,6 +57,15 @@ void StoreU32ToHex(char* dst, uint32_t capacity, uint32_t value);
 /** StoreHexEqual() - Compare two hexadecimal strings case-insensitively. */
 bool StoreHexEqual(const char* left, const char* right);
 
+/** StoreVersionCompare() - Compare dotted numeric versions such as "0.1.0".
+ *
+ * A leading "v" is ignored and non-numeric suffixes are ignored after the
+ * numeric components. Missing components are treated as zero.
+ *
+ * Return: -1 when @left is older, 0 when equal, 1 when newer.
+ */
+int StoreVersionCompare(const char* left, const char* right);
+
 /** StoreFileExists() - Test for a regular file and optionally return its size. */
 bool StoreFileExists(const char* path, uint32_t* size);
 

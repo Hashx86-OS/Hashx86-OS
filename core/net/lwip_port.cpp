@@ -34,6 +34,7 @@
 #include <core/globals.h>
 #include <debug.h>
 #include <stdarg.h>
+#include <stdlib.h>
 #include <types.h>
 
 #include <lwip/arch.h>

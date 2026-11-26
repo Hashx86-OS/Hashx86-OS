@@ -33,6 +33,7 @@
  * hooks (calloc/free, time, gmtime, entropy) live in mbedtls_port.cpp.
  */
 
+#include <stdio.h>
 #include "mbedtls/config.h"
 
 // No hosted I/O, sockets, wall-clock structs or threading.
@@ -52,7 +53,7 @@
 #undef MBEDTLS_DEBUG_C
 #undef MBEDTLS_SELF_TEST
 
-// Platform abstraction: we provide allocation, time and gmtime myself.
+// Platform hooks provide allocation, time, gmtime and formatted output.
 #define MBEDTLS_PLATFORM_C
 #define MBEDTLS_PLATFORM_MEMORY
 #define MBEDTLS_PLATFORM_NO_STD_FUNCTIONS

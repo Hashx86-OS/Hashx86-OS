@@ -23,6 +23,7 @@
  */
 
 #define KDBG_COMPONENT "SYSCALL"
+#include <core/drivers/AudioMixer.h>
 #include <core/drivers/keyboard.h>
 #include <core/drivers/mouse.h>
 #include <core/filesystem/File.h>
@@ -1467,6 +1468,36 @@ int32_t SyscallHandlers::Handle_sys_Hcall(uint32_t hcall_id, uint32_t arg1, uint
         } else {
             return -1;
         }
+    } else if (hcall_id == Hsys_audioOpen) {
+        if (!current_process || !g_AudioMixer) return -1;
+        return g_AudioMixer->CreateStream(arg1, arg2, arg3, current_process->pid);
+    } else if (hcall_id == Hsys_audioWrite) {
+        if (!current_process || !g_AudioMixer) return -1;
+        uint32_t length = arg3;
+        if (length == 0) return 0;
+        if (length > 65536u) length = 65536u;
+        if (!IsUserRange(current_process, arg2, length)) return -1;
+
+        uint8_t* buffer = (uint8_t*)kmalloc((int)length);
+        if (!buffer) return -1;
+        if (!CopyFromUser(current_process, buffer, (const void*)arg2, length)) {
+            kfree(buffer);
+            return -1;
+        }
+        int32_t written =
+            g_AudioMixer->WriteStream((int32_t)arg1, buffer, length, current_process->pid);
+        kfree(buffer);
+        return written;
+    } else if (hcall_id == Hsys_audioGetPos) {
+        if (!current_process || !g_AudioMixer) return -1;
+        return g_AudioMixer->GetStreamPosition((int32_t)arg1, current_process->pid);
+    } else if (hcall_id == Hsys_audioClose) {
+        if (!current_process || !g_AudioMixer) return -1;
+        return g_AudioMixer->CloseStream((int32_t)arg1, current_process->pid);
+    } else if (hcall_id == Hsys_getTimeMs) {
+        // Milliseconds since boot, driven by the PIT. Games use this instead
+        // of calibrating the TSC, whose frequency varies with the CPU.
+        return (int32_t)timerTicks;
     } else {
         // Default case (optional: handle unknown Hcalls).
         KDBG1("Unknown Hcall ID: %d", hcall_id);

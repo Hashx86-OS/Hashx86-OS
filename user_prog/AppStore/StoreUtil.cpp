@@ -223,6 +223,48 @@ bool StoreHexEqual(const char* left, const char* right) {
     return *left == *right;
 }
 
+namespace {
+
+uint32_t NextVersionPart(const char** cursor) {
+    const char* text = *cursor;
+    while (*text == 'v' || *text == 'V') text++;
+
+    uint32_t value = 0;
+    bool sawDigit = false;
+    while (*text >= '0' && *text <= '9') {
+        sawDigit = true;
+        uint32_t digit = (uint32_t)(*text - '0');
+        if (value <= (0xFFFFFFFFu - digit) / 10u) value = value * 10u + digit;
+        text++;
+    }
+
+    if (*text == '.') text++;
+    *cursor = sawDigit ? text : nullptr;
+    return value;
+}
+
+}  // namespace
+
+int StoreVersionCompare(const char* left, const char* right) {
+    if (left == nullptr) left = "";
+    if (right == nullptr) right = "";
+    while (*left == 'v' || *left == 'V') left++;
+    while (*right == 'v' || *right == 'V') right++;
+
+    const char* leftCursor = left;
+    const char* rightCursor = right;
+    for (int part = 0; part < 4; part++) {
+        uint32_t leftValue = NextVersionPart(&leftCursor);
+        uint32_t rightValue = NextVersionPart(&rightCursor);
+        if (leftValue < rightValue) return -1;
+        if (leftValue > rightValue) return 1;
+        if (leftCursor == nullptr && rightCursor == nullptr) break;
+        if (leftCursor == nullptr) leftCursor = "";
+        if (rightCursor == nullptr) rightCursor = "";
+    }
+    return 0;
+}
+
 bool StoreFileExists(const char* path, uint32_t* size) {
     if (path == nullptr) return false;
     struct stat st;

@@ -187,7 +187,7 @@ $(BUILD_DIR)/obj/%.o: %.cpp
 
 $(BUILD_DIR)/obj/%.o: %.c
 	mkdir -p $(dir $@)
-	gcc $(GPP_PARAMS) -x c -o $@ -c $<
+	gcc $(filter-out -fno-use-cxa-atexit -fno-rtti -fno-exceptions,$(GPP_PARAMS)) -Werror=implicit-function-declaration -x c -o $@ -c $<
 
 $(BUILD_DIR)/obj/%.o: %.s
 	mkdir -p $(dir $@)
@@ -281,7 +281,9 @@ install: $(KERNEL_BIN)
 
 # Clean rule
 clean:
-	-test -d $(BUILD_DIR) && find $(BUILD_DIR) -mindepth 1 -maxdepth 1 ! -name 'HDD.vdi' -exec rm -rf {} +
+	@if test -d $(BUILD_DIR); then \
+		find $(BUILD_DIR) -mindepth 1 -maxdepth 1 ! -name 'HDD.vdi' -exec rm -rf {} +; \
+	fi
 
 build:
 	make clean
@@ -299,8 +301,8 @@ build-run:
 	@sleep $(RUNQ_DELAY)
 	make runq
 
-# isa-debug-exit gives the start menu a real shutdown path: the guest writes
-# to port 0xF4 and QEMU exits. Without the device the guest just halts.
+# isa-debug-exit provides a shutdown fallback when ACPI is unavailable.
+# Normal start-menu shutdown uses the firmware's ACPI power-off port first.
 runq: iso
 	qemu-system-i386 -cdrom $(KERNEL_ISO) -boot d -vga std -serial stdio -m 1G \
 	-drive file=$(QEMU_DISK),format=vdi \
@@ -387,6 +389,7 @@ hdd:
 	-sudo cp $(BUILD_DIR)/drivers/ac97.sys /mnt/vdi_p1/Hashx86/drivers/ac97.sys
 
 	-sudo cp bin/cacert.pem /mnt/vdi_p1/Hashx86/cacert.pem
+	-sudo cp bin/appstore-cacert.pem /mnt/vdi_p1/Hashx86/appstore-cacert.pem
 	-sudo cp bin/fonts/segoeui.ttf /mnt/vdi_p1/Hashx86/fonts/segoeui.ttf
 	-sudo cp bin/fonts/segoeuib.ttf /mnt/vdi_p1/Hashx86/fonts/segoeuib.ttf
 	-sudo cp bin/fonts/segoeuii.ttf /mnt/vdi_p1/Hashx86/fonts/segoeuii.ttf
@@ -489,6 +492,7 @@ INSTALLER_PAK_MANIFEST = $(BUILD_DIR)/.installer_pak.manifest
 $(INSTALLER_PAK_MANIFEST): FORCE $(KERNEL_BIN) $(INSTALLER_CORE_IMG) $(KERNEL_MAP) user drivers
 	@find $(KERNEL_BIN) $(INSTALLER_CORE_IMG) $(KERNEL_MAP) Makefile \
 	  $(BUILD_DIR)/user $(BUILD_DIR)/drivers bin/fonts bin/bitmaps bin/audio bin/cacert.pem \
+	  bin/appstore-cacert.pem \
 	  bin/ProgFile/Game3D $(INSTALLER_GRUB_PLATFORM_DIR) -type f -printf '%p %s %T@\n' 2>/dev/null | sort > $@.tmp
 	@cmp -s $@.tmp $@ || cp $@.tmp $@
 	@rm -f $@.tmp
@@ -547,8 +551,9 @@ $(INSTALLER_PAK_STAMP): $(INSTALLER_PAK_MANIFEST) $(KERNEL_BIN) $(INSTALLER_CORE
 	# Audio
 	mkdir -p $(INSTALLER_PAK_DIR)/Hashx86/audio
 	cp bin/audio/boot.wav $(INSTALLER_PAK_DIR)/Hashx86/audio/
-	# TLS trust store
+	# TLS trust stores
 	cp bin/cacert.pem $(INSTALLER_PAK_DIR)/Hashx86/cacert.pem
+	cp bin/appstore-cacert.pem $(INSTALLER_PAK_DIR)/Hashx86/appstore-cacert.pem
 	# Drivers
 	mkdir -p $(INSTALLER_PAK_DIR)/Hashx86/drivers
 	cp $(BUILD_DIR)/drivers/*.sys $(INSTALLER_PAK_DIR)/Hashx86/drivers/

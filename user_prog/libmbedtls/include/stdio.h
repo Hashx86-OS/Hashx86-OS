@@ -25,9 +25,8 @@
 #ifndef HASHX86_TLS_STDIO_H
 #define HASHX86_TLS_STDIO_H
 
-/* Minimal stdio surface for mbedTLS's debug/FS declarations. The Hashx86
- * build disables MBEDTLS_DEBUG_C, MBEDTLS_SELF_TEST and MBEDTLS_FS_IO, so
- * these declarations exist only to satisfy headers that include <stdio.h>. */
+/* Formatting functions are implemented in mbedtls_port.cpp. The FILE and
+ * fprintf declarations satisfy upstream headers; filesystem I/O is disabled. */
 
 #include <stdarg.h>
 #include <stddef.h>

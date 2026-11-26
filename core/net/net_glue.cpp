@@ -51,11 +51,17 @@ extern "C" {
 
 namespace {
 
-constexpr uint32_t kDhcpFallbackMs = 5000;
+// A dual-stack mobile router can take longer than 5s to complete the DHCPv4
+// exchange (it may wait for its IPv6 link first). Keep DHCP running and retry
+// before giving up on it: stopping DHCP and installing the 10.0.2.15 fallback
+// would leave a real network with no usable address at all.
+constexpr uint32_t kDhcpRetryMs = 5000;
+constexpr uint32_t kDhcpFallbackAttempts = 6;
 
 bool g_networkInitialized = false;
 NetworkDevice* g_networkDevice = nullptr;
 int g_rxThreadArg = 0;
+uint32_t g_dhcpFallbackAttempts = 0;
 
 /**
  * DhcpFallbackTimer() - Install the static address when no lease arrives.
@@ -67,7 +73,13 @@ void DhcpFallbackTimer(void* arg) {
     if (netif == nullptr) return;
     if (dhcp_supplied_address(netif)) return;
 
-    printf("[NET] dhcp: no lease after %ums, using static fallback\n", kDhcpFallbackMs);
+    if (++g_dhcpFallbackAttempts < kDhcpFallbackAttempts) {
+        sys_timeout(kDhcpRetryMs, DhcpFallbackTimer, netif);
+        return;
+    }
+
+    printf("[NET] dhcp: no lease after %ums, using static fallback\n",
+           (uint32_t)(kDhcpRetryMs * kDhcpFallbackAttempts));
     NetifEthernetUseStaticConfig();
 }
 
@@ -90,7 +102,7 @@ void TcpipInitDone(void* arg) {
     }
 
     struct netif* netif = NetifEthernetInterface();
-    sys_timeout(kDhcpFallbackMs, DhcpFallbackTimer, netif);
+    sys_timeout(kDhcpRetryMs, DhcpFallbackTimer, netif);
 }
 
 /**
@@ -104,7 +116,12 @@ void NetworkRxThreadEntry(void* arg) {
         if (g_networkDevice != nullptr) g_networkDevice->Poll();
         NetReapClosedSockets();
 
-        if (g_scheduler) g_scheduler->Sleep(2);
+        if (g_scheduler) {
+            g_scheduler->Sleep(2);
+            // Yield immediately: otherwise the loop spins until the next PIT
+            // tick even though this thread is already marked blocked.
+            asm volatile("int $0x2E" ::: "memory");
+        }
     }
 }
 

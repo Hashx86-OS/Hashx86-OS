@@ -27,7 +27,7 @@ $(TARGET): $(MBEDTLS_OBJS) $(PORT_OBJ) $(DIV_OBJ)
 $(BUILD_DIR)/%.o: $(MBEDTLS_LIB_DIR)/%.c
 	@echo "[TLS] Compiling $<"
 	@mkdir -p $(dir $@)
-	@$(GCC) $(CPPFLAGS) -c $< -o $@
+	@$(GCC) $(filter-out -fno-use-cxa-atexit -fno-exceptions,$(CPPFLAGS)) -Werror=implicit-function-declaration -c $< -o $@
 
 $(BUILD_DIR)/mbedtls_port.o: mbedtls_port.cpp
 	@echo "[TLS] Compiling $<"
