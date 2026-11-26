@@ -319,6 +319,10 @@ void LoadArtwork(const CatalogApp* app) {
 
 bool DownloadSink(void* context, const uint8_t* data, uint32_t length) {
     DownloadContext* download = static_cast<DownloadContext*>(context);
+    if (length > 0xFFFFFFFFu - download->received ||
+        (download->expected != 0 && (download->received > download->expected ||
+                                     length > download->expected - download->received)))
+        return false;
     if (!StoreWriteAll(download->fd, data, length)) return false;
     if (mbedtls_sha256_update_ret(&download->sha, data, length) != 0) return false;
 
@@ -464,7 +468,7 @@ void ShowSelectedApp() {
 
     if (g_nameLabel != nullptr) g_nameLabel->setText(app->name);
     if (g_versionLabel != nullptr) {
-        StoreFormat(text, sizeof(text), "Version %s", app->version);
+        StoreFormat(text, sizeof(text), "Version %s", CatalogAppVersion(app));
         g_versionLabel->setText(text);
     }
     SetTwoLineDescription(app->description);
@@ -547,7 +551,7 @@ void PopulateList() {
         ListViewItemData& item = g_listItems[i];
         memset(&item, 0, sizeof(item));
         StoreStrCopy(item.cells[0], sizeof(item.cells[0]), app.name);
-        StoreStrCopy(item.cells[1], sizeof(item.cells[1]), app.version);
+        StoreStrCopy(item.cells[1], sizeof(item.cells[1]), CatalogAppVersion(&app));
 
         uint32_t installedSize = 0;
         bool installed = IsInstalled(&app, &installedSize);
@@ -654,8 +658,9 @@ void InstallSelected() {
         }
     }
 
+    ShowSelectedApp();
     char message[192];
-    StoreFormat(message, sizeof(message), "Preparing %s %s...", app->name, app->version);
+    StoreFormat(message, sizeof(message), "Preparing %s %s...", app->name, CatalogAppVersion(app));
     SetStatus(message);
     SetProgress("");
 
@@ -724,17 +729,31 @@ void InstallSelected() {
         return;
     }
 
-    syscall_unlink(binaryPath);
+    char backupPath[192];
+    StoreFormat(backupPath, sizeof(backupPath), "%s.backup", binaryPath);
+    bool hadBinary = StoreFileExists(binaryPath, nullptr);
+    // Preserve any previous recovery copy rather than overwriting it.
+    if (StoreFileExists(backupPath, nullptr) ||
+        (hadBinary && syscall_rename(binaryPath, backupPath) != 0)) {
+        syscall_unlink(tempPath);
+        WorkerFail("could not back up the installed binary");
+        return;
+    }
     if (syscall_rename(tempPath, binaryPath) != 0) {
+        if (hadBinary && syscall_rename(backupPath, binaryPath) != 0) {
+            WorkerFail("promotion failed; previous binary remains in .backup");
+            return;
+        }
         syscall_unlink(tempPath);
         WorkerFail("could not move the verified binary into place");
         return;
     }
 
+    if (hadBinary) syscall_unlink(backupPath);
     g_busy = false;
     PopulateList();
     SetProgress("");
-    StoreFormat(message, sizeof(message), "Installed %s %s.", app->name, app->version);
+    StoreFormat(message, sizeof(message), "Installed %s %s.", app->name, CatalogAppVersion(app));
     SetStatus(message);
 }
 

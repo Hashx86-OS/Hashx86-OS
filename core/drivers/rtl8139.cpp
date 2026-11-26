@@ -36,6 +36,7 @@
 // pending; Poll() drains the ring from the network thread. lwIP is never
 // entered from interrupt context.
 
+#include <core/Iguard.h>
 #include <core/drivers/rtl8139.h>
 #include <core/interrupts.h>
 #include <core/net/net_device.h>
@@ -98,6 +99,9 @@ constexpr uint32_t kTcrConfig = (3u << 24) | (6u << 8) | (8u << 4);
 // TSD bits. Bit 13 (OWN) must stay clear when the host kicks a descriptor;
 // bit 19 is the early-TX threshold field (256-byte threshold as used by Linux).
 constexpr uint32_t kTsdTxOk = 0x00008000;
+constexpr uint32_t kTsdTxUnderrun = 1u << 14;
+constexpr uint32_t kTsdTxAborted = 1u << 30;
+constexpr uint32_t kTcrClearAbort = 1u;
 constexpr uint32_t kTsdEarlyThreshold = 0x00080000;
 constexpr uint32_t kTsdSizeMask = 0x00001FFF;
 
@@ -185,6 +189,7 @@ private:
     uint16_t ioBase = 0;
     uint8_t mac[6] = {};
     bool initialized = false;
+    bool recoveryInProgress = false;
 
     uint8_t* rxBuffer = nullptr;
     uint32_t rxBufferPhys = 0;
@@ -356,20 +361,27 @@ void Rtl8139Device::ProgramReceivePath() {
 }
 
 void Rtl8139Device::RecoverReceiver() {
+    {
+        InterruptGuard guard;
+        if (recoveryInProgress) return;
+        recoveryInProgress = true;
+        outb(ioBase + kRegCr, 0x00);
+        outb(ioBase + kRegCr, kCrReset);
+    }
     recoveryCount++;
     if (recoveryCount <= 3) {
         printf("[NET] rtl8139: resetting RX path (recovery %u)\n", recoveryCount);
     }
 
-    outb(ioBase + kRegCr, 0x00);
-    outb(ioBase + kRegCr, kCrReset);
     for (uint32_t i = 0; i < 100000; i++) {
         if ((inb(ioBase + kRegCr) & kCrReset) == 0) break;
         asm volatile("pause");
     }
 
     memset(rxBuffer, 0, kRxAllocationSize);
+    InterruptGuard guard;
     ProgramReceivePath();
+    recoveryInProgress = false;
 
     outw(ioBase + kRegIsr, 0xFFFF);
     outw(ioBase + kRegImr, irqHandler != nullptr ? kInterruptMask : 0);
@@ -377,7 +389,10 @@ void Rtl8139Device::RecoverReceiver() {
 
 void Rtl8139Device::ReclaimTransmitDescriptors() {
     for (uint32_t i = 0; i < kTxDescriptors; i++) {
-        if (txBusy[i] && (inl(ioBase + kRegTsd0 + i * 4) & kTsdTxOk) != 0) {
+        uint32_t status = inl(ioBase + kRegTsd0 + i * 4);
+        if (txBusy[i] && (status & (kTsdTxOk | kTsdTxUnderrun | kTsdTxAborted)) != 0) {
+            // TABT requires the TCR clear-abort command before another submission.
+            if (status & kTsdTxAborted) outl(ioBase + kRegTcr, kTcrConfig | kTcrClearAbort);
             txBusy[i] = false;
         }
     }
@@ -388,6 +403,8 @@ bool Rtl8139Device::SendFrame(const uint8_t* frame, uint16_t length) {
         return false;
     }
 
+    InterruptGuard guard;
+    if (recoveryInProgress) return false;
     ReclaimTransmitDescriptors();
 
     int32_t index = -1;

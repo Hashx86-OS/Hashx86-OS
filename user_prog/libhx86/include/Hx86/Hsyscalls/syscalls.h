@@ -94,7 +94,10 @@ int32_t syscall_clone(uint32_t clone_flags, void* child_stack, void* parent_tid,
                       void* child_tid);
 int32_t syscall_getdents(uint32_t fd, struct linux_dirent* dirp, uint32_t count);
 void syscall_nanosleep(struct timespec* req, struct timespec* rem);
-int32_t syscall_time(int32_t* tloc);
+// Unsigned Unix seconds through 2106; UINT32_MAX denotes clock/copy failure.
+uint32_t syscall_time(uint32_t* tloc);
+int32_t syscall_random(void* output, uint32_t length);
+uint32_t syscall_get_time_ms();
 int32_t syscall_getcwd(char* buf, uint32_t bufSize);
 void syscall_debug(const char* str);
 uint32_t syscall_peek_memory(uint32_t address, uint32_t size);
@@ -116,6 +119,7 @@ typedef enum {
     Hsys_audioGetPos = 13,
     Hsys_audioClose = 14,
     Hsys_getTimeMs = 15,
+    Hsys_random = 16,
 } HSYSCALL;
 
 /** struct InputState - Input snapshot returned by syscall_get_input().
@@ -168,11 +172,14 @@ int32_t syscall_audio_write(int32_t stream, const void* data, uint32_t length);
 /**
  * syscall_audio_get_position() - Bytes consumed by the audio mixer.
  *
- * Return: Monotonic byte position, or -1 for a bad handle.
+ * Check -1 before using the result. Compute elapsed bytes with unsigned
+ * subtraction masked by 0x7FFFFFFC to handle wraparound.
+ *
+ * Return: Frame-aligned byte position modulo 2^31 (always nonnegative), or -1 for a bad handle.
  */
 int32_t syscall_audio_get_position(int32_t stream);
 
-/** syscall_audio_close() - Close an audio ring. */
+/** syscall_audio_close() - Close the handle; accepted frames drain before ring release. */
 int32_t syscall_audio_close(int32_t stream);
 void syscall_get_input(InputState* state);
 FramebufferInfo syscall_get_framebuffer();

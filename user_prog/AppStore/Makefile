@@ -38,7 +38,7 @@ TARGET = $(BUILD_DIR)/$(APP_NAME).bin
 
 all: $(TARGET)
 
-$(TARGET): $(OBJS) linker.ld
+$(TARGET): $(OBJS) linker.ld $(LIBHX86_BUILD_DIR)/libhx86.a $(LIBMBEDTLS_BUILD_DIR)/libmbedtls.a
 	@echo "[APP] Linking $@"
 	@mkdir -p $(dir $@)
 	@$(LD) -T linker.ld -o $@ $(OBJS) $(LDFLAGS)
@@ -52,3 +52,13 @@ $(BUILD_DIR)/obj/$(APP_NAME)/%.o: %.cpp
 
 clean:
 	rm -rf $(BUILD_DIR)/obj/$(APP_NAME) $(TARGET)
+
+CONFIG_STAMP = $(BUILD_DIR)/obj/$(APP_NAME)/config.txt
+export APPSTORE_CATALOG_REPO APPSTORE_CATALOG_ASSET APPSTORE_OS_VERSION
+.PHONY: FORCE
+$(CONFIG_STAMP): FORCE
+	@mkdir -p $(dir $@)
+	@printenv APPSTORE_CATALOG_REPO APPSTORE_CATALOG_ASSET APPSTORE_OS_VERSION > $@.tmp
+	@cmp -s $@.tmp $@ || cp $@.tmp $@
+	@rm -f $@.tmp
+$(CPP_OBJS): $(CONFIG_STAMP)

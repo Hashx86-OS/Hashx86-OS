@@ -64,7 +64,7 @@ public:
      * @srcW: Source width in pixels.
      * @srcH: Source height in pixels.
      */
-    void SetImage(const uint32_t* source, int32_t srcW, int32_t srcH);
+    bool SetImage(const uint32_t* source, int32_t srcW, int32_t srcH);
 
     /** IsImageView() - Return true for image view widget types. */
     bool IsImageView() const override {

@@ -131,6 +131,8 @@ struct ThreadControlBlock {
     CPUState* context;
     ProcessControlBlock* parent;
     uint32_t wakeTime;
+    uint32_t networkCallDepth = 0;
+    bool terminatePending = false;
     uint32_t stackSlotIdx;  // Slot index for user-stack virtual address reuse.
 };
 
@@ -158,6 +160,7 @@ struct ThreadControlBlock {
  * @deferredSlotCount: Number of pending deferred stack slots.
  */
 struct ProcessControlBlock {
+    bool killPending = false;
     static const uint16_t STDIN_QUEUE_SIZE = 256;
 
     uint32_t pid;

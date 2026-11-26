@@ -24,6 +24,7 @@
 
 #define KDBG_COMPONENT "FATFS"
 
+#include <core/Iguard.h>
 #include <core/filesystem/FatFs/ff.h>
 
 #include <core/filesystem/FatFs/diskio.h>
@@ -546,10 +547,13 @@ int32_t FatFsWrapper::CreateDirectory(const char* path) {
     return 0;
 }
 
-int32_t FatFsWrapper::Remove(const char* path) {
+int32_t FatFsWrapper::Remove(const char* path, bool directory) {
+    InterruptGuard guard;
     char fatPath[256];
     if (!PathToFatFs(path, fatPath, sizeof(fatPath))) return -1;
 
+    FILINFO info;
+    if (f_stat(fatPath, &info) != FR_OK || ((info.fattrib & AM_DIR) != 0) != directory) return -1;
     FRESULT res = f_unlink(fatPath);
     if (res != FR_OK) {
         KDBG1("Remove: %d", res);

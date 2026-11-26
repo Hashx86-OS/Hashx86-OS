@@ -91,7 +91,7 @@ App fields:
 |---|---|---|
 | `id` | yes | Safe directory name under `/Apps/`. Allowed: letters, digits, `.`, `-`, `_`. |
 | `name` | yes | Display name. |
-| `version` | yes | Display and update version. |
+| `version` | yes | Catalog-advertised version. For repo entries, the resolved release tag is displayed after resolution. |
 | `description` | no | Short description shown in the details pane. |
 | `icon` | no | Built-in icon-font name, e.g. `fa-gamepad`, `fa-rocket`, `fa-file`. |
 | `category` | no | Display category. |
@@ -148,6 +148,8 @@ making the store understand game-data formats.
 
 ## Runtime dependencies
 
+- Hardware entropy (x86 RDRAND) is required for the kernel RNG and TLS.
+  Networking stays disabled and TLS entropy requests fail when it is unavailable.
 - Kernel networking (`Hnet`, lwIP, DHCP/DNS) and an RTL8139 or Intel
   82540EM/e1000 NIC.
 - `/Hashx86/appstore-cacert.pem`, the small GitHub-focused trust store installed

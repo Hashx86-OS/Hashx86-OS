@@ -24,7 +24,7 @@
 
 // lwIP platform hooks for Hashx86.
 //
-// The kernel provides the clock (timerTicks, 1 kHz), printf/vprintf and the
+// The kernel provides the millisecond clock (timerTicks), printf/vprintf and the
 // fixed-memory allocator used by lwIP. This file supplies the functions the
 // portable stack itself expects from a port.
 //
@@ -32,12 +32,14 @@
 // functions called from lwIP's C sources are exported with C linkage.
 
 #include <core/globals.h>
+#include <core/random.h>
 #include <debug.h>
 #include <stdarg.h>
 #include <stdlib.h>
 #include <types.h>
 
 #include <lwip/arch.h>
+#include <lwip/ip_addr.h>
 #include <lwip/opt.h>
 #include <lwip/sys.h>
 
@@ -71,26 +73,15 @@ void lwip_assert_fail(const char* message) {
     }
 }
 
-/**
- * lwip_rand() - Small PRNG for lwIP (ISN/port selection).
- *
- * Seeded once from the boot tick counter. Single-core and single-threaded, so
- * no locking is required.
- */
 uint32_t lwip_rand(void) {
-    static uint32_t state = 0x12345678u;
-    static int seeded = 0;
+    uint32_t value;
+    if (!RandomBytes(&value, sizeof(value))) lwip_assert_fail("hardware entropy unavailable");
+    return value;
+}
 
-    if (!seeded) {
-        state ^= (uint32_t)timerTicks * 2654435761u;
-        if (state == 0) state = 0xA5A5A5A5u;
-        seeded = 1;
-    }
-
-    state ^= state << 13;
-    state ^= state >> 17;
-    state ^= state << 5;
-    return state;
+u32_t hashx86_tcp_isn(const ip_addr_t* local, u16_t lp, const ip_addr_t* remote, u16_t rp) {
+    return RandomTcpIsn(ip4_addr_get_u32(ip_2_ip4(local)), lp, ip4_addr_get_u32(ip_2_ip4(remote)),
+                        rp);
 }
 
 /**

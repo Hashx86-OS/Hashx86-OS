@@ -63,6 +63,7 @@ struct CatalogApp {
     char id[APPSTORE_CATALOG_FIELD_LEN];
     char name[APPSTORE_NAME_FIELD_LEN];
     char version[APPSTORE_CATALOG_FIELD_LEN];
+    char resolvedVersion[APPSTORE_NAME_FIELD_LEN];
     char description[APPSTORE_DESCRIPTION_FIELD_LEN];
     char icon[APPSTORE_ICON_FIELD_LEN];
     char category[APPSTORE_CATALOG_FIELD_LEN];
@@ -82,6 +83,10 @@ struct CatalogApp {
     bool resolved;
     bool compatible;
 };
+
+inline const char* CatalogAppVersion(const CatalogApp* app) {
+    return app->resolvedVersion[0] ? app->resolvedVersion : app->version;
+}
 
 /** struct Catalog - The latest release catalog and its normalized app list. */
 struct Catalog {

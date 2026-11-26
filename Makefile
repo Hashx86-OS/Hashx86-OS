@@ -62,6 +62,7 @@ objects = \
 	$(BUILD_DIR)/obj/core/drivers/SymbolTable.o \
 	$(BUILD_DIR)/obj/core/drivers/vbe.o \
 	$(BUILD_DIR)/obj/core/power.o \
+	$(BUILD_DIR)/obj/core/random.o \
 	$(BUILD_DIR)/obj/core/elf.o \
 	$(BUILD_DIR)/obj/core/filesystem/File.o \
 	$(BUILD_DIR)/obj/core/filesystem/msdospart.o \

@@ -37,36 +37,26 @@ ImageView::~ImageView() {
     if (pixels) delete[] pixels;
 }
 
-void ImageView::SetImage(const uint32_t* source, int32_t newSrcW, int32_t newSrcH) {
-    if (pixels) {
+bool ImageView::SetImage(const uint32_t* source, int32_t newSrcW, int32_t newSrcH) {
+    if (!source) {
         delete[] pixels;
         pixels = nullptr;
-    }
-    srcW = 0;
-    srcH = 0;
-    if (!source || newSrcW <= 0 || newSrcH <= 0) {
+        srcW = srcH = 0;
         MarkDirty();
-        return;
+        return true;
     }
-
-    // Reject a source whose pixel count would overflow the allocation or the
-    // 32-bit index arithmetic used while scaling.
-    uint64_t count64 = (uint64_t)newSrcW * (uint64_t)newSrcH;
-    if (count64 == 0 || count64 > (uint64_t)(0xFFFFFFFFu / sizeof(uint32_t))) {
-        MarkDirty();
-        return;
-    }
-    size_t count = (size_t)count64;
-
-    pixels = new uint32_t[count];
-    if (!pixels) {
-        MarkDirty();
-        return;
-    }
-    memcpy(pixels, source, count * sizeof(uint32_t));
+    if (newSrcW <= 0 || newSrcH <= 0) return false;
+    uint64_t count = (uint64_t)newSrcW * (uint64_t)newSrcH;
+    if (count > 0xFFFFFFFFu / sizeof(uint32_t)) return false;
+    uint32_t* replacement = new uint32_t[(size_t)count];
+    if (!replacement) return false;
+    memcpy(replacement, source, (size_t)count * sizeof(uint32_t));
+    delete[] pixels;
+    pixels = replacement;
     srcW = newSrcW;
     srcH = newSrcH;
     MarkDirty();
+    return true;
 }
 
 void ImageView::RedrawToCache() {

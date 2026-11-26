@@ -162,8 +162,8 @@ void syscall_nanosleep(struct timespec* req, struct timespec* rem) {
     asm volatile("int $0x80" : : "a"(sys_nanosleep), "b"(req), "c"(rem) : "memory");
 }
 
-int32_t syscall_time(int32_t* tloc) {
-    int32_t result = -1;
+uint32_t syscall_time(uint32_t* tloc) {
+    uint32_t result = 0xFFFFFFFFu;
     asm volatile("int $0x80" : "=a"(result) : "a"(sys_time), "b"(tloc) : "memory");
     return result;
 }
@@ -304,13 +304,14 @@ int32_t syscall_audio_write(int32_t stream, const void* data, uint32_t length) {
     return return_data;
 }
 
+// Success is frame-aligned modulo 2^31; unsigned deltas should be masked with 0x7FFFFFFC.
 int32_t syscall_audio_get_position(int32_t stream) {
     int32_t return_data = -1;
     asm volatile("int $0x80"
                  : "=a"(return_data)
                  : "a"(sys_Hcall), "b"(Hsys_audioGetPos), "c"(stream)
                  : "memory");
-    return return_data;
+    return return_data == -1 ? -1 : (int32_t)((uint32_t)return_data & 0x7FFFFFFCu);
 }
 
 int32_t syscall_audio_close(int32_t stream) {
@@ -320,4 +321,18 @@ int32_t syscall_audio_close(int32_t stream) {
                  : "a"(sys_Hcall), "b"(Hsys_audioClose), "c"(stream)
                  : "memory");
     return return_data;
+}
+
+int32_t syscall_random(void* output, uint32_t length) {
+    int32_t result;
+    asm volatile("int $0x80"
+                 : "=a"(result)
+                 : "a"(sys_Hcall), "b"(Hsys_random), "c"(output), "d"(length)
+                 : "memory");
+    return result;
+}
+uint32_t syscall_get_time_ms() {
+    uint32_t result;
+    asm volatile("int $0x80" : "=a"(result) : "a"(sys_Hcall), "b"(Hsys_getTimeMs) : "memory");
+    return result;
 }

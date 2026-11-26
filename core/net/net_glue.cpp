@@ -25,9 +25,8 @@
 // Kernel-side network service for NO_SYS=0 lwIP.
 //
 // tcpip_init() creates lwIP's core thread. This file also runs one RX polling
-// thread: it drains the NIC, feeds frames to tcpip_input(), and reaps socket
-// descriptors belonging to exited processes. All lwIP core calls happen either
-// in the tcpip thread or under LWIP_TCPIP_CORE_LOCKING.
+// thread to feed frames to tcpip_input() and a separate socket cleanup worker. All lwIP core calls
+// happen either in the tcpip thread or under LWIP_TCPIP_CORE_LOCKING.
 
 #define KDBG_COMPONENT "NET"
 #include <core/drivers/e1000.h>
@@ -36,6 +35,7 @@
 #include <core/net/net.h>
 #include <core/net/net_device.h>
 #include <core/net/net_socket.h>
+#include <core/random.h>
 #include <core/scheduler.h>
 #include <debug.h>
 
@@ -51,37 +51,9 @@ extern "C" {
 
 namespace {
 
-// A dual-stack mobile router can take longer than 5s to complete the DHCPv4
-// exchange (it may wait for its IPv6 link first). Keep DHCP running and retry
-// before giving up on it: stopping DHCP and installing the 10.0.2.15 fallback
-// would leave a real network with no usable address at all.
-constexpr uint32_t kDhcpRetryMs = 5000;
-constexpr uint32_t kDhcpFallbackAttempts = 6;
-
 bool g_networkInitialized = false;
 NetworkDevice* g_networkDevice = nullptr;
 int g_rxThreadArg = 0;
-uint32_t g_dhcpFallbackAttempts = 0;
-
-/**
- * DhcpFallbackTimer() - Install the static address when no lease arrives.
- *
- * Runs on the tcpip thread with the core lock held.
- */
-void DhcpFallbackTimer(void* arg) {
-    struct netif* netif = (struct netif*)arg;
-    if (netif == nullptr) return;
-    if (dhcp_supplied_address(netif)) return;
-
-    if (++g_dhcpFallbackAttempts < kDhcpFallbackAttempts) {
-        sys_timeout(kDhcpRetryMs, DhcpFallbackTimer, netif);
-        return;
-    }
-
-    printf("[NET] dhcp: no lease after %ums, using static fallback\n",
-           (uint32_t)(kDhcpRetryMs * kDhcpFallbackAttempts));
-    NetifEthernetUseStaticConfig();
-}
 
 /**
  * TcpipInitDone() - Bring up the netif from the tcpip thread.
@@ -101,8 +73,10 @@ void TcpipInitDone(void* arg) {
         return;
     }
 
-    struct netif* netif = NetifEthernetInterface();
-    sys_timeout(kDhcpRetryMs, DhcpFallbackTimer, netif);
+#if defined(HASHX86_NETWORK_STATIC) && HASHX86_NETWORK_STATIC
+    // Static VM addressing must be explicitly selected at build time.
+    NetifEthernetUseStaticConfig();
+#endif
 }
 
 /**
@@ -114,7 +88,6 @@ void NetworkRxThreadEntry(void* arg) {
     printf("[NET] RX thread started\n");
     while (true) {
         if (g_networkDevice != nullptr) g_networkDevice->Poll();
-        NetReapClosedSockets();
 
         if (g_scheduler) {
             g_scheduler->Sleep(2);
@@ -125,10 +98,25 @@ void NetworkRxThreadEntry(void* arg) {
     }
 }
 
+void NetworkCleanupThreadEntry(void*) {
+    for (;;) {
+        NetReapClosedSockets();
+        if (g_scheduler) {
+            g_scheduler->ReapNetworkTerminations();
+            g_scheduler->Sleep(10);
+            asm volatile("int $0x2E" ::: "memory");
+        }
+    }
+}
+
 }  // namespace
 
 void NetworkInit() {
     if (g_networkInitialized) return;
+    if (!RandomInitialize()) {
+        printf("[NET] disabled: hardware entropy is unavailable\n");
+        return;
+    }
 
     g_networkDevice = Rtl8139Probe();
     if (g_networkDevice == nullptr) {
@@ -142,6 +130,11 @@ void NetworkInit() {
     g_networkInitialized = true;
     printf("[NET] lwIP %s initialized (NO_SYS=0)\n", LWIP_VERSION_STRING);
 
+    if (!g_scheduler || !g_scheduler->CreateProcess(true, NetworkCleanupThreadEntry, nullptr)) {
+        printf("[NET] failed to create socket cleanup worker\n");
+        g_networkInitialized = false;
+        return;
+    }
     if (g_networkDevice != nullptr) {
         if (!g_scheduler ||
             !g_scheduler->CreateProcess(true, NetworkRxThreadEntry, &g_rxThreadArg)) {

@@ -81,6 +81,9 @@ void KernelYield(uint32_t milliseconds) {
         return;
     }
 
+    // A termination request cannot cancel this wait by abandoning the stack:
+    // netconn->current_msg may still point into it. NetworkCallGuard defers
+    // teardown until the bounded request completes and lwIP acknowledges it.
     scheduler->Sleep(milliseconds);
     asm volatile("int $0x2E" ::: "memory");
 }

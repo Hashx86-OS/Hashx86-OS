@@ -95,6 +95,10 @@ public:
         SetFormat(newRate, this->channels, this->bitsPerSample);
     }
 
+    // Includes samples already submitted to DMA, even after source streams end.
+    virtual bool HasQueuedData() {
+        return isPlaying;
+    }
     virtual uint32_t GetBufferSize() = 0;
     virtual uint32_t WriteData(uint8_t* buffer, uint32_t size) = 0;
     virtual void Start() = 0;

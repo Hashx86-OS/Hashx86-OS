@@ -63,6 +63,7 @@
 #define LWIP_RAW 1
 #define LWIP_UDP 1
 #define LWIP_TCP 1
+#define LWIP_HOOK_FILENAME "isn_hook.h"
 #define LWIP_DHCP 1
 #define LWIP_DNS 1
 #define LWIP_AUTOIP 0
@@ -91,6 +92,9 @@
 
 #define LWIP_NETCONN 1
 #define LWIP_SOCKET 1
+#define LWIP_SO_RCVTIMEO 1
+#define LWIP_SO_SNDTIMEO 1
+#define LWIP_SO_SNDRCVTIMEO_NONSTANDARD 1
 #define LWIP_COMPAT_SOCKETS 0
 #define LWIP_POSIX_SOCKETS_IO_NAMES 0
 
@@ -122,6 +126,5 @@
 
 #define LWIP_DEBUG 0
 #define LWIP_STATS 0
-#define LWIP_NOASSERT 0
 
 #endif  // LWIPOPTS_H

@@ -28,7 +28,7 @@
 /* Minimal time.h for mbedTLS. The platform hook uses MBEDTLS_PLATFORM_TIME_ALT
  * and MBEDTLS_PLATFORM_GMTIME_R_ALT, so only the type definitions are needed. */
 
-typedef long time_t;
+typedef long long time_t;
 
 struct tm {
     int tm_sec;

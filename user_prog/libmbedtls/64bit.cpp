@@ -75,8 +75,7 @@ int64_t __divmoddi4(int64_t numerator, int64_t denominator, int64_t* remainder) 
         int64_t signedRemainder = (int64_t)absRemainder;
         *remainder = numerator < 0 ? -signedRemainder : signedRemainder;
     }
-    int64_t signedQuotient = (int64_t)quotient;
-    return negativeResult ? -signedQuotient : signedQuotient;
+    return (int64_t)(negativeResult ? (uint64_t)0 - quotient : quotient);
 }
 
 int64_t __divdi3(int64_t numerator, int64_t denominator) {

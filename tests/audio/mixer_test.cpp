@@ -28,6 +28,8 @@
 #include <cstdlib>
 #include <vector>
 
+uint64_t timerTicks = 0;
+
 void* kmalloc(size_t n) {
     return malloc(n);
 }
@@ -113,5 +115,39 @@ int main() {
     wav.Update();
     wav.Update();
     assert(one.pcm == sound);
+    Output shortOut;
+    AudioMixer shortMixer(&shortOut);
+    int shortId = shortMixer.CreateStream(44100, 2, 16, 7);
+    uint8_t shortPcm[4] = {1, 2, 3, 4};
+    assert(shortMixer.WriteStream(shortId, shortPcm, sizeof(shortPcm), 7) == 4);
+    shortMixer.Update();
+    assert(shortOut.pcm.empty());
+    timerTicks = 99;
+    shortMixer.Update();
+    assert(shortOut.pcm.empty());
+    timerTicks = 100;
+    shortMixer.Update();
+    assert(shortOut.pcm == std::vector<uint8_t>(shortPcm, shortPcm + 4));
+    assert(shortMixer.CreateStream(48000, 2, 16, 7) == -1);
+    assert(shortOut.GetSampleRate() == 44100);
+    int compatible = shortMixer.CreateStream(44100, 2, 16, 7);
+    assert(compatible >= 0 && shortOut.IsPlaying());
+    assert(shortMixer.CloseStream(compatible, 7) == 0);
+    shortMixer.streams[shortId].readPos = 0x7FFFFFFCu;
+    shortMixer.streams[shortId].writePos = 0x7FFFFFFCu;
+    assert(shortMixer.GetStreamPosition(shortId, 7) == 0x7FFFFFFC);
+    shortMixer.streams[shortId].readPos += 4;
+    shortMixer.streams[shortId].writePos += 4;
+    assert(shortMixer.GetStreamPosition(shortId, 7) == 0);
+    assert(shortMixer.CloseStream(shortId, 7) == 0);
+    Output closeOut;
+    AudioMixer closeMixer(&closeOut);
+    int closeId = closeMixer.CreateStream(44100, 2, 16, 7);
+    assert(closeMixer.WriteStream(closeId, shortPcm, 4, 7) == 4);
+    assert(closeMixer.CloseStream(closeId, 7) == 0);
+    assert(closeMixer.WriteStream(closeId, shortPcm, 4, 7) == -1);
+    closeMixer.Update();
+    assert(closeOut.pcm == std::vector<uint8_t>(shortPcm, shortPcm + 4));
+    closeMixer.Update();  // Deferred ring release.
     puts("audio mixer regression tests passed");
 }

@@ -45,19 +45,19 @@ public:
         asm volatile(
             "pushf\n\t"
             "pop %0"
-            : "=r"(eflags));
+            : "=r"(eflags)::"memory");
 
         // Remember whether the interrupt flag (IF, bit 0x200) was set.
         wasEnabled = (eflags & 0x200);
 
         // Mask interrupts for the duration of the critical section.
-        asm volatile("cli");
+        asm volatile("cli" ::: "memory");
     }
 
     ~InterruptGuard() {
         // Restore the interrupt flag only if it was enabled on entry.
         if (wasEnabled) {
-            asm volatile("sti");
+            asm volatile("sti" ::: "memory");
         }
     }
 };

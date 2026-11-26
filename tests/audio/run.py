@@ -27,7 +27,7 @@ with tempfile.TemporaryDirectory(prefix="hashx86-audio-") as tmp:
         r"    static inline void unlock\(uint32_t eflags\) \{.*?\n    \}",
         "    static inline void unlock(uint32_t) {}", header, flags=re.S)
     assert count == 1
-    write("core/drivers/AudioMixer.h", header)
+    write("core/drivers/AudioMixer.h", header.replace("private:", "public:"))
     write("core/driver.h", "#pragma once\n")
     write("core/memory.h", "#pragma once\n#include <cstddef>\n"
           "void* kmalloc(size_t);\nvoid kfree(void*);\n")

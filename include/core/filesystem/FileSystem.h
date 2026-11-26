@@ -112,9 +112,11 @@ public:
         return -1;
     }
 
-    /** Remove() - Delete a file or an empty directory. Return 0 on success. */
-    virtual int32_t Remove(const char* path) {
+    /** Remove() - Delete only the requested type (directory=true for rmdir). Return 0 on success.
+     */
+    virtual int32_t Remove(const char* path, bool directory = false) {
         (void)path;
+        (void)directory;
         return -1;
     }
 

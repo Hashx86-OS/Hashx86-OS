@@ -25,6 +25,8 @@
 #include <core/drivers/AudioMixer.h>
 #include <debug.h>
 
+extern uint64_t timerTicks;
+
 namespace {
 // About 1.5 seconds of 44.1 kHz stereo 16-bit PCM.
 constexpr uint32_t kStreamRingBytes = 256u * 1024u;
@@ -76,6 +78,15 @@ int32_t AudioMixer::CreateStream(uint32_t sampleRate, uint32_t channels, uint32_
     memset(ring, 0, kStreamRingBytes);
 
     uint32_t flags = lock();
+    if (sampleRate != driver->GetSampleRate()) {
+        bool busy = driver->HasQueuedData();
+        for (int i = 0; i < 8; i++) busy = busy || streams[i].active;
+        if (busy) {
+            unlock(flags);
+            kfree(ring);
+            return -1;
+        }
+    }
     int slot = -1;
     for (int i = 0; i < 8; i++) {
         if (!streams[i].active) {
@@ -97,7 +108,9 @@ int32_t AudioMixer::CreateStream(uint32_t sampleRate, uint32_t channels, uint32_
     st.looping = false;
     st.ownsData = false;
     st.streaming = true;
+    st.closing = false;
     st.primed = false;
+    st.startupPending = false;
     st.capacity = kStreamRingBytes;
     st.writePos = 0;
     st.readPos = 0;
@@ -140,6 +153,10 @@ int32_t AudioMixer::WriteStream(int32_t streamId, const uint8_t* data, uint32_t 
     if (first > st.capacity - offset) first = st.capacity - offset;
     memcpy(st.data + offset, data, first);
     if (length > first) memcpy(st.data, data + first, length - first);
+    if (length != 0 && !st.startupPending) {
+        st.startupPending = true;
+        st.startupTick = timerTicks;
+    }
     st.writePos += length;
 
     unlock(flags);
@@ -149,7 +166,7 @@ int32_t AudioMixer::WriteStream(int32_t streamId, const uint8_t* data, uint32_t 
 /**
  * AudioMixer::GetStreamPosition() - Return the mixer's read position.
  *
- * Return: Monotonic byte position, or -1 for a bad handle or owner.
+ * Return: Frame-aligned position modulo 2^31, or -1 for a bad handle or owner.
  */
 int32_t AudioMixer::GetStreamPosition(int32_t streamId, int32_t ownerPid) {
     if (streamId < 0 || streamId >= 8) return -1;
@@ -158,7 +175,7 @@ int32_t AudioMixer::GetStreamPosition(int32_t streamId, int32_t ownerPid) {
     AudioStream& st = streams[streamId];
     int32_t position = -1;
     if (st.active && st.streaming && st.ownerPid == ownerPid) {
-        position = (int32_t)st.readPos;
+        position = (int32_t)(st.readPos & 0x7FFFFFFCu);
     }
     unlock(flags);
     return position;
@@ -180,6 +197,14 @@ int32_t AudioMixer::CloseStream(int32_t streamId, int32_t ownerPid) {
         return -1;
     }
 
+    if (st.writePos != st.readPos) {
+        st.ownerPid = -1;
+        st.closing = true;
+        st.primed = true;
+        st.ownsData = true;
+        unlock(flags);
+        return 0;
+    }
     ring = st.data;
     st.data = nullptr;
     st.length = 0;
@@ -309,7 +334,9 @@ bool AudioMixer::ProcessAudio() {
         // about 46 ms of scheduling slack at 44.1 kHz. Later short writes
         // can use short descriptors without inserting silence.
         if (st.streaming && !st.primed) {
-            if (available < bufferSize * 2u) continue;
+            if (available < bufferSize * 2u &&
+                (!st.startupPending || (uint32_t)(timerTicks - st.startupTick) < 100u))
+                continue;
             st.primed = true;
         }
         if (available > bytesToMix) bytesToMix = available;
@@ -354,6 +381,7 @@ bool AudioMixer::ProcessAudio() {
                 out[f * 2] = (int16_t)mixedLeft;
                 out[f * 2 + 1] = (int16_t)mixedRight;
             }
+            if (st.closing && st.readPos == st.writePos) st.active = false;
             continue;
         }
 

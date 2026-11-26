@@ -110,7 +110,8 @@ int Send(int fd, const void* data, uint32_t length, uint32_t flags);
 /**
  * Recv() - Receive bytes from a connected stream socket.
  *
- * Return: Bytes received, 0 when the peer closed, or -1 on failure.
+ * Return: Bytes received, 0 when the peer closed, -2 for nonblocking would-block,
+ * or -1 on failure.
  */
 int Recv(int fd, void* data, uint32_t length, uint32_t flags);
 

@@ -55,7 +55,10 @@ struct AudioStream {
     bool looping;
     bool ownsData;
     bool streaming;
-    bool primed;  // Initial streaming prebuffer has been collected.
+    bool closing;  // The handle is closed; queued source frames still drain.
+    bool primed;   // Initial streaming prebuffer has been collected.
+    uint32_t startupTick;
+    bool startupPending;
     uint32_t capacity;
     volatile uint32_t writePos;
     volatile uint32_t readPos;
@@ -139,12 +142,13 @@ public:
     /**
      * GetStreamPosition() - Bytes consumed from a streaming ring.
      *
-     * Return: Monotonic byte position, or -1 for a bad handle/owner.
+     * Return: Frame-aligned byte position modulo 2^31 (always nonnegative), or -1 for a bad
+     * handle/owner.
      */
     int32_t GetStreamPosition(int32_t streamId, int32_t ownerPid);
 
     /**
-     * CloseStream() - Release a streaming ring owned by @ownerPid.
+     * CloseStream() - Close the handle and drain accepted frames before freeing the ring.
      *
      * Return: 0 on success, -1 for a bad handle/owner.
      */

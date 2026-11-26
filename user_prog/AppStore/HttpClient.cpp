@@ -68,7 +68,7 @@ static mbedtls_ssl_config g_sslConfig;
 static mbedtls_ssl_context g_ssl;
 static int32_t g_socketFd = -1;
 static bool g_tlsReady = false;
-static bool g_tlsInitTried = false;
+
 static bool g_sslInitialized = false;
 static bool g_sslActive = false;
 
@@ -80,12 +80,18 @@ struct TlsSessionEntry {
     char host[kMaxHost];
     mbedtls_ssl_session session;
     bool used;
+    mbedtls_x509_time notAfter;
 };
 static TlsSessionEntry g_tlsSessions[kMaxTlsSessions];
 
 TlsSessionEntry* FindTlsSession(const char* host) {
     for (uint32_t i = 0; i < kMaxTlsSessions; i++) {
         if (g_tlsSessions[i].used && StoreStrEqual(g_tlsSessions[i].host, host)) {
+            if (mbedtls_x509_time_is_past(&g_tlsSessions[i].notAfter)) {
+                mbedtls_ssl_session_free(&g_tlsSessions[i].session);
+                g_tlsSessions[i].used = false;
+                return nullptr;
+            }
             return &g_tlsSessions[i];
         }
     }
@@ -131,7 +137,13 @@ void RememberTlsSession(const char* host) {
         return;
     }
 
+    const mbedtls_x509_crt* peer = mbedtls_ssl_get_peer_cert(&g_ssl);
+    if (peer == nullptr) {
+        mbedtls_ssl_session_free(&fresh);
+        return;  // Resumed sessions retain the original cached expiry.
+    }
     TlsSessionEntry* entry = AllocateTlsSession(host);
+    entry->notAfter = peer->valid_to;
     mbedtls_ssl_session_free(&entry->session);
     entry->session = fresh;
 }
@@ -221,18 +233,17 @@ bool ParseUrl(const char* url, ParsedUrl* parsed) {
         parsed->port = (uint16_t)port;
     }
 
-    if (*cursor == '\0') {
-        return StoreStrCopy(parsed->path, sizeof(parsed->path), "/");
-    }
-    if (*cursor == '/' || *cursor == '?' || *cursor == '#') {
-        if (*cursor == '/') {
-            return StoreStrCopy(parsed->path, sizeof(parsed->path), cursor);
-        }
-        char joined[kMaxPath];
-        StoreFormat(joined, sizeof(joined), "/%s", cursor);
-        return StoreStrCopy(parsed->path, sizeof(parsed->path), joined);
-    }
-    return false;
+    if (*cursor != '\0' && *cursor != '/' && *cursor != '?' && *cursor != '#') return false;
+    const char* end = cursor;
+    while (*end != '\0' && *end != '#') end++;
+    uint32_t length = (uint32_t)(end - cursor);
+    bool prefix = *cursor != '/';
+    if (length + (prefix ? 1u : 0u) >= sizeof(parsed->path)) return false;
+    uint32_t offset = prefix ? 1 : 0;
+    if (prefix) parsed->path[0] = '/';
+    for (uint32_t i = 0; i < length; i++) parsed->path[offset + i] = cursor[i];
+    parsed->path[offset + length] = '\0';
+    return true;
 }
 
 bool ResolveHost(const char* host, uint32_t* address, char* error, uint32_t errorCapacity) {
@@ -269,24 +280,38 @@ int TlsRecv(void* context, unsigned char* data, size_t length) {
     int32_t fd = g_socketFd;
     if (fd < 0) return MBEDTLS_ERR_NET_RECV_FAILED;
 
-    // A zero-length result from the kernel socket is not always a peer close:
-    // lwIP can report an empty queue before the next TLS record arrives. Poll
-    // for a bounded interval so a slow ServerHello or HTTP response is not
-    // mistaken for EOF, while a genuinely closed peer still times out.
     uint32_t want = length > kHnetChunk ? kHnetChunk : (uint32_t)length;
-    int result = Hnet::Recv(fd, data, want, 0);
-    if (result < 0) return MBEDTLS_ERR_NET_RECV_FAILED;
-    return result;
+    uint32_t start = syscall_get_time_ms();
+    for (;;) {
+        int result = Hnet::Recv(fd, data, want, Hnet::MSG_DONTWAIT);
+        if (result >= 0) return result;
+        // The kernel preserves EWOULDBLOCK as -2 for nonblocking receives.
+        if (result != -2) return MBEDTLS_ERR_NET_RECV_FAILED;
+        if ((uint32_t)(syscall_get_time_ms() - start) >= 15000u) {
+            Hnet::Close(fd);
+            g_socketFd = -1;
+            return MBEDTLS_ERR_SSL_TIMEOUT;
+        }
+        syscall_sleep(1);
+    }
+}
+
+void TlsInitCleanup() {
+    mbedtls_ssl_config_free(&g_sslConfig);
+    mbedtls_x509_crt_free(&g_ca);
+    mbedtls_ctr_drbg_free(&g_ctrDrbg);
+    mbedtls_entropy_free(&g_entropy);
 }
 
 bool TlsEnsureReady(char* error, uint32_t errorCapacity) {
     if (g_tlsReady) return true;
-    if (g_tlsInitTried) {
-        SetError(error, errorCapacity, "TLS initialization failed earlier");
-        return false;
-    }
-    g_tlsInitTried = true;
-
+    // Free any partial initialization from the previous Refresh attempt.
+    mbedtls_ssl_config_free(&g_sslConfig);
+    mbedtls_x509_crt_free(&g_ca);
+    mbedtls_ctr_drbg_free(&g_ctrDrbg);
+    mbedtls_entropy_free(&g_entropy);
+    mbedtls_ssl_config_init(&g_sslConfig);
+    mbedtls_x509_crt_init(&g_ca);
     Hashx86MbedtlsPlatformInit();
 
     mbedtls_entropy_init(&g_entropy);
@@ -296,6 +321,7 @@ bool TlsEnsureReady(char* error, uint32_t errorCapacity) {
                                     sizeof(kPersonalization) - 1);
     if (ret != 0) {
         SetErrorCode(error, errorCapacity, "TLS RNG setup failed:", ret);
+        TlsInitCleanup();
         return false;
     }
 
@@ -303,6 +329,7 @@ bool TlsEnsureReady(char* error, uint32_t errorCapacity) {
     uint32_t caSize = 0;
     if (!StoreReadFile(kCaPath, &caData, &caSize)) {
         StoreFormat(error, errorCapacity, "CA bundle missing: %s", kCaPath);
+        TlsInitCleanup();
         return false;
     }
 
@@ -311,6 +338,7 @@ bool TlsEnsureReady(char* error, uint32_t errorCapacity) {
     kfree(caData);
     if (ret < 0) {
         SetErrorCode(error, errorCapacity, "CA bundle parse failed:", ret);
+        TlsInitCleanup();
         return false;
     }
 
@@ -319,6 +347,7 @@ bool TlsEnsureReady(char* error, uint32_t errorCapacity) {
                                       MBEDTLS_SSL_TRANSPORT_STREAM, MBEDTLS_SSL_PRESET_DEFAULT);
     if (ret != 0) {
         SetErrorCode(error, errorCapacity, "TLS config failed:", ret);
+        TlsInitCleanup();
         return false;
     }
 
@@ -464,6 +493,7 @@ struct Reader {
     uint32_t position;
     uint32_t length;
     bool eof;
+    bool cleanEof;
     int32_t error;
 };
 
@@ -481,6 +511,7 @@ bool ReaderFill(Reader* reader) {
         if (ret == 0 || ret == MBEDTLS_ERR_SSL_PEER_CLOSE_NOTIFY ||
             ret == MBEDTLS_ERR_SSL_CONN_EOF) {
             reader->eof = true;
+            reader->cleanEof = ret == MBEDTLS_ERR_SSL_PEER_CLOSE_NOTIFY;
             return false;
         }
         if (ret == MBEDTLS_ERR_SSL_WANT_READ || ret == MBEDTLS_ERR_SSL_WANT_WRITE) {
@@ -508,7 +539,7 @@ bool ReaderReadLine(Reader* reader, char* output, uint32_t capacity) {
     for (;;) {
         if (reader->position >= reader->length && !ReaderFill(reader)) {
             output[count] = '\0';
-            return count != 0;
+            return false;
         }
         char c = (char)reader->buffer[reader->position++];
         if (c == '\n') break;
@@ -579,10 +610,20 @@ bool ReadHeaders(Reader* reader, int32_t* status, bool* chunked, bool* hasLength
         while (*text == ' ' || *text == '\t') text++;
 
         if (HeaderNameEquals(line, "content-length")) {
-            if (!StoreParseU32(text, contentLength)) {
+            uint32_t length = 0;
+            const char* p = text;
+            if (*p < '0' || *p > '9') return false;
+            while (*p >= '0' && *p <= '9') {
+                uint32_t digit = *p++ - '0';
+                if (length > (0xFFFFFFFFu - digit) / 10u) return false;
+                length = length * 10u + digit;
+            }
+            while (*p == ' ' || *p == '\t') p++;
+            if (*p != '\0' || (*hasLength && *contentLength != length)) {
                 SetError(error, errorCapacity, "Invalid Content-Length");
                 return false;
             }
+            *contentLength = length;
             *hasLength = true;
         } else if (HeaderNameEquals(line, "transfer-encoding")) {
             if (ContainsCase(text, "chunked")) *chunked = true;
@@ -596,28 +637,89 @@ bool ReadHeaders(Reader* reader, int32_t* status, bool* chunked, bool* hasLength
     return true;
 }
 
+bool ReadFinalHeaders(Reader* reader, int32_t* status, bool* chunked, bool* hasLength,
+                      uint32_t* contentLength, char* location, uint32_t capacity, char* error,
+                      uint32_t errorCapacity) {
+    for (uint32_t count = 0; count < 16; count++) {
+        if (!ReadHeaders(reader, status, chunked, hasLength, contentLength, location, capacity,
+                         error, errorCapacity))
+            return false;
+        if (*status == 101) {
+            SetError(error, errorCapacity, "HTTP protocol switch is unsupported");
+            return false;
+        }
+        if (*status < 100 || *status >= 200) return true;
+    }
+    SetError(error, errorCapacity, "Too many informational responses");
+    return false;
+}
+
+// Remove dot segments from the path without changing its query or fragment.
+void NormalizeRedirectPath(char* path) {
+    uint32_t read = 0, written = 0;
+    auto end = [](char c) { return c == '\0' || c == '?' || c == '#'; };
+    while (!end(path[read])) {
+        if (StoreStrStartsWith(path + read, "/./")) {
+            read += 2;
+        } else if (StoreStrStartsWith(path + read, "/.") && end(path[read + 2])) {
+            read += 2;
+            path[written++] = '/';
+        } else if (StoreStrStartsWith(path + read, "/../") ||
+                   (StoreStrStartsWith(path + read, "/..") && end(path[read + 3]))) {
+            read += 3;
+            while (written && path[written - 1] != '/') written--;
+            if (written) written--;
+            if (end(path[read])) path[written++] = '/';
+        } else {
+            if (path[read] == '/') path[written++] = path[read++];
+            while (!end(path[read]) && path[read] != '/') path[written++] = path[read++];
+        }
+    }
+    do {
+        path[written++] = path[read];
+    } while (path[read++] != '\0');
+}
+
 bool BuildRedirectUrl(const ParsedUrl& current, const char* location, char* output,
                       uint32_t capacity) {
+    char joined[kMaxUrl];
     if (StoreStrStartsWithCase(location, "https://")) {
-        return StoreStrCopy(output, capacity, location);
-    }
-    if (StoreStrStartsWith(location, "//")) {
-        char joined[kMaxUrl];
+        if (!StoreStrCopy(joined, sizeof(joined), location)) return false;
+    } else if (StoreStrStartsWith(location, "//")) {
+        if (6u + StoreStrLen(location) >= sizeof(joined)) return false;
         StoreFormat(joined, sizeof(joined), "https:%s", location);
-        return StoreStrCopy(output, capacity, joined);
-    }
-    if (location[0] == '/') {
-        char authority[160];
-        if (current.port == 443) {
-            StoreStrCopy(authority, sizeof(authority), current.host);
-        } else {
-            StoreFormat(authority, sizeof(authority), "%s:%u", current.host, current.port);
+    } else {
+        // A colon in the first path component denotes an unsupported scheme.
+        for (const char* p = location; *p && *p != '/' && *p != '?' && *p != '#'; p++) {
+            if (*p == ':') return false;
         }
-        char joined[kMaxUrl];
-        StoreFormat(joined, sizeof(joined), "https://%s%s", authority, location);
-        return StoreStrCopy(output, capacity, joined);
+        char authority[160];
+        if (current.port == 443)
+            StoreStrCopy(authority, sizeof(authority), current.host);
+        else
+            StoreFormat(authority, sizeof(authority), "%s:%u", current.host, current.port);
+        char path[kMaxPath];
+        if (location[0] == '/') {
+            if (!StoreStrCopy(path, sizeof(path), location)) return false;
+        } else {
+            uint32_t prefix = 0;
+            while (current.path[prefix] &&
+                   (location[0] == '#' || location[0] == '\0' || current.path[prefix] != '?'))
+                prefix++;
+            if (location[0] != '?' && location[0] != '#' && location[0] != '\0') {
+                while (prefix && current.path[prefix - 1] != '/') prefix--;
+            }
+            if (prefix + StoreStrLen(location) >= sizeof(path)) return false;
+            for (uint32_t i = 0; i < prefix; i++) path[i] = current.path[i];
+            StoreStrCopy(path + prefix, sizeof(path) - prefix, location);
+        }
+        NormalizeRedirectPath(path);
+        if (8u + StoreStrLen(authority) + StoreStrLen(path) >= sizeof(joined)) return false;
+        StoreFormat(joined, sizeof(joined), "https://%s%s", authority, path);
     }
-    return false;
+    ParsedUrl verified;
+    if (!ParseUrl(joined, &verified)) return false;
+    return StoreStrCopy(output, capacity, joined);
 }
 
 bool ReadChunkedBody(Reader* reader, StoreBodySink sink, void* context, char* error,
@@ -661,7 +763,10 @@ bool ReadChunkedBody(Reader* reader, StoreBodySink sink, void* context, char* er
         if (chunkSize == 0) {
             // Trailer headers end with an empty line.
             for (;;) {
-                if (!ReaderReadLine(reader, line, sizeof(line))) return true;
+                if (!ReaderReadLine(reader, line, sizeof(line))) {
+                    SetError(error, errorCapacity, "Truncated chunk trailers");
+                    return false;
+                }
                 if (line[0] == '\0') return true;
             }
         }
@@ -718,6 +823,10 @@ bool ReadUntilEof(Reader* reader, StoreBodySink sink, void* context, char* error
                 SetErrorCode(error, errorCapacity, "TLS read failed:", reader->error);
                 return false;
             }
+            if (!reader->cleanEof) {
+                SetError(error, errorCapacity, "TLS stream ended without close_notify");
+                return false;
+            }
             return true;
         }
         if (sink != nullptr && !sink(context, buffer, got)) {
@@ -725,6 +834,14 @@ bool ReadUntilEof(Reader* reader, StoreBodySink sink, void* context, char* error
             return false;
         }
     }
+}
+
+bool ReadResponseBody(int32_t status, Reader* reader, bool chunked, bool hasLength, uint32_t length,
+                      StoreBodySink sink, void* context, char* error, uint32_t errorCapacity) {
+    if (status == 204) return true;
+    if (chunked) return ReadChunkedBody(reader, sink, context, error, errorCapacity);
+    if (hasLength) return ReadFixedBody(reader, length, sink, context, error, errorCapacity);
+    return ReadUntilEof(reader, sink, context, error, errorCapacity);
 }
 
 bool SendRequest(const ParsedUrl& url, const char* accept, char* error, uint32_t errorCapacity) {
@@ -808,8 +925,8 @@ static bool StoreHttpGetOnce(const char* url, const char* accept, StoreBodySink 
         bool hasLength = false;
         uint32_t contentLength = 0;
         char location[kMaxUrl];
-        if (!ReadHeaders(&reader, &status, &chunked, &hasLength, &contentLength, location,
-                         sizeof(location), error, errorCapacity)) {
+        if (!ReadFinalHeaders(&reader, &status, &chunked, &hasLength, &contentLength, location,
+                              sizeof(location), error, errorCapacity)) {
             TlsClose();
             return false;
         }
@@ -845,14 +962,8 @@ static bool StoreHttpGetOnce(const char* url, const char* accept, StoreBodySink 
             response->chunked = chunked;
         }
 
-        bool ok;
-        if (chunked) {
-            ok = ReadChunkedBody(&reader, sink, context, error, errorCapacity);
-        } else if (hasLength) {
-            ok = ReadFixedBody(&reader, contentLength, sink, context, error, errorCapacity);
-        } else {
-            ok = ReadUntilEof(&reader, sink, context, error, errorCapacity);
-        }
+        bool ok = ReadResponseBody(status, &reader, chunked, hasLength, contentLength, sink,
+                                   context, error, errorCapacity);
 
         TlsClose();
         return ok;

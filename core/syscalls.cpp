@@ -32,6 +32,7 @@
 #include <core/net/net_socket.h>
 #include <core/paging.h>
 #include <core/pmm.h>
+#include <core/random.h>
 #include <core/rtc.h>
 #include <core/syscalls.h>
 
@@ -410,7 +411,7 @@ uint32_t SyscallHandler::HandleInterrupt(uint32_t esp) {
             break;
 
         case sys_time:
-            return_val = SyscallHandlers::Handle_sys_time((int32_t*)cpu->ebx);
+            return_val = SyscallHandlers::Handle_sys_time((uint32_t*)cpu->ebx);
             break;
 
         case sys_getcwd:
@@ -694,7 +695,20 @@ int32_t SyscallHandlers::Handle_sys_unlink(const char* path) {
 }
 
 int32_t SyscallHandlers::Handle_sys_rmdir(const char* path) {
-    return Handle_sys_unlink(path);
+    if (!path || !Scheduler::activeInstance) return -1;
+
+    ProcessControlBlock* process = Scheduler::activeInstance->GetCurrentProcess();
+    if (!process) return -1;
+
+    char kpath[256];
+    if (!CopyUserString(process, path, kpath, sizeof(kpath))) return -1;
+
+    extern MSDOSPartitionTable* g_PartitionTable;
+    if (MSDOSPartitionTable::activeInstance && MSDOSPartitionTable::activeInstance->partitions[0]) {
+        FileSystem* fs = MSDOSPartitionTable::activeInstance->partitions[0];
+        return fs->Remove(kpath, true);
+    }
+    return -1;
 }
 
 int32_t SyscallHandlers::Handle_sys_rename(const char* oldPath, const char* newPath) {
@@ -1160,11 +1174,12 @@ int32_t SyscallHandlers::Handle_sys_nanosleep(struct timespec* req, struct times
  * Handle_sys_time() - Return the current Unix time from the CMOS RTC.
  * @tloc: Optional user pointer to receive the timestamp.
  */
-int32_t SyscallHandlers::Handle_sys_time(int32_t* tloc) {
+int32_t SyscallHandlers::Handle_sys_time(uint32_t* tloc) {
     ProcessControlBlock* process =
         Scheduler::activeInstance ? Scheduler::activeInstance->GetCurrentProcess() : nullptr;
 
     uint32_t now = RtcUnixTime();
+    if (now == 0) return -1;
     if (tloc != nullptr) {
         if (!process || !CopyToUser(process, tloc, &now, sizeof(now))) return -1;
     }
@@ -1468,6 +1483,13 @@ int32_t SyscallHandlers::Handle_sys_Hcall(uint32_t hcall_id, uint32_t arg1, uint
         } else {
             return -1;
         }
+    } else if (hcall_id == Hsys_random) {
+        if (!current_process || arg2 > 256u || arg2 == 0) return -1;
+        uint8_t bytes[256];
+        if (!RandomBytes(bytes, arg2)) return -1;
+        bool ok = CopyToUser(current_process, (void*)arg1, bytes, arg2);
+        memset(bytes, 0, sizeof(bytes));
+        return ok ? (int32_t)arg2 : -1;
     } else if (hcall_id == Hsys_audioOpen) {
         if (!current_process || !g_AudioMixer) return -1;
         return g_AudioMixer->CreateStream(arg1, arg2, arg3, current_process->pid);
@@ -1489,6 +1511,7 @@ int32_t SyscallHandlers::Handle_sys_Hcall(uint32_t hcall_id, uint32_t arg1, uint
         kfree(buffer);
         return written;
     } else if (hcall_id == Hsys_audioGetPos) {
+        // The mixer masks the position to 31 bits, reserving -1 for errors.
         if (!current_process || !g_AudioMixer) return -1;
         return g_AudioMixer->GetStreamPosition((int32_t)arg1, current_process->pid);
     } else if (hcall_id == Hsys_audioClose) {

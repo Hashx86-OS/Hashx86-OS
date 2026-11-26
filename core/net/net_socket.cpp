@@ -47,6 +47,7 @@
 extern "C" {
 #include <lwip/api.h>
 #include <lwip/err.h>
+#include <lwip/errno.h>
 #include <lwip/ip_addr.h>
 #include <lwip/sockets.h>
 }
@@ -65,6 +66,28 @@ constexpr uint32_t kMaxDatagram = 2048;
 // TCP send/recv chunks. The HTTP client reads in small chunks, so a modest
 // per-call buffer keeps the kernel stack and heap use bounded.
 constexpr uint32_t kMaxStreamChunk = 4096;
+
+// Pin the caller's stack and address space until lwIP releases its API message.
+class NetworkCallGuard {
+    ThreadControlBlock* thread;
+
+public:
+    NetworkCallGuard() : thread(Scheduler::activeInstance->currentThread) {
+        InterruptGuard guard;
+        if (thread) thread->networkCallDepth++;
+    }
+    ~NetworkCallGuard() {
+        InterruptGuard guard;
+        if (thread && --thread->networkCallDepth == 0 &&
+            (thread->terminatePending || (thread->parent && thread->parent->killPending))) {
+            Scheduler::activeInstance->TerminateThread(thread);
+        }
+    }
+};
+bool CancelRequested() {
+    ThreadControlBlock* t = Scheduler::activeInstance->currentThread;
+    return t && (t->terminatePending || (t->parent && t->parent->killPending));
+}
 
 constexpr int kDeferredCloseCapacity = 256;
 
@@ -153,6 +176,16 @@ int32_t SocketCreate(ProcessControlBlock* process, const uint32_t* args) {
     int lwipFd = lwip_socket((int)args[0], (int)args[1], (int)args[2]);
     if (lwipFd < 0) return -1;
 
+    int timeout = 1000;
+    if (lwip_setsockopt(lwipFd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) != 0) {
+        lwip_close(lwipFd);
+        return -1;
+    }
+    timeout = 15000;
+    if (lwip_setsockopt(lwipFd, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout)) != 0) {
+        lwip_close(lwipFd);
+        return -1;
+    }
     int32_t userFd = AllocateSocketFd(process, lwipFd);
     if (userFd < 0) {
         lwip_close(lwipFd);
@@ -228,7 +261,11 @@ int32_t SocketRecv(ProcessControlBlock* process, const uint32_t* args) {
     uint8_t* buffer = (uint8_t*)kmalloc(length);
     if (buffer == nullptr) return -1;
 
-    int32_t result = (int32_t)lwip_recv(lwipFd, buffer, length, (int)args[3]);
+    int32_t result;
+    do {
+        result = (int32_t)lwip_recv(lwipFd, buffer, length, (int)args[3]);
+    } while (result < 0 && errno == EWOULDBLOCK && !(args[3] & MSG_DONTWAIT) && !CancelRequested());
+    if (result < 0 && errno == EWOULDBLOCK) result = -2;
     if (result > 0) {
         if (!CopyToUser(process, (void*)args[1], buffer, (size_t)result)) {
             kfree(buffer);
@@ -324,9 +361,12 @@ int32_t SocketRecvFrom(ProcessControlBlock* process, const uint32_t* args) {
     memset(&from, 0, sizeof(from));
     socklen_t fromLength = sizeof(from);
 
-    int32_t result = (int32_t)lwip_recvfrom(lwipFd, buffer, length, (int)args[3],
-                                            args[4] != 0 ? (struct sockaddr*)&from : nullptr,
-                                            args[4] != 0 ? &fromLength : nullptr);
+    int32_t result;
+    do {
+        result = (int32_t)lwip_recvfrom(lwipFd, buffer, length, (int)args[3],
+                                        args[4] != 0 ? (struct sockaddr*)&from : nullptr,
+                                        args[4] != 0 ? &fromLength : nullptr);
+    } while (result < 0 && errno == EWOULDBLOCK && !(args[3] & MSG_DONTWAIT) && !CancelRequested());
     if (result > 0) {
         if (!CopyToUser(process, (void*)args[1], buffer, (size_t)result)) {
             kfree(buffer);
@@ -363,6 +403,8 @@ int32_t NetSocketCall(uint32_t call, uint32_t userArgs) {
     ProcessControlBlock* process = scheduler->GetCurrentProcess();
     if (process == nullptr || userArgs == 0) return -1;
 
+    if (process->killPending) return -1;
+    NetworkCallGuard pin;
     uint32_t args[kSocketArgCount];
     if (!CopyFromUser(process, args, (const void*)userArgs, sizeof(args))) return -1;
 
@@ -396,6 +438,7 @@ bool NetSocketFdValid(ProcessControlBlock* process, uint32_t fd) {
 }
 
 int32_t NetCloseSocketFd(ProcessControlBlock* process, uint32_t fd) {
+    NetworkCallGuard pin;
     if (process == nullptr || fd < FD_MIN || fd >= FD_MAX) return -1;
 
     int lwipFd;

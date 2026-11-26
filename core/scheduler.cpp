@@ -792,6 +792,23 @@ bool Scheduler::KillProcess(uint32_t pid) {
         if (target) break;
     }
     if (!target) return false;
+    // lwIP may retain stack-backed API messages across a yield. Defer the
+    // entire process teardown until every submitted call has acknowledged
+    // completion. No address space or kernel stack may be freed beforehand.
+    for (int i = 0; i < target->threads.GetSize(); i++) {
+        ThreadControlBlock* t = target->threads.PopFront();
+        target->threads.PushBack(t);
+        if (t->networkCallDepth != 0) {
+            target->killPending = true;
+            int remaining = target->threads.GetSize();
+            for (int j = 0; j < remaining; j++) {
+                ThreadControlBlock* pending = target->threads.PopFront();
+                if (pending->networkCallDepth != 0) target->threads.PushBack(pending);
+                TerminateThread(pending);
+            }
+            return true;
+        }
+    }
 
     // Resource cleanup start.
     uint32_t currentCR3;
@@ -891,10 +908,24 @@ bool Scheduler::KillProcess(uint32_t pid) {
     return true;
 }
 
+void Scheduler::ReapNetworkTerminations() {
+    InterruptGuard guard;
+    int count = globalProcessList.GetSize();
+    for (int i = 0; i < count; i++) {
+        ProcessControlBlock* p = globalProcessList.PopFront();
+        globalProcessList.PushBack(p);
+        if (p->killPending) KillProcess(p->pid);
+    }
+}
+
 void Scheduler::TerminateThread(ThreadControlBlock* thread) {
     InterruptGuard guard;
     if (!thread) return;
     if (thread->state == THREAD_STATE_TERMINATED) return;
+    if (thread->networkCallDepth != 0) {
+        thread->terminatePending = true;
+        return;
+    }
 
     KDBG1("TerminateThread TID=%d", thread->tid);
 

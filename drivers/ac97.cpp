@@ -323,6 +323,12 @@ public:
      *
      * Return: Size in bytes.
      */
+    bool HasQueuedData() override {
+        InterruptGuard guard;
+        UpdateConsumed();
+        return queuedEntries != 0;
+    }
+
     uint32_t GetBufferSize() override {
         return AC97_CHUNK_SIZE;
     }

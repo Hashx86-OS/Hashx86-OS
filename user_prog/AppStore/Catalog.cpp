@@ -151,6 +151,25 @@ bool TokenIsString(const jsmntok_t* token) {
     return token != nullptr && token->type == JSMN_STRING;
 }
 
+bool ReadHex16(const char*& cursor, const char* end, uint32_t* value) {
+    if (end - cursor < 4) return false;
+    *value = 0;
+    for (int i = 0; i < 4; i++) {
+        char c = *cursor++;
+        uint32_t d;
+        if (c >= '0' && c <= '9')
+            d = c - '0';
+        else if (c >= 'a' && c <= 'f')
+            d = c - 'a' + 10;
+        else if (c >= 'A' && c <= 'F')
+            d = c - 'A' + 10;
+        else
+            return false;
+        *value = (*value << 4) | d;
+    }
+    return true;
+}
+
 bool TokenCopy(const char* text, const jsmntok_t* token, char* output, uint32_t capacity) {
     if (text == nullptr || token == nullptr || output == nullptr || capacity == 0) return false;
 
@@ -160,6 +179,7 @@ bool TokenCopy(const char* text, const jsmntok_t* token, char* output, uint32_t 
 
     while (cursor < end) {
         char c = *cursor++;
+        if (c == '\0') return false;
         if (c != '\\') {
             if (used + 1 >= capacity) return false;
             output[used++] = c;
@@ -191,23 +211,16 @@ bool TokenCopy(const char* text, const jsmntok_t* token, char* output, uint32_t 
                 decoded = '\t';
                 break;
             case 'u': {
-                if (end - cursor < 4) return false;
-                uint32_t codepoint = 0;
-                for (int i = 0; i < 4; i++) {
-                    char h = cursor[i];
-                    uint32_t digit = 0;
-                    if (h >= '0' && h <= '9') {
-                        digit = (uint32_t)(h - '0');
-                    } else if (h >= 'a' && h <= 'f') {
-                        digit = (uint32_t)(h - 'a' + 10);
-                    } else if (h >= 'A' && h <= 'F') {
-                        digit = (uint32_t)(h - 'A' + 10);
-                    } else {
-                        return false;
-                    }
-                    codepoint = (codepoint << 4) | digit;
-                }
-                cursor += 4;
+                uint32_t codepoint;
+                if (!ReadHex16(cursor, end, &codepoint) || codepoint == 0) return false;
+                if (codepoint >= 0xD800 && codepoint <= 0xDBFF) {
+                    if (end - cursor < 6 || cursor[0] != '\\' || cursor[1] != 'u') return false;
+                    cursor += 2;
+                    uint32_t low;
+                    if (!ReadHex16(cursor, end, &low) || low < 0xDC00 || low > 0xDFFF) return false;
+                    codepoint = 0x10000 + ((codepoint - 0xD800) << 10) + low - 0xDC00;
+                } else if (codepoint >= 0xDC00 && codepoint <= 0xDFFF)
+                    return false;
 
                 if (codepoint < 0x80) {
                     if (used + 1 >= capacity) return false;
@@ -216,9 +229,16 @@ bool TokenCopy(const char* text, const jsmntok_t* token, char* output, uint32_t 
                     if (used + 2 >= capacity) return false;
                     output[used++] = (char)(0xC0 | (codepoint >> 6));
                     output[used++] = (char)(0x80 | (codepoint & 0x3F));
-                } else {
+                } else if (codepoint < 0x10000) {
                     if (used + 3 >= capacity) return false;
                     output[used++] = (char)(0xE0 | (codepoint >> 12));
+                    output[used++] = (char)(0x80 | ((codepoint >> 6) & 0x3F));
+                    output[used++] = (char)(0x80 | (codepoint & 0x3F));
+                }
+                if (codepoint >= 0x10000) {
+                    if (used + 4 >= capacity) return false;
+                    output[used++] = (char)(0xF0 | (codepoint >> 18));
+                    output[used++] = (char)(0x80 | ((codepoint >> 12) & 0x3F));
                     output[used++] = (char)(0x80 | ((codepoint >> 6) & 0x3F));
                     output[used++] = (char)(0x80 | (codepoint & 0x3F));
                 }
@@ -534,7 +554,8 @@ bool ParseCatalog(Catalog* catalog, char* error, uint32_t errorCapacity) {
         int id = ObjectFind(g_catalogBody, g_catalogTokens, tokenCount, appToken, "id");
         int name = ObjectFind(g_catalogBody, g_catalogTokens, tokenCount, appToken, "name");
         int version = ObjectFind(g_catalogBody, g_catalogTokens, tokenCount, appToken, "version");
-        if (id < 0 || name < 0 || version < 0 ||
+        if (id < 0 || name < 0 || version < 0 || !TokenIsString(&g_catalogTokens[id]) ||
+            !TokenIsString(&g_catalogTokens[name]) || !TokenIsString(&g_catalogTokens[version]) ||
             !TokenCopy(g_catalogBody, &g_catalogTokens[id], app.id, sizeof(app.id)) ||
             !TokenCopy(g_catalogBody, &g_catalogTokens[name], app.name, sizeof(app.name)) ||
             !TokenCopy(g_catalogBody, &g_catalogTokens[version], app.version,
@@ -581,8 +602,9 @@ bool ParseCatalog(Catalog* catalog, char* error, uint32_t errorCapacity) {
 
         int asset = ObjectFind(g_catalogBody, g_catalogTokens, tokenCount, appToken, "asset");
         int url = ObjectFind(g_catalogBody, g_catalogTokens, tokenCount, appToken, "url");
-        if (asset >= 0 && !TokenCopy(g_catalogBody, &g_catalogTokens[asset], app.assetName,
-                                     sizeof(app.assetName))) {
+        if (asset >= 0 && (!TokenIsString(&g_catalogTokens[asset]) ||
+                           !TokenCopy(g_catalogBody, &g_catalogTokens[asset], app.assetName,
+                                      sizeof(app.assetName)))) {
             StoreFormat(error, errorCapacity, "app %u asset name is too long", i + 1);
             return false;
         }
@@ -592,7 +614,7 @@ bool ParseCatalog(Catalog* catalog, char* error, uint32_t errorCapacity) {
                 StoreFormat(error, errorCapacity, "app %u specifies both repo and url", i + 1);
                 return false;
             }
-            if (asset < 0) {
+            if (asset < 0 || app.assetName[0] == '\0') {
                 StoreFormat(error, errorCapacity, "app %u needs an asset name with repo", i + 1);
                 return false;
             }
@@ -654,17 +676,18 @@ bool ParseCatalog(Catalog* catalog, char* error, uint32_t errorCapacity) {
         } else if (app.assetName[0] != '\0') {
             StoreStrCopy(app.binary, sizeof(app.binary), app.assetName);
         } else {
-            const char* slash = nullptr;
-            for (const char* p = app.downloadUrl; *p != '\0'; p++) {
-                if (*p == '/') slash = p;
+            const char* start = app.downloadUrl;
+            const char* end = start;
+            for (; *end != '\0' && *end != '?' && *end != '#'; end++) {
+                if (*end == '/') start = end + 1;
             }
-            StoreStrCopy(app.binary, sizeof(app.binary), slash ? slash + 1 : app.downloadUrl);
-            for (uint32_t c = 0; app.binary[c] != '\0'; c++) {
-                if (app.binary[c] == '?') {
-                    app.binary[c] = '\0';
-                    break;
-                }
+            uint32_t length = (uint32_t)(end - start);
+            if (length == 0 || length >= sizeof(app.binary)) {
+                StoreFormat(error, errorCapacity, "app %u binary name is too long", i + 1);
+                return false;
             }
+            memcpy(app.binary, start, length);
+            app.binary[length] = '\0';
         }
         if (!IsSafeField(app.binary)) {
             StoreFormat(error, errorCapacity, "app %u has an unsafe binary name", i + 1);
@@ -703,6 +726,20 @@ bool ParseCatalog(Catalog* catalog, char* error, uint32_t errorCapacity) {
             app.bannerRef.size = banner->size;
         }
 
+        // FAT names are case-insensitive and trailing dots are ignored.
+        // Exclude '~' via IsSafeField so a name cannot alias a generated SFN.
+        uint32_t idLength = StoreStrLen(app.id);
+        if (app.id[idLength - 1] == '.') {
+            StoreStrCopy(error, errorCapacity, "app id cannot end in a dot");
+            return false;
+        }
+        for (uint32_t previous = 0; previous < catalog->appCount; previous++) {
+            if (StoreStrLen(catalog->apps[previous].id) == idLength &&
+                StoreStrStartsWithCase(catalog->apps[previous].id, app.id)) {
+                StoreStrCopy(error, errorCapacity, "duplicate app id");
+                return false;
+            }
+        }
         catalog->apps[catalog->appCount++] = app;
     }
 
@@ -807,6 +844,10 @@ bool CatalogResolveApp(CatalogApp* app, char* error, uint32_t errorCapacity) {
 
     StoreStrCopy(app->downloadUrl, sizeof(app->downloadUrl), asset->apiUrl);
     StoreStrCopy(app->sha256, sizeof(app->sha256), asset->sha256);
+    if (tag[0] == '\0' || !StoreStrCopy(app->resolvedVersion, sizeof(app->resolvedVersion), tag)) {
+        StoreStrCopy(error, errorCapacity, "release tag is too long for version");
+        return false;
+    }
     app->size = asset->size;
     app->resolved = true;
     return true;

@@ -58,27 +58,10 @@ void TlsFree(void* pointer) {
 }
 
 mbedtls_time_t TlsTime(mbedtls_time_t* timer) {
-    int32_t now = syscall_time(nullptr);
-    if (now < 0) now = 0;
+    uint32_t seconds = syscall_time(nullptr);
+    mbedtls_time_t now = seconds == 0xFFFFFFFFu ? (mbedtls_time_t)-1 : (mbedtls_time_t)seconds;
     if (timer != nullptr) *timer = (mbedtls_time_t)now;
     return (mbedtls_time_t)now;
-}
-
-uint32_t g_entropyState = 0;
-
-uint32_t NextEntropyWord() {
-    if (g_entropyState == 0) {
-        uint32_t low;
-        uint32_t high;
-        asm volatile("rdtsc" : "=a"(low), "=d"(high));
-        g_entropyState = low ^ (high * 2654435761u) ^ (uint32_t)syscall_time(nullptr) ^
-                         (uint32_t)(uintptr_t)&g_entropyState;
-        if (g_entropyState == 0) g_entropyState = 0xA5A5A5A5u;
-    }
-    g_entropyState ^= g_entropyState << 13;
-    g_entropyState ^= g_entropyState >> 17;
-    g_entropyState ^= g_entropyState << 5;
-    return g_entropyState;
 }
 
 }  // namespace
@@ -192,21 +175,19 @@ char* strstr(const char* haystack, const char* needle) {
     return nullptr;
 }
 
-/**
- * mbedtls_hardware_poll() - Entropy source for mbedTLS.
- *
- * Mixes the CPU timestamp counter, RTC seconds and a per-process address into
- * an xorshift generator. This is adequate for the educational TLS bring-up;
- * a production port should prefer RDRAND/RDSEED or a hardware RNG.
- */
+// Entropy is supplied by the kernel's hardware-seeded cryptographic RNG.
 int mbedtls_hardware_poll(void* data, unsigned char* output, size_t len, size_t* olen) {
     (void)data;
-    if (output == nullptr) return -1;
-
-    for (size_t i = 0; i < len; i++) {
-        output[i] = (unsigned char)(NextEntropyWord() & 0xFF);
+    if (olen) *olen = 0;
+    if (!output) return MBEDTLS_ERR_ENTROPY_SOURCE_FAILED;
+    size_t done = 0;
+    while (done < len) {
+        uint32_t n = (len - done > 256) ? 256 : (uint32_t)(len - done);
+        if (syscall_random(output + done, n) != (int32_t)n)
+            return MBEDTLS_ERR_ENTROPY_SOURCE_FAILED;
+        done += n;
     }
-    if (olen != nullptr) *olen = len;
+    if (olen) *olen = done;
     return 0;
 }
 
@@ -216,7 +197,7 @@ int mbedtls_hardware_poll(void* data, unsigned char* output, size_t len, size_t*
  * mbedTLS uses this for X.509 not-before/not-after checks.
  */
 struct tm* mbedtls_platform_gmtime_r(const mbedtls_time_t* tt, struct tm* tmBuf) {
-    if (tt == nullptr || tmBuf == nullptr || *tt < 0) return nullptr;
+    if (tt == nullptr || tmBuf == nullptr || *tt < 0 || *tt > 0xFFFFFFFEULL) return nullptr;
 
     uint32_t seconds = (uint32_t)*tt;
     int32_t days = (int32_t)(seconds / 86400u);

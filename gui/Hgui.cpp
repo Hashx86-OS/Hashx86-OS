@@ -543,7 +543,11 @@ int32_t HguiHandler::HandleImageView(CPUState* cpu, const WidgetData* _data) {
         Widget* parentBase = this->FindWidgetByID(_data->param0);
         if (!parentBase || !parentBase->IsComposite()) return -1;
         CompositeWidget* parentWidget = static_cast<CompositeWidget*>(parentBase);
-        if (parentWidget->ID == 0) return -1;
+        if (parentWidget->ID == 0 || parentWidget->PID != proc->pid) return -1;
+        int32_t width = _data->param3, height = _data->param4;
+        if (width <= 0 || height <= 0 ||
+            (uint64_t)(uint32_t)width * (uint32_t)height > 0xFFFFFFFFu / sizeof(uint32_t))
+            return -1;
 
         uint32_t newID = this->getNewID();
         Widget* widget = new ImageView(parentWidget, _data->param1, _data->param2, _data->param3,
@@ -564,8 +568,7 @@ int32_t HguiHandler::HandleImageView(CPUState* cpu, const WidgetData* _data) {
 
         // param1 = source width, param2 = source height, param5 = ARGB pixels.
         if (_data->param5 == nullptr) {
-            widget->SetImage(nullptr, 0, 0);
-            return 1;
+            return widget->SetImage(nullptr, 0, 0) ? 1 : -1;
         }
 
         int32_t srcW = _data->param1;
@@ -584,9 +587,9 @@ int32_t HguiHandler::HandleImageView(CPUState* cpu, const WidgetData* _data) {
             kfree(pixels);
             return -1;
         }
-        widget->SetImage(pixels, srcW, srcH);
+        bool updated = widget->SetImage(pixels, srcW, srcH);
         kfree(pixels);
-        return 1;
+        return updated ? 1 : -1;
     }
 
     return -1;
