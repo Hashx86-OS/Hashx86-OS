@@ -27,6 +27,12 @@
 
 #include <types.h>
 
+// PIT timer frequency. timerTicks is kept in milliseconds, so each hardware
+// tick advances it by TIMER_MS_PER_TICK. A lower rate cuts the number of VM
+// exits and host CPU used while the guest is idle.
+#define TIMER_HZ 100
+#define TIMER_MS_PER_TICK (1000 / TIMER_HZ)
+
 /**
  * wait() - Busy-wait for a number of milliseconds.
  * @milliseconds: How long to wait, in milliseconds.

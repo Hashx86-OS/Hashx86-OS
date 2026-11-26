@@ -28,6 +28,17 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/** atoi() - Parse a signed decimal integer for the kernel's lwIP port. */
+int atoi(const char* text);
+
+#ifdef __cplusplus
+}
+#endif
+
 /**
  * itoa() - Convert an integer to a string in the given base.
  * @num: Integer to convert.

@@ -158,6 +158,14 @@ rm_real:
 ; the flat kernel segment state and ESP/EFLAGS and returns to the caller.
 [bits 32]
 tail:
+    ; Reload flat kernel data before touching anything above 64 KiB. The
+    ; real-mode BIOS leaves DS/ES holding real-mode caches (64 KiB limits), and
+    ; the output pointer below is a linear kernel-stack address. Reloading only
+    ; after the copy faults on VirtualBox and on real hardware.
+    mov eax, 0x10                    ; Kernel data selector.
+    mov ds, eax
+    mov es, eax
+
     ; Copy the 32-byte output block back to the caller's BIOSRegisters first:
     ; the loop below consumes ESI/EDI, so the caller's callee-saved values have
     ; to be restored after it runs, not before.
@@ -168,8 +176,6 @@ tail:
     rep movsd
 
     mov eax, 0x10                    ; Kernel data selector.
-    mov ds, eax
-    mov es, eax
     mov fs, eax
     mov gs, eax
     mov ss, eax

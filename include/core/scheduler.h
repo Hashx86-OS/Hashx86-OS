@@ -142,6 +142,7 @@ public:
      * Return: True on success, false when the process is not found.
      */
     bool KillProcess(uint32_t pid);
+    void ReapNetworkTerminations();
 
     /**
      * TerminateThread() - Mark a thread as terminated and queue it for reclamation.

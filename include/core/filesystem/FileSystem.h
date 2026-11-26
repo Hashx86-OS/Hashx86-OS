@@ -98,6 +98,35 @@ public:
     virtual void ReadFile(char* path, uint8_t* buffer, uint32_t length) = 0;
     virtual void WriteFile(char* path, uint8_t* buffer, uint32_t length) = 0;
     virtual uint32_t GetFileSize(char* path) = 0;
+
+    /**
+     * CreateDirectory() - Create a directory and report whether it succeeded.
+     *
+     * Unlike MakeDirectory(), this returns a status so sys_mkdir can report
+     * failure to user space. An existing directory is a failure.
+     *
+     * Return: 0 on success, -1 on failure.
+     */
+    virtual int32_t CreateDirectory(const char* path) {
+        (void)path;
+        return -1;
+    }
+
+    /** Remove() - Delete only the requested type (directory=true for rmdir). Return 0 on success.
+     */
+    virtual int32_t Remove(const char* path, bool directory = false) {
+        (void)path;
+        (void)directory;
+        return -1;
+    }
+
+    /** Rename() - Rename or move a file/directory. Return 0 on success. */
+    virtual int32_t Rename(const char* oldPath, const char* newPath) {
+        (void)oldPath;
+        (void)newPath;
+        return -1;
+    }
+
     virtual void Format() = 0;
 };
 

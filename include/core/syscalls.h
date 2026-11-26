@@ -94,6 +94,12 @@ struct linux_dirent {
  * @Hsys_getCliAttachedView: Get the view attached to a CLI host.
  * @Hsys_isProcessAlive: Test whether a process is still running.
  * @Hsys_getProcessAppMode: Get the app mode of another process.
+ * @Hsys_audioOpen: Open a 16-bit stereo streaming audio ring.
+ * @Hsys_audioWrite: Append PCM frames to an audio ring.
+ * @Hsys_audioGetPos: Read the ring's consumed byte position.
+ * @Hsys_audioClose: Close an audio ring.
+ * @Hsys_getTimeMs: Get milliseconds since boot.
+ * @Hsys_random: Fill up to 256 bytes from the hardware-seeded kernel RNG.
  */
 typedef enum {
     Hsys_regEventH = 1,
@@ -106,6 +112,12 @@ typedef enum {
     Hsys_getCliAttachedView = 8,
     Hsys_isProcessAlive = 9,
     Hsys_getProcessAppMode = 10,
+    Hsys_audioOpen = 11,
+    Hsys_audioWrite = 12,
+    Hsys_audioGetPos = 13,
+    Hsys_audioClose = 14,
+    Hsys_getTimeMs = 15,
+    Hsys_random = 16,
 } HSYSCALL;
 
 /**
@@ -152,7 +164,12 @@ public:
                                     void* child_tid);
     static int32_t Handle_sys_getdents(uint32_t fd, struct linux_dirent* dirp, uint32_t count);
     static int32_t Handle_sys_nanosleep(struct timespec* req, struct timespec* rem);
+    static int32_t Handle_sys_time(uint32_t* tloc);
     static int32_t Handle_sys_getcwd(char* buf, uint32_t size);
+    static int32_t Handle_sys_mkdir(const char* path, uint32_t mode);
+    static int32_t Handle_sys_unlink(const char* path);
+    static int32_t Handle_sys_rmdir(const char* path);
+    static int32_t Handle_sys_rename(const char* oldPath, const char* newPath);
 
     static int32_t Handle_sys_debug(char* str);
     static int32_t Handle_sys_peek_memory(uint32_t address, uint32_t size, int32_t* return_data);

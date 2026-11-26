@@ -23,13 +23,17 @@
  */
 
 #define KDBG_COMPONENT "SYSCALL"
+#include <core/drivers/AudioMixer.h>
 #include <core/drivers/keyboard.h>
 #include <core/drivers/mouse.h>
 #include <core/filesystem/File.h>
 #include <core/filesystem/msdospart.h>
 #include <core/globals.h>
+#include <core/net/net_socket.h>
 #include <core/paging.h>
 #include <core/pmm.h>
+#include <core/random.h>
+#include <core/rtc.h>
 #include <core/syscalls.h>
 
 namespace {
@@ -120,8 +124,15 @@ void RevokeFramebufferMapping(uint32_t* directory) {
 
     for (uint32_t i = g_fb_private_start_pd; i <= g_fb_private_end_pd; i++) {
         if (!(directory[i] & PAGE_PRESENT)) continue;
-        if (directory[i] == g_paging->KernelPageDirectory[i]) continue;
-        pmm_free_block((void*)(directory[i] & 0xFFFFF000));
+        uint32_t frame = directory[i] & 0xFFFFF000;
+        uint32_t kernelFrame = g_paging->KernelPageDirectory[i] & 0xFFFFF000;
+        if (frame == kernelFrame) {
+            // Shared kernel table with altered flags (for example PAGE_USER):
+            // restore the kernel entry but never free the shared frame.
+            directory[i] = g_paging->KernelPageDirectory[i];
+            continue;
+        }
+        pmm_free_block((void*)frame);
         directory[i] = g_paging->KernelPageDirectory[i];
     }
     g_fb_private_valid = false;
@@ -159,6 +170,8 @@ void CleanupExitedProcessGui(uint32_t pid, uint32_t status, const char* sourceTa
 
     KDBG1("%s: Process PID %d terminated with status %d", sourceTag, pid, status);
 }
+
+}  // namespace
 
 constexpr uint32_t USER_LOWER_BOUND = 0x10000000;
 constexpr uint32_t USER_UPPER_BOUND = 0xC0000000;
@@ -289,7 +302,6 @@ bool CopyUserString(ProcessControlBlock* proc, const char* src_user, char* dst, 
     dst[dst_size - 1] = '\0';
     return true;
 }
-}  // namespace
 
 SyscallHandler::SyscallHandler(uint8_t InterruptNumber, InterruptManager* interruptManager)
     : InterruptHandler(InterruptNumber + 0x20, interruptManager) {}
@@ -356,6 +368,19 @@ uint32_t SyscallHandler::HandleInterrupt(uint32_t esp) {
         case sys_close:
             return_val = SyscallHandlers::Handle_sys_close(cpu->ebx);
             break;
+        case sys_unlink:
+            return_val = SyscallHandlers::Handle_sys_unlink((const char*)cpu->ebx);
+            break;
+        case sys_rmdir:
+            return_val = SyscallHandlers::Handle_sys_rmdir((const char*)cpu->ebx);
+            break;
+        case sys_rename:
+            return_val =
+                SyscallHandlers::Handle_sys_rename((const char*)cpu->ebx, (const char*)cpu->ecx);
+            break;
+        case sys_mkdir:
+            return_val = SyscallHandlers::Handle_sys_mkdir((const char*)cpu->ebx, cpu->ecx);
+            break;
         case sys_execve:
             return_val = SyscallHandlers::Handle_sys_execve(
                 (const char*)cpu->ebx, (char* const*)cpu->ecx, (char* const*)cpu->edx);
@@ -385,6 +410,10 @@ uint32_t SyscallHandler::HandleInterrupt(uint32_t esp) {
                                                                (struct timespec*)cpu->ecx);
             break;
 
+        case sys_time:
+            return_val = SyscallHandlers::Handle_sys_time((uint32_t*)cpu->ebx);
+            break;
+
         case sys_getcwd:
             return_val = SyscallHandlers::Handle_sys_getcwd((char*)cpu->ebx, cpu->ecx);
             break;
@@ -401,6 +430,10 @@ uint32_t SyscallHandler::HandleInterrupt(uint32_t esp) {
         case sys_Hcall:
             return_val =
                 SyscallHandlers::Handle_sys_Hcall(cpu->ebx, cpu->ecx, cpu->edx, cpu->esi, cpu->edi);
+            break;
+
+        case sys_socketcall:
+            return_val = NetSocketCall(cpu->ebx, cpu->ecx);
             break;
 
         default:
@@ -438,6 +471,12 @@ int32_t SyscallHandlers::Handle_sys_exit(uint32_t status) {
     ProcessControlBlock* process = sched->GetCurrentProcess();
     uint32_t pid = process ? process->pid : 0;
 
+    // If this is the process's last thread, undo the fullscreen framebuffer
+    // mapping before KillProcess tears the address space down.
+    if (process && process->threads.GetSize() <= 1) {
+        RevokeFramebufferMapping(process->page_directory);
+    }
+
     bool processKilled = sched->ExitCurrentThread();
 
     // Clean up GUI resources only if the entire process was terminated.
@@ -454,6 +493,10 @@ int32_t SyscallHandlers::Handle_sys_exit_group(uint32_t status) {
     ProcessControlBlock* process = sched->GetCurrentProcess();
     uint32_t pid = process ? process->pid : 0;
     if (!pid) return -1;
+
+    // Restore the shared kernel page tables for the framebuffer before the
+    // process page directory is swept by KillProcess.
+    if (process) RevokeFramebufferMapping(process->page_directory);
 
     if (!sched->KillProcess(pid)) {
         return -1;
@@ -616,10 +659,85 @@ int32_t SyscallHandlers::Handle_sys_open(const char* path, int32_t flags) {
     return -1;
 }
 
+int32_t SyscallHandlers::Handle_sys_mkdir(const char* path, uint32_t mode) {
+    (void)mode;
+    if (!path || !Scheduler::activeInstance) return -1;
+
+    ProcessControlBlock* process = Scheduler::activeInstance->GetCurrentProcess();
+    if (!process) return -1;
+
+    char kpath[256];
+    if (!CopyUserString(process, path, kpath, sizeof(kpath))) return -1;
+
+    extern MSDOSPartitionTable* g_PartitionTable;
+    if (MSDOSPartitionTable::activeInstance && MSDOSPartitionTable::activeInstance->partitions[0]) {
+        FileSystem* fs = MSDOSPartitionTable::activeInstance->partitions[0];
+        return fs->CreateDirectory(kpath);
+    }
+    return -1;
+}
+
+int32_t SyscallHandlers::Handle_sys_unlink(const char* path) {
+    if (!path || !Scheduler::activeInstance) return -1;
+
+    ProcessControlBlock* process = Scheduler::activeInstance->GetCurrentProcess();
+    if (!process) return -1;
+
+    char kpath[256];
+    if (!CopyUserString(process, path, kpath, sizeof(kpath))) return -1;
+
+    extern MSDOSPartitionTable* g_PartitionTable;
+    if (MSDOSPartitionTable::activeInstance && MSDOSPartitionTable::activeInstance->partitions[0]) {
+        FileSystem* fs = MSDOSPartitionTable::activeInstance->partitions[0];
+        return fs->Remove(kpath);
+    }
+    return -1;
+}
+
+int32_t SyscallHandlers::Handle_sys_rmdir(const char* path) {
+    if (!path || !Scheduler::activeInstance) return -1;
+
+    ProcessControlBlock* process = Scheduler::activeInstance->GetCurrentProcess();
+    if (!process) return -1;
+
+    char kpath[256];
+    if (!CopyUserString(process, path, kpath, sizeof(kpath))) return -1;
+
+    extern MSDOSPartitionTable* g_PartitionTable;
+    if (MSDOSPartitionTable::activeInstance && MSDOSPartitionTable::activeInstance->partitions[0]) {
+        FileSystem* fs = MSDOSPartitionTable::activeInstance->partitions[0];
+        return fs->Remove(kpath, true);
+    }
+    return -1;
+}
+
+int32_t SyscallHandlers::Handle_sys_rename(const char* oldPath, const char* newPath) {
+    if (!oldPath || !newPath || !Scheduler::activeInstance) return -1;
+
+    ProcessControlBlock* process = Scheduler::activeInstance->GetCurrentProcess();
+    if (!process) return -1;
+
+    char koldPath[256];
+    char knewPath[256];
+    if (!CopyUserString(process, oldPath, koldPath, sizeof(koldPath))) return -1;
+    if (!CopyUserString(process, newPath, knewPath, sizeof(knewPath))) return -1;
+
+    extern MSDOSPartitionTable* g_PartitionTable;
+    if (MSDOSPartitionTable::activeInstance && MSDOSPartitionTable::activeInstance->partitions[0]) {
+        FileSystem* fs = MSDOSPartitionTable::activeInstance->partitions[0];
+        return fs->Rename(koldPath, knewPath);
+    }
+    return -1;
+}
+
 int32_t SyscallHandlers::Handle_sys_close(uint32_t fd) {
     if (fd <= 2) return 0;  // Stdin/stdout/stderr placeholders.
 
     ProcessControlBlock* process = Scheduler::activeInstance->GetCurrentProcess();
+    if (NetSocketFdValid(process, fd)) {
+        return NetCloseSocketFd(process, fd);
+    }
+
     File* file = GetFileByFd(process, fd);
     if (!file) return -1;
 
@@ -1052,6 +1170,22 @@ int32_t SyscallHandlers::Handle_sys_nanosleep(struct timespec* req, struct times
     return 0;
 }
 
+/**
+ * Handle_sys_time() - Return the current Unix time from the CMOS RTC.
+ * @tloc: Optional user pointer to receive the timestamp.
+ */
+int32_t SyscallHandlers::Handle_sys_time(uint32_t* tloc) {
+    ProcessControlBlock* process =
+        Scheduler::activeInstance ? Scheduler::activeInstance->GetCurrentProcess() : nullptr;
+
+    uint32_t now = RtcUnixTime();
+    if (now == 0) return -1;
+    if (tloc != nullptr) {
+        if (!process || !CopyToUser(process, tloc, &now, sizeof(now))) return -1;
+    }
+    return (int32_t)now;
+}
+
 int32_t SyscallHandlers::Handle_sys_getcwd(char* buf, uint32_t size) {
     ProcessControlBlock* process =
         Scheduler::activeInstance ? Scheduler::activeInstance->GetCurrentProcess() : nullptr;
@@ -1207,7 +1341,13 @@ int32_t SyscallHandlers::Handle_sys_Hcall(uint32_t hcall_id, uint32_t arg1, uint
             // First pass: un-share kernel page tables covering the framebuffer
             // by creating per-process copies so we can safely add PAGE_USER.
             for (uint32_t i = startPDIdx; i <= endPDIdx; i++) {
-                if (current_process->page_directory[i] == g_paging->KernelPageDirectory[i]) {
+                uint32_t processFrame = current_process->page_directory[i] & 0xFFFFF000;
+                uint32_t kernelFrame = g_paging->KernelPageDirectory[i] & 0xFFFFF000;
+                if (processFrame == kernelFrame) {
+                    // The process still points at the shared kernel table.
+                    // Give it a private copy before adding PAGE_USER; comparing
+                    // only the full PDE would miss a shared table whose flags
+                    // had already been changed.
                     uint32_t* new_pt = (uint32_t*)pmm_alloc_block_low(256 * 1024 * 1024);
                     if (!new_pt) return -1;
                     uint32_t* old_pt = (uint32_t*)(g_paging->KernelPageDirectory[i] & 0xFFFFF000);
@@ -1328,12 +1468,30 @@ int32_t SyscallHandlers::Handle_sys_Hcall(uint32_t hcall_id, uint32_t arg1, uint
                     tmp.keyStates[i] = keys[i];
                 }
             }
-            // Copy and reset mouse state.
+            // Mouse deltas are reported per thread: each caller subtracts its
+            // own last-seen total. A second input poller in the same process
+            // (the GUI event-handler thread) can then never steal movement
+            // from the application's own thread.
             if (MouseDriver::activeInstance) {
-                int32_t dx, dy;
-                MouseDriver::activeInstance->GetMouseDelta(dx, dy);
-                tmp.mouseDX = dx;
-                tmp.mouseDY = dy;
+                uint32_t totalX = 0;
+                uint32_t totalY = 0;
+                ThreadControlBlock* thread = Scheduler::activeInstance
+                                                 ? Scheduler::activeInstance->GetCurrentThread()
+                                                 : nullptr;
+                MouseDriver::activeInstance->GetMouseTotals(totalX, totalY);
+                if (thread) {
+                    if (!thread->mouseSeenValid) {
+                        // First poll from this thread: start from the current
+                        // totals so movement from before it started is ignored.
+                        thread->mouseSeenDX = totalX;
+                        thread->mouseSeenDY = totalY;
+                        thread->mouseSeenValid = true;
+                    }
+                    tmp.mouseDX = (int32_t)(totalX - thread->mouseSeenDX);
+                    tmp.mouseDY = (int32_t)(totalY - thread->mouseSeenDY);
+                    thread->mouseSeenDX = totalX;
+                    thread->mouseSeenDY = totalY;
+                }
                 tmp.mouseButtons = MouseDriver::activeInstance->GetButtons();
             }
             if (!CopyToUser(current_process, userState, &tmp, sizeof(InputState))) {
@@ -1343,6 +1501,44 @@ int32_t SyscallHandlers::Handle_sys_Hcall(uint32_t hcall_id, uint32_t arg1, uint
         } else {
             return -1;
         }
+    } else if (hcall_id == Hsys_random) {
+        if (!current_process || arg2 > 256u || arg2 == 0) return -1;
+        uint8_t bytes[256];
+        if (!RandomBytes(bytes, arg2)) return -1;
+        bool ok = CopyToUser(current_process, (void*)arg1, bytes, arg2);
+        memset(bytes, 0, sizeof(bytes));
+        return ok ? (int32_t)arg2 : -1;
+    } else if (hcall_id == Hsys_audioOpen) {
+        if (!current_process || !g_AudioMixer) return -1;
+        return g_AudioMixer->CreateStream(arg1, arg2, arg3, current_process->pid);
+    } else if (hcall_id == Hsys_audioWrite) {
+        if (!current_process || !g_AudioMixer) return -1;
+        uint32_t length = arg3;
+        if (length == 0) return 0;
+        if (length > 65536u) length = 65536u;
+        if (!IsUserRange(current_process, arg2, length)) return -1;
+
+        uint8_t* buffer = (uint8_t*)kmalloc((int)length);
+        if (!buffer) return -1;
+        if (!CopyFromUser(current_process, buffer, (const void*)arg2, length)) {
+            kfree(buffer);
+            return -1;
+        }
+        int32_t written =
+            g_AudioMixer->WriteStream((int32_t)arg1, buffer, length, current_process->pid);
+        kfree(buffer);
+        return written;
+    } else if (hcall_id == Hsys_audioGetPos) {
+        // The mixer masks the position to 31 bits, reserving -1 for errors.
+        if (!current_process || !g_AudioMixer) return -1;
+        return g_AudioMixer->GetStreamPosition((int32_t)arg1, current_process->pid);
+    } else if (hcall_id == Hsys_audioClose) {
+        if (!current_process || !g_AudioMixer) return -1;
+        return g_AudioMixer->CloseStream((int32_t)arg1, current_process->pid);
+    } else if (hcall_id == Hsys_getTimeMs) {
+        // Milliseconds since boot, driven by the PIT. Games use this instead
+        // of calibrating the TSC, whose frequency varies with the CPU.
+        return (int32_t)timerTicks;
     } else {
         // Default case (optional: handle unknown Hcalls).
         KDBG1("Unknown Hcall ID: %d", hcall_id);

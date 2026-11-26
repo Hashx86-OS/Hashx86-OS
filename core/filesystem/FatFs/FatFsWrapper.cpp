@@ -24,6 +24,7 @@
 
 #define KDBG_COMPONENT "FATFS"
 
+#include <core/Iguard.h>
 #include <core/filesystem/FatFs/ff.h>
 
 #include <core/filesystem/FatFs/diskio.h>
@@ -531,6 +532,50 @@ void FatFsWrapper::DeleteFile(char* path) {
 
 void FatFsWrapper::DeleteDirectory(char* path) {
     DeleteFile(path);
+}
+
+int32_t FatFsWrapper::CreateDirectory(const char* path) {
+    char fatPath[256];
+    if (!PathToFatFs(path, fatPath, sizeof(fatPath))) return -1;
+
+    FRESULT res = f_mkdir(fatPath);
+    if (res != FR_OK) {
+        KDBG1("CreateDirectory: %d", res);
+        return -1;
+    }
+    KDBG2("Dir created: %s", path);
+    return 0;
+}
+
+int32_t FatFsWrapper::Remove(const char* path, bool directory) {
+    InterruptGuard guard;
+    char fatPath[256];
+    if (!PathToFatFs(path, fatPath, sizeof(fatPath))) return -1;
+
+    FILINFO info;
+    if (f_stat(fatPath, &info) != FR_OK || ((info.fattrib & AM_DIR) != 0) != directory) return -1;
+    FRESULT res = f_unlink(fatPath);
+    if (res != FR_OK) {
+        KDBG1("Remove: %d", res);
+        return -1;
+    }
+    KDBG2("Removed: %s", path);
+    return 0;
+}
+
+int32_t FatFsWrapper::Rename(const char* oldPath, const char* newPath) {
+    char oldFatPath[256];
+    char newFatPath[256];
+    if (!PathToFatFs(oldPath, oldFatPath, sizeof(oldFatPath))) return -1;
+    if (!PathToFatFs(newPath, newFatPath, sizeof(newFatPath))) return -1;
+
+    FRESULT res = f_rename(oldFatPath, newFatPath);
+    if (res != FR_OK) {
+        KDBG1("Rename: %d", res);
+        return -1;
+    }
+    KDBG2("Renamed: %s -> %s", oldPath, newPath);
+    return 0;
 }
 
 void FatFsWrapper::ReadFile(char* path, uint8_t* buffer, uint32_t length) {

@@ -23,6 +23,14 @@
  */
 
 #include <core/drivers/AudioMixer.h>
+#include <debug.h>
+
+extern uint64_t timerTicks;
+
+namespace {
+// About 1.5 seconds of 44.1 kHz stereo 16-bit PCM.
+constexpr uint32_t kStreamRingBytes = 256u * 1024u;
+}  // namespace
 
 /**
  * AudioMixer::AudioMixer() - Bind the mixer to an audio driver.
@@ -53,6 +61,179 @@ void AudioMixer::SetOutputSampleRate(uint32_t rate) {
 }
 
 /**
+ * AudioMixer::CreateStream() - Allocate a user-fed 16-bit stereo ring.
+ *
+ * The ring is owned by the mixer and exposed to the process through the audio
+ * syscalls. Only one format is accepted because the shared mix buffer is
+ * signed 16-bit stereo.
+ */
+int32_t AudioMixer::CreateStream(uint32_t sampleRate, uint32_t channels, uint32_t bits,
+                                 int32_t ownerPid) {
+    if (!driver || !mixBuffer) return -1;
+    if (channels != 2 || bits != 16) return -1;
+    if (sampleRate < 8000 || sampleRate > 48000) return -1;
+
+    uint8_t* ring = (uint8_t*)kmalloc(kStreamRingBytes);
+    if (!ring) return -1;
+    memset(ring, 0, kStreamRingBytes);
+
+    uint32_t flags = lock();
+    if (sampleRate != driver->GetSampleRate()) {
+        bool busy = driver->HasQueuedData();
+        for (int i = 0; i < 8; i++) busy = busy || streams[i].active;
+        if (busy) {
+            unlock(flags);
+            kfree(ring);
+            return -1;
+        }
+    }
+    int slot = -1;
+    for (int i = 0; i < 8; i++) {
+        if (!streams[i].active) {
+            slot = i;
+            break;
+        }
+    }
+    if (slot < 0) {
+        unlock(flags);
+        kfree(ring);
+        return -1;
+    }
+
+    AudioStream& st = streams[slot];
+    st.data = ring;
+    st.length = kStreamRingBytes;
+    st.position = 0;
+    st.active = true;
+    st.looping = false;
+    st.ownsData = false;
+    st.streaming = true;
+    st.closing = false;
+    st.primed = false;
+    st.startupPending = false;
+    st.capacity = kStreamRingBytes;
+    st.writePos = 0;
+    st.readPos = 0;
+    st.ownerPid = ownerPid;
+    SetOutputSampleRate(sampleRate);
+    unlock(flags);
+
+    // Update starts playback after samples arrive through WriteStream.
+    // Opening an empty stream must not prefill the DMA ring with silence.
+    printf("[AUDIO] stream %d: %u Hz, owner %d\n", slot, sampleRate, ownerPid);
+    return slot;
+}
+
+/**
+ * AudioMixer::WriteStream() - Copy whole frames into a streaming ring.
+ *
+ * Return: Bytes accepted (possibly short), or -1 for a bad handle or owner.
+ */
+int32_t AudioMixer::WriteStream(int32_t streamId, const uint8_t* data, uint32_t length,
+                                int32_t ownerPid) {
+    if (streamId < 0 || streamId >= 8 || data == nullptr || length == 0) return -1;
+
+    length &= ~3u;  // stereo 16-bit frames only
+    if (length == 0) return 0;
+
+    uint32_t flags = lock();
+    AudioStream& st = streams[streamId];
+    if (!st.active || !st.streaming || st.ownerPid != ownerPid) {
+        unlock(flags);
+        return -1;
+    }
+
+    uint32_t used = st.writePos - st.readPos;
+    if (used > st.capacity) used = st.capacity;
+    uint32_t available = st.capacity - used;
+    if (length > available) length = available;
+
+    uint32_t offset = st.writePos % st.capacity;
+    uint32_t first = length;
+    if (first > st.capacity - offset) first = st.capacity - offset;
+    memcpy(st.data + offset, data, first);
+    if (length > first) memcpy(st.data, data + first, length - first);
+    if (length != 0 && !st.startupPending) {
+        st.startupPending = true;
+        st.startupTick = timerTicks;
+    }
+    st.writePos += length;
+
+    unlock(flags);
+    return (int32_t)length;
+}
+
+/**
+ * AudioMixer::GetStreamPosition() - Return the mixer's read position.
+ *
+ * Return: Frame-aligned position modulo 2^31, or -1 for a bad handle or owner.
+ */
+int32_t AudioMixer::GetStreamPosition(int32_t streamId, int32_t ownerPid) {
+    if (streamId < 0 || streamId >= 8) return -1;
+
+    uint32_t flags = lock();
+    AudioStream& st = streams[streamId];
+    int32_t position = -1;
+    if (st.active && st.streaming && st.ownerPid == ownerPid) {
+        position = (int32_t)(st.readPos & 0x7FFFFFFCu);
+    }
+    unlock(flags);
+    return position;
+}
+
+/**
+ * AudioMixer::CloseStream() - Release a streaming ring.
+ *
+ * Return: 0 on success, or -1 for a bad handle or owner.
+ */
+int32_t AudioMixer::CloseStream(int32_t streamId, int32_t ownerPid) {
+    if (streamId < 0 || streamId >= 8) return -1;
+
+    uint8_t* ring = nullptr;
+    uint32_t flags = lock();
+    AudioStream& st = streams[streamId];
+    if (!st.active || !st.streaming || st.ownerPid != ownerPid) {
+        unlock(flags);
+        return -1;
+    }
+
+    if (st.writePos != st.readPos) {
+        st.ownerPid = -1;
+        st.closing = true;
+        st.primed = true;
+        st.ownsData = true;
+        unlock(flags);
+        return 0;
+    }
+    ring = st.data;
+    st.data = nullptr;
+    st.length = 0;
+    st.position = 0;
+    st.active = false;
+    st.looping = false;
+    st.ownsData = false;
+    st.streaming = false;
+    st.capacity = 0;
+    st.writePos = 0;
+    st.readPos = 0;
+    st.ownerPid = -1;
+    unlock(flags);
+
+    if (ring) kfree(ring);
+    printf("[AUDIO] stream %d closed, owner %d\n", streamId, ownerPid);
+    return 0;
+}
+
+/**
+ * AudioMixer::CloseStreamsForPid() - Release streams left by a dying process.
+ */
+void AudioMixer::CloseStreamsForPid(int32_t ownerPid) {
+    for (int32_t i = 0; i < 8; i++) {
+        CloseStream(i, ownerPid);
+    }
+}
+
+/**
  * AudioMixer::PlayBuffer() - Queue PCM data for playback on one channel.
  *
  * Copies the samples into an owned per-channel buffer (the caller's pointer
@@ -62,7 +243,7 @@ void AudioMixer::SetOutputSampleRate(uint32_t rate) {
  * Context: Serialized by the internal IRQ lock.
  */
 void AudioMixer::PlayBuffer(uint8_t* data, uint32_t length, bool loop) {
-    if (!data || length == 0 || (length % 2 != 0) || !driver) return;
+    if (!data || length == 0 || (length % 4 != 0) || !driver) return;
 
     uint32_t flags = lock();
 
@@ -81,24 +262,17 @@ void AudioMixer::PlayBuffer(uint8_t* data, uint32_t length, bool loop) {
             streams[i].position = 0;
             streams[i].looping = loop;
             streams[i].active = true;
+            streams[i].streaming = false;
+            streams[i].capacity = 0;
+            streams[i].writePos = 0;
+            streams[i].readPos = 0;
+            streams[i].ownerPid = -1;
             break;
         }
     }
 
-    bool wasPlaying = driver->IsPlaying();
     unlock(flags);
-
-    if (!wasPlaying) {
-        // Fill ALL available hardware buffers before starting. Only enter the
-        // prefill loop if mixBuffer was allocated; otherwise ProcessAudio is a
-        // no-op and would spin forever.
-        if (mixBuffer) {
-            while (driver->IsReadyForData()) {
-                ProcessAudio();
-            }
-        }
-        driver->Start();
-    }
+    Update();
 }
 
 /**
@@ -107,12 +281,12 @@ void AudioMixer::PlayBuffer(uint8_t* data, uint32_t length, bool loop) {
  * Runs the deferred kfree() queue (built in IRQ context) and keeps writing
  * mixed buffers while the hardware accepts data.
  *
- * Context: Task context; serialized by the internal IRQ lock.
+ * Context: Timer IRQ or task context; serialized by the internal IRQ lock.
  */
 void AudioMixer::Update() {
     if (!driver || !mixBuffer) return;
 
-    // Perform deferred frees queued from IRQ context by ProcessAudio().
+    // Release buffers retired by the previous mixing pass.
     uint32_t flags = lock();
     for (int i = 0; i < 8; i++) {
         if (pendingFreeBuffers[i]) {
@@ -121,12 +295,14 @@ void AudioMixer::Update() {
             pendingFreeLengths[i] = 0;
         }
     }
-    unlock(flags);
-
-    // Keep filling as long as the hardware has space.
+    // Serialize readiness, mixing and startup against timer-driven updates.
+    bool wroteData = false;
     while (driver->IsReadyForData()) {
-        ProcessAudio();
+        if (!ProcessAudio()) break;
+        wroteData = true;
     }
+    if (wroteData && !driver->IsPlaying()) driver->Start();
+    unlock(flags);
 }
 
 /**
@@ -139,22 +315,76 @@ void AudioMixer::Update() {
  *
  * Context: IRQ context; serialized by the internal IRQ lock.
  */
-void AudioMixer::ProcessAudio() {
-    if (!driver || !mixBuffer) return;
+bool AudioMixer::ProcessAudio() {
+    if (!driver || !mixBuffer) return false;
 
     uint32_t flags = lock();
 
-    memset(mixBuffer, 0, bufferSize);
+    // Mix only the duration backed by real samples. Empty streams must not
+    // commit silence ahead of data that the producer will write next tick.
+    uint32_t bytesToMix = 0;
+    AudioStream savedStreams[8];
+    memcpy(savedStreams, streams, sizeof(streams));
+    for (int s = 0; s < 8; s++) {
+        AudioStream& st = streams[s];
+        if (!st.active) continue;
+        uint32_t available = st.streaming ? (uint32_t)(st.writePos - st.readPos)
+                                          : (st.looping ? bufferSize : st.length - st.position);
+        // Collect two pages before the first submission, giving the producer
+        // about 46 ms of scheduling slack at 44.1 kHz. Later short writes
+        // can use short descriptors without inserting silence.
+        if (st.streaming && !st.primed) {
+            if (available < bufferSize * 2u &&
+                (!st.startupPending || (uint32_t)(timerTicks - st.startupTick) < 100u))
+                continue;
+            st.primed = true;
+        }
+        if (available > bytesToMix) bytesToMix = available;
+    }
+    if (bytesToMix > bufferSize) bytesToMix = bufferSize;
+    bytesToMix &= ~3u;
+    if (bytesToMix == 0) {
+        unlock(flags);
+        return false;
+    }
+    memset(mixBuffer, 0, bytesToMix);
 
     int16_t* out = (int16_t*)mixBuffer;
-    uint32_t samples = bufferSize / sizeof(int16_t);
-    bool activeStreams = false;
+    uint32_t samples = bytesToMix / sizeof(int16_t);
 
     for (int s = 0; s < 8; s++) {
         AudioStream& st = streams[s];
         if (!st.active) continue;
 
-        activeStreams = true;
+        if (st.streaming) {
+            if (!st.primed) continue;
+            // Stereo 16-bit ring: advance only when a complete frame exists,
+            // so an underrun leaves the read position parked until data
+            // arrives instead of skipping samples.
+            uint32_t frames = samples / 2;
+            for (uint32_t f = 0; f < frames; f++) {
+                int16_t left = 0;
+                int16_t right = 0;
+                if ((uint32_t)(st.writePos - st.readPos) >= 4) {
+                    uint32_t sampleIndex = (st.readPos % st.capacity) / sizeof(int16_t);
+                    left = ((int16_t*)st.data)[sampleIndex];
+                    right = ((int16_t*)st.data)[sampleIndex + 1];
+                    st.readPos += 4;
+                }
+
+                int32_t mixedLeft = out[f * 2] + left;
+                int32_t mixedRight = out[f * 2 + 1] + right;
+                if (mixedLeft > 32767) mixedLeft = 32767;
+                if (mixedLeft < -32768) mixedLeft = -32768;
+                if (mixedRight > 32767) mixedRight = 32767;
+                if (mixedRight < -32768) mixedRight = -32768;
+                out[f * 2] = (int16_t)mixedLeft;
+                out[f * 2 + 1] = (int16_t)mixedRight;
+            }
+            if (st.closing && st.readPos == st.writePos) st.active = false;
+            continue;
+        }
+
         for (uint32_t i = 0; i < samples; i++) {
             if (st.position >= st.length) {
                 if (st.looping) {
@@ -177,8 +407,20 @@ void AudioMixer::ProcessAudio() {
             st.position += sizeof(int16_t);
         }
 
-        // A just-finished owned buffer cannot be freed here (IRQ context), so
-        // defer it to task context (Update).
+        if (!st.looping && st.position >= st.length) st.active = false;
+    }
+
+    // A rejected write must not lose source samples or retire their buffers.
+    if (driver->WriteData(mixBuffer, bytesToMix) != bytesToMix) {
+        memcpy(streams, savedStreams, sizeof(streams));
+        unlock(flags);
+        return false;
+    }
+
+    for (int s = 0; s < 8; s++) {
+        AudioStream& st = streams[s];
+        // Retire only after the DMA write succeeds; Update frees it on
+        // the next pass.
         if (!st.active && st.ownsData && st.data) {
             pendingFreeBuffers[s] = st.data;
             pendingFreeLengths[s] = st.length;
@@ -189,7 +431,6 @@ void AudioMixer::ProcessAudio() {
         }
     }
 
-    driver->WriteData(mixBuffer, bufferSize);
-
     unlock(flags);
+    return true;
 }

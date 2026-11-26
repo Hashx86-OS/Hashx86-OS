@@ -4,26 +4,33 @@ SUBDIRS = MeMView\
 		  Settings\
 		  Terminal\
 		  Game3D\
-		  CLIHello
+		  CLIHello\
+		  AppStore
 
-.PHONY: all libhx86 $(SUBDIRS) clean
+.PHONY: all libhx86 libmbedtls $(SUBDIRS) clean
 
-all: libhx86 $(SUBDIRS)
+all: libhx86 libmbedtls $(SUBDIRS)
 
-# Build the library first
+# Build the libraries first
 libhx86:
 	@echo ""
 	@echo "--- Building libhx86 Library ---"
 	@$(MAKE) -C libhx86
 
+libmbedtls: libhx86
+	@echo ""
+	@echo "--- Building mbedTLS Library ---"
+	@$(MAKE) -C libmbedtls
+
 # Build the apps
-$(SUBDIRS): libhx86
+$(SUBDIRS): libhx86 libmbedtls
 	@echo ""
 	@echo "--- Building $@ ---"
 	@$(MAKE) -C $@
 
 clean:
 	@$(MAKE) -C libhx86 clean
+	@$(MAKE) -C libmbedtls clean
 	@for dir in $(SUBDIRS); do \
 		$(MAKE) -C $$dir clean; \
 	done

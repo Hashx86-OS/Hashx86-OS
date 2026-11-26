@@ -46,6 +46,7 @@ typedef enum {
     FONT = 0x8,
     ICON_BUTTON = 0x9,
     DISPLAY = 0xA,
+    IMAGEVIEW = 0xB,
 } REQ_Element;
 
 /**
@@ -85,6 +86,7 @@ typedef enum {
     SET_MODE = 0x1A,
     SET_SELECTED = 0x1B,
     ADD_COLUMN = 0x1C,
+    SET_IMAGE = 0x1D,
 } REQ_MODE;
 
 /** GUI_LISTVIEW_MAX_COLUMNS - Maximum columns a list view accepts. */

@@ -131,7 +131,18 @@ struct ThreadControlBlock {
     CPUState* context;
     ProcessControlBlock* parent;
     uint32_t wakeTime;
+    uint32_t networkCallDepth = 0;
+    bool terminatePending = false;
     uint32_t stackSlotIdx;  // Slot index for user-stack virtual address reuse.
+    // Mouse totals at this thread's last Hsys_getInput call. Tracking the
+    // baseline per thread means a second thread polling input (for example the
+    // GUI event handler) cannot consume deltas the game thread has not read.
+    // mouseSeenValid is false until the thread's first input poll, which takes
+    // the current totals as its baseline instead of reporting movement from
+    // before the thread existed.
+    bool mouseSeenValid = false;
+    uint32_t mouseSeenDX = 0;
+    uint32_t mouseSeenDY = 0;
 };
 
 /**
@@ -158,6 +169,7 @@ struct ThreadControlBlock {
  * @deferredSlotCount: Number of pending deferred stack slots.
  */
 struct ProcessControlBlock {
+    bool killPending = false;
     static const uint16_t STDIN_QUEUE_SIZE = 256;
 
     uint32_t pid;
@@ -175,6 +187,10 @@ struct ProcessControlBlock {
     uint16_t appType;
     HeapSegment heap;
     File* fdTable[FD_MAX];
+    // Per-process mapping from user-visible descriptors to lwIP socket
+    // descriptors. -1 marks a free slot; an entry is only valid while the
+    // matching fdTable[fd] is null.
+    int socketTable[FD_MAX];
     ProgramArguments* programArgs;  // Owned by the PCB, freed in KillProcess.
     char cwd[256];                  // Current working directory of the process.
 

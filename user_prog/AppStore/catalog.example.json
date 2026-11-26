@@ -1,0 +1,38 @@
+{
+  "schema": 1,
+  "catalogVersion": "2026.11.22",
+  "osVersion": "0.1.0",
+  "apps": [
+    {
+      "id": "quake",
+      "name": "Quake",
+      "version": "0.1.0",
+      "description": "WinQuake port for Hashx86. Software rendering, keyboard and mouse input.",
+      "icon": "fa-gamepad",
+      "iconAsset": "b81bad1b48e19db78e28e3534ab991c423da1cb41e0e24fa3422378cd9128069.jpg",
+      "bannerAsset": "aa8487e8aecbc096358d3c49337040dcce800382bbeaf43123dbd1a72e3d452a.jpg",
+      "category": "Games",
+      "license": "GPL-2.0-or-later",
+      "source": "https://github.com/Hashx86-OS/Quake-Hx86",
+      "repo": "https://github.com/Hashx86-OS/Quake-Hx86",
+      "minOsVersion": "0.1.0",
+      "asset": "Quake.bin",
+      "binary": "Quake.bin"
+    },
+    {
+      "id": "example",
+      "name": "Example App",
+      "version": "1.0.0",
+      "description": "An app downloaded from an explicit HTTPS URL instead of a release asset.",
+      "icon": "fa-rocket",
+      "category": "Utilities",
+      "license": "MIT",
+      "source": "https://example.com/example-app",
+      "minOsVersion": "0.1.0",
+      "url": "https://example.com/Example.bin",
+      "size": 123456,
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "binary": "Example.bin"
+    }
+  ]
+}

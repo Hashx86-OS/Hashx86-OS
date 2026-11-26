@@ -76,8 +76,8 @@ MouseDriver::MouseDriver(InterruptManager* manager, MouseEventHandler* handler)
     this->offset = 0;
     this->buttons = 0;
     this->hasWheel = false;
-    this->accumDX = 0;
-    this->accumDY = 0;
+    this->totalDX = 0;
+    this->totalDY = 0;
     activeInstance = this;
 }
 
@@ -220,8 +220,8 @@ uint32_t MouseDriver::HandleInterrupt(uint32_t esp) {
         if (buffer[1] != 0 || buffer[2] != 0) {
             int32_t dx = (buffer[0] & 0x40) ? 0 : (int8_t)buffer[1];
             int32_t dy = (buffer[0] & 0x80) ? 0 : -((int8_t)buffer[2]);
-            accumDX += dx;
-            accumDY += dy;
+            totalDX += (uint32_t)dx;
+            totalDY += (uint32_t)dy;
             eventHandler->OnMouseMove(dx, dy);
         }
 

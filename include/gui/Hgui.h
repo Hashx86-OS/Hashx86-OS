@@ -83,6 +83,9 @@ public:
     /** HandleIconButton() - Create or configure an icon button from a syscall. */
     virtual int32_t HandleIconButton(CPUState* cpu, const WidgetData* data);
 
+    /** HandleImageView() - Create or configure an image view from a syscall. */
+    virtual int32_t HandleImageView(CPUState* cpu, const WidgetData* data);
+
     /** HandleLabel() - Create or configure a label from a syscall. */
     virtual int32_t HandleLabel(CPUState* cpu, const WidgetData* data);
 

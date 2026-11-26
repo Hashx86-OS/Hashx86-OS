@@ -124,6 +124,7 @@ Desktop::Desktop(int32_t w, int32_t h)
     taskbar->AddApp("Settings", "Display & resolution", PATH_SETTINGS);
     taskbar->AddApp("Terminal", "CLI preview", PATH_TERMINAL);
     taskbar->AddApp("Game3D", "3D Game Engine", PATH_GAME3D);
+    taskbar->AddApp("App Store", "Install applications", PATH_APPSTORE);
 
     // Power controls, as small round buttons on the right of the start menu
     // header so they stay clear of the application list. These act

@@ -291,7 +291,7 @@ bool Widget::AddChild(Widget* child) {
         return false;  // Different parent; detach first.
     if (childrenList.Find([&](Widget* c) { return c == child; }) != nullptr)
         return false;  // Already in the list.
-    childrenList.PushBack(child);
+    if (!childrenList.TryPushBack(child)) return false;
     child->parent = this;
     this->MarkDirty();
     return true;
